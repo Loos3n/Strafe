@@ -124,17 +124,18 @@
     // steep ramp you drop onto from a high ledge.
     {
       const cx = -26000;
-      const R60 = [320, 554], R55 = [380, 543], R65 = [280, 600];
+      // narrower than the usual faces: a landing window of about 200 units
+      const R60 = [240, 554], R55 = [380, 543], R65 = [210, 600];
       const defs = [
         { dx: 0, len: 4000, drop: 900, face: R60, gap: 1000 },
-        { dx: -450, len: 3000, drop: 450, face: R65, gap: 1300 },
-        { dx: 450, len: 3000, drop: 450, face: R65, gap: 1400 },
-        { dx: 0, len: 3400, drop: 1500, face: R55, gap: 1000, cp: true },  // steep: build speed (checkpoint)
-        { dx: 520, len: 2600, drop: -250, face: R60, gap: 1500, fall: 0.3 }, // climbs into a long gap
-        { dx: -450, len: 2800, drop: 450, face: R65, gap: 1400 },
-        { dx: -100, len: 3400, drop: 1500, face: R55, gap: 1000, cp: true }, // steep again (checkpoint)
-        { dx: -550, len: 2600, drop: -250, face: R60, gap: 1500, fall: 0.3 }, // climbs
-        { dx: 400, len: 3000, drop: 500, face: R65, gap: 1200 },
+        { dx: -580, len: 3000, drop: 450, face: R65, gap: 1300 },
+        { dx: 580, len: 3000, drop: 450, face: R65, gap: 1400 },
+        { dx: 0, len: 3400, drop: 1500, face: R55, gap: 1000, cp: true, fall: 0.9 },  // steep: build speed (checkpoint)
+        { dx: 680, len: 2600, drop: -250, face: R60, gap: 1500, fall: 0.4 }, // climbs into a long gap
+        { dx: -580, len: 2800, drop: 450, face: R65, gap: 1400 },
+        { dx: -130, len: 3400, drop: 1500, face: R55, gap: 1000, cp: true, fall: 0.9 }, // steep again (checkpoint)
+        { dx: -720, len: 2600, drop: -250, face: R60, gap: 1500, fall: 0.4 }, // climbs
+        { dx: 520, len: 3000, drop: 500, face: R65, gap: 1200 },
       ];
       // the next ramp sits lower by what you fall crossing the gap, give or take
       const STAGE_LIFT = 2100, STAGE_OUT = 200;
@@ -145,7 +146,7 @@
         const rx = cx + d.dx, [W, H] = d.face;
         world.addSweep([[rx - W, apex - H], [rx + W, apex - H], [rx, apex]], z, z - d.len, -d.drop,
           { color: COLORS.surf[i % COLORS.surf.length], kind: 'ramp' });
-        d.cx = rx; d.z0 = z; d.z1 = z - d.len; d.apex = apex;
+        d.cx = rx; d.z0 = z; d.z1 = z - d.len; d.apex = apex; d.W = W; d.H = H;
         if (i === 0 || d.cp) {
           // later stages start from a ledge high above the ramp: the drop in
           // gives back the speed a full run would be carrying
@@ -165,7 +166,7 @@
       box([last.cx - 900, fy - 60, last.z1 - 1900], [last.cx + 900, fy, last.z1 - 500], COLORS.surfPad, { kind: 'pad' });
       world.addTrigger([last.cx - 900, fy, last.z1 - 1900], [last.cx + 900, fy + 200, last.z1 - 500], { type: 'end', course: 'cascade' });
       const s0 = defs[0];
-      world.addTrigger([s0.cx - 320 - 520, s0.apex + 60, s0.z0 - 700], [s0.cx - 320 - 80, s0.apex + 300, s0.z0 - 100], { type: 'start', course: 'cascade' });
+      world.addTrigger([s0.cx - s0.W - 520, s0.apex + 60, s0.z0 - 700], [s0.cx - s0.W - 80, s0.apex + 300, s0.z0 - 100], { type: 'start', course: 'cascade' });
       const zEnd = last.z1 - 3000;
       box([cx - 4000, -260, zEnd], [cx + 4000, -200, 2500], COLORS.water, { nonsolid: true, water: true });
       world.addTrigger([cx - 4000, -3000, zEnd], [cx + 4000, fy - 400, 2500], { type: 'kill', course: 'cascade' });

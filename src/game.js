@@ -64,9 +64,9 @@
   // Levels whose layout changed enough that old times no longer compare. Each
   // reset drops their times and ghosts once; stars already earned stay. The
   // suffix is the leaderboard field they post under now.
-  const REBUILT = { surf: '_v3', bhop: '_v2', canyon: '_v3', stairway: '_v2', crossover: '_v3', cascade: '_v4' };
+  const REBUILT = { surf: '_v3', bhop: '_v2', canyon: '_v3', stairway: '_v2', crossover: '_v3', cascade: '_v5' };
   const RESETS = [['strafe.rebuild.v2', ['surf', 'bhop', 'canyon', 'stairway', 'crossover']],
-    ['strafe.rebuild.v3', ['surf', 'canyon', 'crossover', 'cascade']], ['strafe.rebuild.v4', ['cascade']]];
+    ['strafe.rebuild.v3', ['surf', 'canyon', 'crossover', 'cascade']], ['strafe.rebuild.v4', ['cascade']], ['strafe.rebuild.v5', ['cascade']]];
   for (const [flag, list] of RESETS) {
     if (load(flag)) continue;
     for (const c of list) {
