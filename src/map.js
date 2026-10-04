@@ -1,0 +1,717 @@
+// Strafe test map: hub, surf course, bhop course and a rooftop run.
+// All coordinates are Hammer units, Y up, courses run toward -Z.
+(function (root) {
+  'use strict';
+
+  const COLORS = {
+    hub: 0xd9dcdf, hubTrim: 0x9aa3ab,
+    roof: 0xefeee9, roofSide: 0xe4e2db, route: 0xdb2f2a,
+    glass: 0x8fc4dd, street: 0x3b3f45,
+    surf: [0x2fb5c7, 0x4f74ee, 0x8f55e0, 0xe0457b],
+    surfPad: 0xc9d2da,
+    bhop: 0xf08a24, bhopPad: 0xffc56b,
+    water: 0x1f78b0, lava: 0xff5a1f,
+    canyon: [0x3fa7a0, 0xd9844a, 0x5b8fd9, 0xc4566e], canyonRock: 0xb7a99a,
+    stair: [0xf08a24, 0xe5533d, 0xf2b630, 0xd9663a, 0xf08a24],
+  };
+
+  function buildMap(StrafePhysics) {
+    const world = new StrafePhysics.World();
+    const box = (min, max, color, extra) => world.addBox(min, max, Object.assign({ color }, extra));
+    const courses = {};
+    const route = (min, max) => box(min, max, COLORS.route, { kind: 'route' });
+
+    // ------------------------------------------------------------ hub
+    box([-1024, -64, -1024], [1024, 0, 1024], COLORS.hub, { kind: 'floor' });
+    // a little practice furniture
+    box([-1024, 0, -1024], [-1000, 260, 400], COLORS.route, { kind: 'route' });     // wallrun wall
+    box([700, 0, 200], [860, 44, 260], COLORS.route, { kind: 'route' });           // vault box
+    box([700, 0, -200], [1000, 150, 0], COLORS.hubTrim, {});                       // climb + mantle block
+    world.addPrism('x', [[500, 0], [900, 0], [900, 90]], 300, 600, { color: COLORS.hubTrim }); // gentle slope (n.y ~0.98)
+    // mini surf ramp to feel the clip
+    world.addPrism('z', [[-700, 0], [-380, 0], [-540, 277]], 900, 300, { color: COLORS.surf[0] });
+
+    const hubSpawn = { pos: [0, 0, 600], yaw: 0 };
+
+    // ------------------------------------------------------------ surf
+    {
+      const W = 320, H = 554; // 60 degree faces, normal.y = 0.5 < 0.7 so you never "land"
+      // Each ramp descends along its length so gravity feeds you speed.
+      const ramps = [
+        { cx: -6000, apex: 3300, z0: 600, z1: -3000, drop: 400 },
+        { cx: -5880, apex: 2550, z0: -3500, z1: -7000, drop: 400 },
+        { cx: -6000, apex: 1800, z0: -7500, z1: -11000, drop: 400 },
+        { cx: -6120, apex: 1050, z0: -11500, z1: -15000, drop: 400 },
+      ];
+      const spawns = [];
+      ramps.forEach((r, i) => {
+        world.addSweep([[r.cx - W, r.apex - H], [r.cx + W, r.apex - H], [r.cx, r.apex]], r.z0, r.z1, -r.drop,
+          { color: COLORS.surf[i % COLORS.surf.length], kind: 'ramp' });
+        // stage platform, just off the ramp's west face
+        const top = r.apex + 60;
+        box([r.cx - W - 500, top - 40, r.z0 - 700], [r.cx - W - 60, top, r.z0 - 100], COLORS.surfPad, { kind: 'pad' });
+        const spawn = { pos: [r.cx - W - 300, top, r.z0 - 300], yaw: -1.05 };
+        spawns.push(spawn);
+        if (i > 0) {
+          world.addTrigger([r.cx - 2000, -150, r.z0 - 200], [r.cx + 2000, 5000, r.z0 + 300],
+            { type: 'checkpoint', course: 'surf', idx: i, spawn });
+        }
+      });
+      // finish platform
+      box([-6900, 140, -16400], [-5300, 200, -15400], COLORS.surfPad, { kind: 'pad' });
+      world.addTrigger([-6900, 200, -16400], [-5300, 400, -15400], { type: 'end', course: 'surf' });
+      world.addTrigger([-6000 - W - 500, 3360, -100], [-6000 - W - 60, 3600, 500], { type: 'start', course: 'surf' });
+      // water
+      box([-9000, -260, -18000], [-3000, -200, 2500], COLORS.water, { nonsolid: true, water: true });
+      world.addTrigger([-9000, -3000, -18000], [-3000, -150, 2500], { type: 'kill', course: 'surf' });
+      courses.surf = { name: 'Surf', type: 'Surf', difficulty: 1, color: COLORS.surf[0], desc: 'Four descending 60° ramps over water. Hold the strafe key into the ramp.', spawn: spawns[0], stages: ramps.length };
+    }
+
+    // ------------------------------------------------------------ bhop
+    {
+      const cx = 6000;
+      box([cx - 256, -1300, -256], [cx + 256, 0, 256], COLORS.bhopPad, { kind: 'pad' });
+      world.addTrigger([cx - 256, 0, -256], [cx + 256, 160, 256], { type: 'start', course: 'bhop' });
+      const spacing = [240, 240, 256, 256, 272, 272, 288, 288, 304, 304, 320, 320, 336, 352, 368, 384];
+      const lateral = [0, 70, -70, 0, 100, -60, 40, -110, 0, 120, -120, 60, -60, 0, 90, -90];
+      let z = -256 - 120;
+      let cp = null;
+      spacing.forEach((s, i) => {
+        if (i === 8) {
+          // checkpoint island
+          const zc = z - 140;
+          box([cx - 192, -1300, zc - 192], [cx + 192, 0, zc + 192], COLORS.bhopPad, { kind: 'pad' });
+          cp = { pos: [cx, 0, zc + 150], yaw: 0 };
+          world.addTrigger([cx - 192, 0, zc - 192], [cx + 192, 160, zc + 192], { type: 'checkpoint', course: 'bhop', idx: 1, spawn: cp });
+          z = zc - 192 - 130;
+        }
+        const x = cx + lateral[i];
+        box([x - 80, -1300, z - 160], [x + 80, 0, z], COLORS.bhop, { kind: 'block' });
+        z -= s;
+      });
+      // speed lane: one long strip to chain hops, then a long jump to the finish
+      const laneStart = z + 120;
+      box([cx - 128, -1300, laneStart - 3000], [cx + 128, 0, laneStart], COLORS.bhop, { kind: 'lane' });
+      const endZ = laneStart - 3000 - 480;
+      box([cx - 384, -1300, endZ - 512], [cx + 384, 0, endZ], COLORS.bhopPad, { kind: 'pad' });
+      world.addTrigger([cx - 384, 0, endZ - 512], [cx + 384, 200, endZ], { type: 'end', course: 'bhop' });
+      box([cx - 3000, -1240, endZ - 1500], [cx + 3000, -1200, 1500], COLORS.lava, { nonsolid: true, lava: true });
+      world.addTrigger([cx - 3000, -3000, endZ - 1500], [cx + 3000, -300, 1500], { type: 'kill', course: 'bhop' });
+      courses.bhop = { name: 'Bhop', type: 'Bhop', difficulty: 2, color: COLORS.bhop, desc: 'Blocks over lava with widening gaps, then a speed lane and a long jump.', spawn: { pos: [cx, 0, 150], yaw: 0 }, stages: 2 };
+    }
+
+    // ------------------------------------------------------------ rooftops
+    {
+      const B = -1600; // street level
+      const roof = (z0, z1, top, x0 = -600, x1 = 600) => box([x0, B, z1], [x1, top, z0], COLORS.roof, { kind: 'building' });
+
+      roof(-3000, -4200, 0);
+      route([-220, 0, -3500], [-60, 48, -3420]);          // AC unit to vault
+      route([100, 0, -3460], [260, 30, -3380]);
+      route([-600, 0, -3800], [600, 40, -3780]);          // knee wall
+      roof(-4400, -5600, -40);                            // gap 1: 200
+      route([-600, 20, -4900], [600, 60, -4860]);         // pipe: duck or slide under
+      roof(-6200, -7400, -60);                            // gap 2: 600, wallrun across
+      route([400, -420, -5500], [440, 260, -6300]);       // billboard wall (right side)
+      roof(-7400, -8400, 130);                            // climb wall: 190 up
+      route([-140, -60, -7402], [140, 130, -7399]);       // red panel marks the climb
+      world.addPrism('x', [[-8400, 130], [-9400, -170], [-9400, B], [-8400, B]], -600, 600,
+        { color: COLORS.roof, kind: 'building' });        // sloped roof to slide down
+      roof(-9800, -10600, -300);                          // gap 3: 400 drop
+      route([-220, -700, -10700], [-180, -40, -11240]);   // wall-to-wall: left
+      route([180, -700, -11100], [220, -40, -11700]);     // then right
+      roof(-11800, -12800, -340);
+      world.addTrigger([-600, 0, -3300], [600, 200, -3000], { type: 'start', course: 'roofs' });
+
+      const cp1 = { pos: [0, -60, -6350], yaw: 0 };
+      const cp2 = { pos: [0, -300, -9950], yaw: 0 };
+      world.addTrigger([-600, -60, -6500], [600, 200, -6200], { type: 'checkpoint', course: 'roofs', idx: 1, spawn: cp1 });
+      world.addTrigger([-600, -300, -10100], [600, -100, -9800], { type: 'checkpoint', course: 'roofs', idx: 2, spawn: cp2 });
+
+      // skyline filler (solid, so it is all fair game)
+      let seed = 7;
+      const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
+      for (let z = -2600; z > -11000; z -= 700) {
+        for (const side of [-1, 1]) {
+          const x0 = side * (900 + rnd() * 300);
+          const wdt = 500 + rnd() * 600;
+          const top = -500 + rnd() * 1400;
+          const xa = side > 0 ? x0 : x0 - wdt, xb = side > 0 ? x0 + wdt : x0;
+          box([xa, B, z - 500 - rnd() * 100], [xb, top, z], rnd() < 0.25 ? COLORS.glass : COLORS.roofSide, { kind: 'building', far: true });
+        }
+      }
+      box([-3000, B - 20, -11000], [3000, B, -2600], COLORS.street, { kind: 'street' });
+      world.addTrigger([-3000, B - 2000, -11000], [3000, -900, -2600], { type: 'kill', course: 'roofs' });
+
+      // The run carries on round three corners: east, north, then west.
+      const kit = cityKit('roofs', B);
+      const LA = kit.leg(0, 0, 0);                                     // the stretch above, as a frame
+      LA.reserve(-700, 700, 9700, 12900);
+      LA.trigger(-700, 700, B - 2000, -900, 9700, 12900, { type: 'kill' });
+      // east: vault, slide, wallrun the billboard
+      const LB = kit.leg(0, -12300, 1);
+      LB.roof(-500, 500, 600, 1400, -340);                             // the end roof becomes a corner
+      LB.red(-200, 200, -340, -296, 900, 940);
+      LB.roof(-500, 500, 1600, 2600, -340);
+      LB.red(-500, 500, -280, -240, 1850, 1890);                       // pipe: slide under
+      LB.box(-520, -500, -340, -240, 1850, 1890, COLORS.hubTrim, {}); LB.box(500, 520, -340, -240, 1850, 1890, COLORS.hubTrim, {});
+      LB.red(400, 440, -800, -100, 2550, 3050);                        // billboard (right)
+      LB.box(408, 432, B, -800, 2620, 2650, COLORS.hubTrim, {}); LB.box(408, 432, B, -800, 2950, 2980, COLORS.hubTrim, {});
+      LB.roof(-1400, 500, 3000, 4000, -380);                           // corner roof
+      LB.reserve(-1500, 600, 500, 4100);
+      LB.trigger(-1500, 600, B - 2000, -900, 1400, 4100, { type: 'kill' });
+      // north: climb, a covered walkway with a low beam, slide the pitched roof
+      const LC = kit.leg(...LB.at(0, 3500), 0);
+      LC.red(-140, 140, -380, -200, 1396, 1400);
+      LC.roof(-500, 500, 1400, 2400, -200);
+      LC.box(-520, 520, -20, 0, 1700, 2250, COLORS.hub, { kind: 'interior' });          // canopy
+      for (const u of [-500, 480]) for (const v of [1700, 2230]) LC.box(u, u + 20, -200, -20, v, v + 20, COLORS.hubTrim, {});
+      LC.red(-500, 500, -140, -20, 1960, 2000);                        // low beam: slide
+      LC.slope(-500, 500, 2400, 3300, -200, -500);
+      LC.roof(-1500, 500, 3600, 4700, -560);                           // corner roof
+      LC.reserve(-1600, 600, 1300, 4800);
+      LC.trigger(-1600, 600, B - 2000, -1000, 1300, 4800, { type: 'kill' });
+      // west: skylight hops, climb to the finish
+      const LD = kit.leg(...LC.at(0, 4200), 3);
+      [[1640, 1960, 0], [2100, 2420, 60], [2560, 2880, -40]].forEach(([v0, v1, u]) => LD.box(u - 150, u + 150, B, -560, v0, v1, COLORS.roofSide, { kind: 'building' }));
+      LD.red(-140, 140, -560, -400, 2876, 2880);
+      LD.roof(-500, 500, 2880, 4000, -400);
+      LD.red(-250, 250, -400, -396, 3550, 3950);                       // finish pad
+      LD.trigger(-500, 500, -400, -200, 3500, 4000, { type: 'end' });
+      LD.reserve(-600, 600, 1400, 4100);
+      LD.trigger(-600, 600, B - 2000, -1000, 1500, 4100, { type: 'kill' });
+      const more = [LB.spawn(0, -340, 1700), LC.spawn(0, -200, 1500), LC.spawn(0, -560, 3750)];
+      more.forEach((spawn, i) => {
+        const L = [LB, LC, LC][i], [, v] = L.local(spawn.pos[0], spawn.pos[2]);
+        L.trigger(-500, 500, spawn.pos[1], spawn.pos[1] + 200, v - 100, v + 200, { type: 'checkpoint', idx: i + 3, spawn });
+      });
+      kit.skyline(-2800, -18200, 5200, -11000, -1300, 600, 5, false);
+      box([-4800, B - 20, -20200], [7200, B, -11000], COLORS.street, { kind: 'street' });
+      courses.roofs = { name: 'Rooftops', type: 'Parkour', difficulty: 2, color: COLORS.route,
+        desc: 'Vault, slide under pipes, wallrun two billboards, go wall to wall over an alley, then turn three corners to a climb at the finish.',
+        spawn: { pos: [0, 0, -3100], yaw: 0 }, stages: 6, legs: kit.legs.map(L => ({ ox: L.ox, oz: L.oz, h: L.h })) };
+    }
+
+
+    // ------------------------------------------------------------ canyon (surf)
+    // One-sided ramp banks face each other in a V, staggered along the gorge.
+    // Carve down one bank and up the other before your side runs out.
+    {
+      const cx = -14000, W = 360, H = 624; // 60 degree faces
+      const banks = [
+        { side: -1, top: 4200, z0: 600, z1: -4400 },
+        { side: 1, top: 3900, z0: -2400, z1: -7400 },
+        { side: -1, top: 3500, z0: -5400, z1: -10400 },
+        { side: 1, top: 3100, z0: -8400, z1: -13400 },
+      ];
+      const DROP = 500, BACK = W - 8; // toes overlap: a closed V you can carve across
+      const spawns = [];
+      banks.forEach((b, i) => {
+        const back = cx + b.side * BACK, toe = back - b.side * W;
+        // the bank and the rock shelf behind it are one brush, so the top follows the slope
+        const outer = back + b.side * 160;
+        world.addSweep([[outer, b.top - H - 1400], [toe, b.top - H], [back, b.top], [outer, b.top]], b.z0, b.z1, -DROP,
+          { color: COLORS.canyon[i % COLORS.canyon.length], kind: 'ramp' });
+        // rock wall along the outer edge (after the drop-in) so overshooting a
+        // carve smacks into stone instead of launching you out of the gorge
+        const len = b.z0 - b.z1, wz0 = b.z0 - 800, wTop = b.top - DROP * (800 / len);
+        world.addSweep([[back, wTop], [outer, wTop], [outer, wTop + 420], [back, wTop + 420]], wz0, b.z1, -DROP * ((len - 800) / len),
+          { color: COLORS.canyonRock, kind: 'cliff' });
+        const top = b.top + 60;
+        const x0 = back + b.side * 160, x1 = back + b.side * 560;
+        box([Math.min(x0, x1), top - 40, b.z0 - 600], [Math.max(x0, x1), top, b.z0 - 100], COLORS.surfPad, { kind: 'pad' });
+        const spawn = { pos: [back + b.side * 300, top, b.z0 - 350], yaw: b.side < 0 ? -0.9 : 0.9 };
+        spawns.push(spawn);
+        if (i > 0) world.addTrigger([cx - 3000, -150, b.z0 - 700], [cx + 3000, 6000, b.z0 - 50], { type: 'checkpoint', course: 'canyon', idx: i, spawn });
+      });
+      world.addTrigger([cx - BACK - 560, 4260, -100], [cx - BACK - 160, 4500, 600], { type: 'start', course: 'canyon' });
+      box([cx - 900, 1500, -15600], [cx + 900, 1560, -14200], COLORS.surfPad, { kind: 'pad' });
+      world.addTrigger([cx - 900, 1560, -15600], [cx + 900, 1760, -14200], { type: 'end', course: 'canyon' });
+      box([cx - 3000, -260, -17000], [cx + 3000, -200, 2000], COLORS.water, { nonsolid: true, water: true });
+      world.addTrigger([cx - 3000, -3000, -17000], [cx + 3000, 1300, 2000], { type: 'kill', course: 'canyon' });
+      courses.canyon = { preview: { pos: [cx, 4300, 1200], yaw: 0 }, name: 'Canyon', type: 'Surf', difficulty: 3, color: COLORS.canyon[0], desc: 'A V-shaped gorge whose banks run out in turns. Carve down one side and up the other.', spawn: spawns[0], stages: banks.length };
+    }
+
+    // ------------------------------------------------------------ stairway (bhop)
+    // Blocks that climb, turn and fall away, so you have to steer in the air.
+    {
+      const ox = 14000;
+      box([ox - 256, -1300, -256], [ox + 256, 0, 256], COLORS.bhopPad, { kind: 'pad' });
+      world.addTrigger([ox - 256, 0, -256], [ox + 256, 160, 256], { type: 'start', course: 'stairway' });
+      // segments: count, step length, height change per block, heading change (radians) after
+      const segs = [
+        { n: 6, step: 250, dy: 30, turn: 0 },
+        { n: 5, step: 270, dy: 30, turn: Math.PI / 2 },
+        { n: 5, step: 300, dy: -60, turn: -Math.PI / 2 },
+        { n: 6, step: 340, dy: -80, turn: -Math.PI / 2 },
+        { n: 6, step: 300, dy: 20, turn: Math.PI / 2 },
+      ];
+      let x = ox, z = -256 - 140, y = 0, head = 0, idx = 0;
+      segs.forEach((sg, si) => {
+        for (let k = 0; k < sg.n; k++) {
+          y += sg.dy;
+          box([x - 72, y - 1300, z - 72], [x + 72, y, z + 72], COLORS.stair[si % COLORS.stair.length], { kind: 'block' });
+          x += -Math.sin(head) * sg.step; z += -Math.cos(head) * sg.step;
+        }
+        // landing island at each corner, which is also a checkpoint
+        head += sg.turn;
+        const isl = si < segs.length - 1;
+        const half = isl ? 150 : 300;
+        box([x - half, y - 1300, z - half], [x + half, y, z + half], COLORS.bhopPad, { kind: 'pad' });
+        if (isl) {
+          idx++;
+          const spawn = { pos: [x, y, z], yaw: head };
+          world.addTrigger([x - half, y, z - half], [x + half, y + 160, z + half], { type: 'checkpoint', course: 'stairway', idx, spawn });
+          x += -Math.sin(head) * 330; z += -Math.cos(head) * 330;
+        } else {
+          world.addTrigger([x - half, y, z - half], [x + half, y + 200, z + half], { type: 'end', course: 'stairway' });
+        }
+      });
+      box([ox - 4000, -1240, -9000], [ox + 4000, -1200, 2000], COLORS.lava, { nonsolid: true, lava: true });
+      world.addTrigger([ox - 4000, -3000, -9000], [ox + 4000, -700, 2000], { type: 'kill', course: 'stairway' });
+      courses.stairway = { name: 'Stairway', type: 'Bhop', difficulty: 4, color: COLORS.stair[1], desc: 'Climbing, turning and falling block lines. Steer through the corners in the air.', spawn: { pos: [ox, 0, 150], yaw: 0 }, stages: idx + 1 };
+    }
+
+    // ------------------------------------------------------------ crossover (everything)
+    // Tower top, slide down the roof, drop onto a surf ramp, bhop the blocks,
+    // wallrun the last gap and mantle up to the finish.
+    {
+      const z0 = 16000;
+      const B = -400;
+      box([-500, B, z0 - 1000], [500, 2000, z0], COLORS.roof, { kind: 'building' });
+      world.addTrigger([-500, 2000, z0 - 400], [500, 2200, z0], { type: 'start', course: 'crossover' });
+      route([-120, 2000, z0 - 700], [120, 2044, z0 - 640]);
+      world.addPrism('x', [[z0 - 1000, 2000], [z0 - 2500, 1600], [z0 - 2500, B], [z0 - 1000, B]], -400, 400, { color: COLORS.roof, kind: 'building' });
+      // surf ramp, hanging free
+      world.addSweep([[-320, 1300 - 554], [320, 1300 - 554], [0, 1300]], z0 - 3000, z0 - 6200, -400, { color: COLORS.surf[1], kind: 'ramp' });
+      const cpA = { pos: [0, 400, z0 - 6800], yaw: 0 };
+      box([-400, -400, z0 - 7050], [400, 400, z0 - 6450], COLORS.bhopPad, { kind: 'pad' });
+      world.addTrigger([-400, 400, z0 - 7050], [400, 560, z0 - 6450], { type: 'checkpoint', course: 'crossover', idx: 1, spawn: cpA });
+      const lat = [0, 90, -90, 60, -60, 0];
+      for (let i = 0; i < lat.length; i++) {
+        const bz = z0 - 7400 - i * 330;
+        box([lat[i] - 90, -400, bz - 90], [lat[i] + 90, 400, bz + 90], COLORS.bhop, { kind: 'block' });
+      }
+      const rz = z0 - 7400 - lat.length * 330 - 100;
+      box([-500, B, rz - 600], [500, 400, rz], COLORS.roof, { kind: 'building' });
+      const cpB = { pos: [0, 400, rz - 100], yaw: 0 };
+      world.addTrigger([-500, 400, rz - 300], [500, 600, rz], { type: 'checkpoint', course: 'crossover', idx: 2, spawn: cpB });
+      route([380, 0, rz - 650], [420, 800, rz - 1300]);   // billboard
+      box([-500, B, rz - 2250], [500, 520, rz - 1150], COLORS.roof, { kind: 'building' });
+      route([-140, 390, rz - 1152], [140, 520, rz - 1149]);   // mantle lip
+      world.addTrigger([-500, 520, rz - 2250], [500, 720, rz - 1550], { type: 'end', course: 'crossover' });
+      box([-3000, B - 20, z0 - 12000], [3000, B, z0 + 1000], COLORS.street, { kind: 'street' });
+      world.addTrigger([-3000, B - 2000, z0 - 12000], [3000, 100, z0 + 1000], { type: 'kill', course: 'crossover' });
+      // a couple of neighbours for scale
+      box([-1700, B, z0 - 2600], [-900, 1200, z0 - 1400], COLORS.glass, { kind: 'building' });
+      box([900, B, z0 - 4200], [1800, 1500, z0 - 3000], COLORS.roofSide, { kind: 'building' });
+      box([-1800, B, z0 - 9000], [-1000, 1100, z0 - 7600], COLORS.roofSide, { kind: 'building' });
+      courses.crossover = { name: 'Crossover', type: 'Mixed', difficulty: 5, color: 0x1d2a35, desc: 'All of it in one line: slide a roof, surf, bhop, wallrun, mantle the finish.', spawn: { pos: [0, 2000, z0 - 150], yaw: 0 }, stages: 3 };
+    }
+
+    // ------------------------------------------------------------ cascade (long surf)
+    // Nine ramps with sideways transfers, mixed angles, a steep speed ramp and
+    // a climbing ramp. Checkpoints only every third ramp.
+    {
+      const cx = -26000;
+      const R60 = [320, 554], R55 = [380, 543], R65 = [280, 600];
+      const defs = [
+        { dx: 0, len: 4000, drop: 500, face: R60 },
+        { dx: -300, len: 3600, drop: 450, face: R55 },
+        { dx: 250, len: 3600, drop: 450, face: R65 },
+        { dx: 0, len: 2600, drop: 900, face: R60 },     // steep: speed builder
+        { dx: 450, len: 3400, drop: -200, face: R55 },  // climbs: hold your line
+        { dx: -150, len: 3800, drop: 500, face: R60 },
+        { dx: -500, len: 3200, drop: 450, face: R65 },
+        { dx: 0, len: 4200, drop: 600, face: R55 },
+        { dx: 350, len: 3600, drop: 400, face: R60 },
+      ];
+      const GAP = 800, FALL = 500;
+      let apex = 9600, z = 600;
+      const spawns = [];
+      defs.forEach((d, i) => {
+        const rx = cx + d.dx, [W, H] = d.face;
+        world.addSweep([[rx - W, apex - H], [rx + W, apex - H], [rx, apex]], z, z - d.len, -d.drop,
+          { color: COLORS.surf[i % COLORS.surf.length], kind: 'ramp' });
+        d.cx = rx; d.z0 = z; d.z1 = z - d.len; d.apex = apex;
+        if (i % 3 === 0) {
+          const top = apex + 60;
+          box([rx - W - 520, top - 40, z - 700], [rx - W - 80, top, z - 100], COLORS.surfPad, { kind: 'pad' });
+          const spawn = { pos: [rx - W - 300, top, z - 300], yaw: -1.05 };
+          spawns.push(spawn);
+          if (i > 0) world.addTrigger([cx - 3000, -150, z - 200], [cx + 3000, 9000, z + 300],
+            { type: 'checkpoint', course: 'cascade', idx: i / 3, spawn });
+        }
+        apex = apex - d.drop - FALL;
+        z = z - d.len - GAP;
+      });
+      const last = defs[defs.length - 1];
+      const fy = last.apex - last.drop - 700;
+      box([last.cx - 900, fy - 60, last.z1 - 1900], [last.cx + 900, fy, last.z1 - 500], COLORS.surfPad, { kind: 'pad' });
+      world.addTrigger([last.cx - 900, fy, last.z1 - 1900], [last.cx + 900, fy + 200, last.z1 - 500], { type: 'end', course: 'cascade' });
+      const s0 = defs[0];
+      world.addTrigger([s0.cx - 320 - 520, s0.apex + 60, s0.z0 - 700], [s0.cx - 320 - 80, s0.apex + 300, s0.z0 - 100], { type: 'start', course: 'cascade' });
+      const zEnd = last.z1 - 3000;
+      box([cx - 4000, -260, zEnd], [cx + 4000, -200, 2500], COLORS.water, { nonsolid: true, water: true });
+      world.addTrigger([cx - 4000, -3000, zEnd], [cx + 4000, fy - 400, 2500], { type: 'kill', course: 'cascade' });
+      courses.cascade = { preview: { pos: [cx - 900, 9800, 1400], yaw: -0.25 }, name: 'Cascade', type: 'Surf', difficulty: 5, color: 0x2bd1a8,
+        desc: 'Nine ramps and a long way down. Sideways transfers, a steep drop and a climbing ramp. Checkpoints every third ramp.',
+        spawn: spawns[0], stages: spawns.length, ramps: defs };
+    }
+
+    // ------------------------------------------------------------ spire (long bhop)
+    // Small blocks, corners without islands, zigzags and long falling gaps.
+    {
+      const ox = -40000;
+      box([ox - 256, -1300, -256], [ox + 256, 0, 256], COLORS.bhopPad, { kind: 'pad' });
+      world.addTrigger([ox - 256, 0, -256], [ox + 256, 160, 256], { type: 'start', course: 'spire' });
+      const HB = 56;
+      // n blocks, step length, rise per block, zigzag offset, heading change after, island after
+      const segs = [
+        { n: 7, step: 260, dy: 0, zig: 0, turn: 0 },
+        { n: 6, step: 280, dy: 34, zig: 0, turn: Math.PI / 4 },
+        { n: 6, step: 300, dy: -50, zig: 0, turn: -Math.PI / 2, island: true },
+        { n: 7, step: 290, dy: 0, zig: 90, turn: -Math.PI / 4 },
+        { n: 5, step: 330, dy: -70, zig: 0, turn: Math.PI / 2, island: true },
+        { n: 6, step: 280, dy: 30, zig: 0, turn: Math.PI / 4 },
+        { n: 4, step: 400, dy: -130, zig: 0, turn: -Math.PI / 4, island: true },
+        { n: 8, step: 290, dy: 0, zig: 100, turn: 0 },
+      ];
+      const pal = [0xa55cf0, 0xe0457b, 0x8f55e0, 0xf08a24, 0xc94fd6];
+      let x = ox, z = -256 - 150, y = 0, head = 0, idx = 0, lo = 0;
+      segs.forEach((sg, si) => {
+        for (let k = 0; k < sg.n; k++) {
+          y += sg.dy; lo = Math.min(lo, y);
+          const zz = sg.zig ? (k % 2 ? sg.zig : -sg.zig) : 0;
+          const px = x + Math.cos(head) * zz, pz = z - Math.sin(head) * zz;
+          box([px - HB, y - 1300, pz - HB], [px + HB, y, pz + HB], pal[si % pal.length], { kind: 'block' });
+          x += -Math.sin(head) * sg.step; z += -Math.cos(head) * sg.step;
+        }
+        head += sg.turn;
+        if (sg.island) {
+          box([x - 150, y - 1300, z - 150], [x + 150, y, z + 150], COLORS.bhopPad, { kind: 'pad' });
+          idx++;
+          const spawn = { pos: [x, y, z], yaw: head };
+          world.addTrigger([x - 150, y, z - 150], [x + 150, y + 160, z + 150], { type: 'checkpoint', course: 'spire', idx, spawn });
+          x += -Math.sin(head) * 330; z += -Math.cos(head) * 330;
+        }
+      });
+      // long jump down to the finish
+      y -= 160;
+      x += -Math.sin(head) * 190; z += -Math.cos(head) * 190;
+      box([x - 320, y - 1300, z - 320], [x + 320, y, z + 320], COLORS.bhopPad, { kind: 'pad' });
+      world.addTrigger([x - 320, y, z - 320], [x + 320, y + 200, z + 320], { type: 'end', course: 'spire' });
+      box([ox - 6000, lo - 1700, -14000], [ox + 6000, lo - 1660, 2000], COLORS.lava, { nonsolid: true, lava: true });
+      world.addTrigger([ox - 6000, -4000, -14000], [ox + 6000, lo - 700, 2000], { type: 'kill', course: 'spire' });
+      courses.spire = { name: 'Spire', type: 'Bhop', difficulty: 5, color: 0xa55cf0,
+        desc: 'A long line of small blocks. Corners with no island to stop on, zigzags and long falling gaps.',
+        spawn: { pos: [ox, 0, 150], yaw: 0 }, stages: idx + 1 };
+    }
+
+    // ------------------------------------------------------------ freerun (long parkour)
+    // A full Mirror's Edge run: vaults, a slide, a long wallrun, a three-wall
+    // shaft, climbs, a slide into a surf ramp, vent hops, a wallrun to a mantle
+    // and a last climb to the finish.
+    {
+      const fx = 44000, B = -3000;
+      const roof = (z0, z1, top, hw = 500) => box([fx - hw, B, z1], [fx + hw, top, z0], COLORS.roof, { kind: 'building' });
+      // route piece from x0..x1, y0..y1, z0 (near) .. z1 (far), x relative to the course line
+      const R = (x0, y0, z0, x1, y1, z1) => route([fx + x0, y0, z1], [fx + x1, y1, z0]);
+      // 1: start roof, vaults
+      roof(0, -1400, 0);
+      R(-200, 0, -620, -40, 46, -680); R(80, 0, -660, 240, 40, -720);
+      R(-500, 0, -1080, 500, 42, -1110);
+      // 2: short gap, slide under the pipe
+      roof(-1640, -2600, -60);
+      R(-500, -4, -2080, 500, 36, -2120);
+      // 3: long gap, wallrun on the left billboard
+      R(-440, -520, -2500, -400, 240, -3250);
+      roof(-3300, -4400, -100);
+      // 4: climb
+      roof(-4400, -5400, 80);
+      R(-140, -100, -4398, 140, 80, -4402);
+      // 5: three-wall shaft
+      R(180, -700, -5500, 220, 320, -5980);
+      R(-220, -760, -5880, -180, 320, -6380);
+      R(180, -820, -6280, 220, 320, -6760);
+      roof(-6950, -7900, -250);
+      // 6: slide the slope, launch onto the surf ramp
+      world.addPrism('x', [[-7900, -250], [-9000, -650], [-9000, B], [-7900, B]], fx - 500, fx + 500, { color: COLORS.roof, kind: 'building' });
+      world.addSweep([[fx - 320, -950 - 554], [fx + 320, -950 - 554], [fx, -950]], -9400, -12600, -400, { color: COLORS.surf[2], kind: 'ramp' });
+      box([fx - 450, B, -13550], [fx + 450, -1850, -12850], COLORS.bhopPad, { kind: 'pad' });
+      // 7: vent hops
+      [0, 70, -70, 60, -60, 0].forEach((l, i) => {
+        const bz = -13800 - i * 300;
+        box([fx + l - 80, B, bz - 80], [fx + l + 80, -1850, bz + 80], COLORS.bhop, { kind: 'block' });
+      });
+      // 8: roof, right billboard wallrun, mantle up
+      roof(-15560, -16400, -1850);
+      R(380, -2250, -16250, 420, -1050, -17100);
+      roof(-16950, -17800, -1730);
+      R(-140, -1860, -16952, 140, -1730, -16949);
+      // 9: final climb to the finish
+      roof(-17800, -18700, -1550, 400);
+      R(-140, -1730, -17798, 140, -1550, -17802);
+      world.addTrigger([fx - 400, -1550, -18700], [fx + 400, -1350, -18000], { type: 'end', course: 'freerun' });
+      world.addTrigger([fx - 500, 0, -350], [fx + 500, 200, 0], { type: 'start', course: 'freerun' });
+      const cps = [
+        { z: [-3600, -3300], y: -100, sz: -3450 },
+        { z: [-7250, -6950], y: -250, sz: -7100 },
+        { z: [-13550, -12850], y: -1850, sz: -13050 },
+        { z: [-15860, -15560], y: -1850, sz: -15710 },
+      ];
+      cps.forEach((c, i) => {
+        const spawn = { pos: [fx, c.y, c.sz], yaw: 0 };
+        world.addTrigger([fx - 500, c.y, c.z[0]], [fx + 500, c.y + 200, c.z[1]], { type: 'checkpoint', course: 'freerun', idx: i + 1, spawn });
+      });
+      // skyline
+      let seed = 11;
+      const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
+      for (let z = 400; z > -19500; z -= 800) {
+        for (const side of [-1, 1]) {
+          const x0 = fx + side * (950 + rnd() * 400), wdt = 500 + rnd() * 700;
+          const top = -1600 + rnd() * 1800 - (z < -9000 ? 1200 : 0);
+          box([side > 0 ? x0 : x0 - wdt, B, z - 500 - rnd() * 150], [side > 0 ? x0 + wdt : x0, top, z], rnd() < 0.3 ? COLORS.glass : COLORS.roofSide, { kind: 'building', far: true });
+        }
+      }
+      box([fx - 4000, B - 20, -20000], [fx + 4000, B, 1000], COLORS.street, { kind: 'street' });
+      world.addTrigger([fx - 4000, B - 2000, -9200], [fx + 4000, -1000, 1000], { type: 'kill', course: 'freerun' });
+      world.addTrigger([fx - 4000, B - 2000, -20000], [fx + 4000, -2200, -9200], { type: 'kill', course: 'freerun' });
+      courses.freerun = { name: 'Freerun', type: 'Parkour', difficulty: 5, color: 0xff4f3a,
+        desc: 'A long rooftop run that chains everything: vaults, a long wallrun, a three-wall shaft, a slide into a surf ramp and two climbs.',
+        spawn: { pos: [fx, 0, -150], yaw: 0 }, stages: cps.length + 1 };
+    }
+
+    // ------------------------------------------------------------ city kit
+    // Long parkour runs are laid out in legs. Each leg has its own frame so a
+    // run can turn corners: u is across (right +), v is forward, y is up.
+    // Everything placed through a leg reserves its footprint, so the skyline
+    // filler never drops a building into the route or its gaps.
+    function cityKit(course, B) {
+      const DIRS = [[0, -1], [1, 0], [0, 1], [-1, 0]];
+      const reserved = [];
+      const legs = [];
+      function leg(ox, oz, h) {
+        const f = DIRS[h], r = DIRS[(h + 1) % 4];
+        const at = (u, v) => [ox + r[0] * u + f[0] * v, oz + r[1] * u + f[1] * v];
+        const rect = (u0, u1, v0, v1) => {
+          const a = at(u0, v0), b = at(u1, v1);
+          return [Math.min(a[0], b[0]), Math.min(a[1], b[1]), Math.max(a[0], b[0]), Math.max(a[1], b[1])];
+        };
+        const L = {
+          ox, oz, h, yaw: Math.atan2(-f[0], -f[1]), at,
+          local: (x, z) => [(x - ox) * r[0] + (z - oz) * r[1], (x - ox) * f[0] + (z - oz) * f[1]],
+          reserve(u0, u1, v0, v1) { reserved.push(rect(u0, u1, v0, v1)); },
+          box(u0, u1, y0, y1, v0, v1, color, extra) {
+            const q = rect(u0, u1, v0, v1);
+            reserved.push(q);
+            return world.addBox([q[0], y0, q[1]], [q[2], y1, q[3]], Object.assign({ color }, extra));
+          },
+          roof(u0, u1, v0, v1, top, color) { return L.box(u0, u1, B, top, v0, v1, color || COLORS.roof, { kind: 'building' }); },
+          red(u0, u1, y0, y1, v0, v1) { return L.box(u0, u1, y0, y1, v0, v1, COLORS.route, { kind: 'route' }); },
+          // a roof that falls from y0 at v0 to y1 at v1, for slides
+          slope(u0, u1, v0, v1, y0, y1) {
+            const c = (u, v, y) => { const p = at(u, v); return [p[0], y, p[1]]; };
+            const a = c(u0, v0, y0), b = c(u1, v0, y0), cc = c(u1, v1, y1), d = c(u0, v1, y1);
+            const a2 = c(u0, v0, B), b2 = c(u1, v0, B), c2 = c(u1, v1, B), d2 = c(u0, v1, B);
+            reserved.push(rect(u0, u1, v0, v1));
+            return world.addHull([[a, b, cc, d], [a2, b2, c2, d2], [a, b, b2, a2], [b, cc, c2, b2], [cc, d, d2, c2], [d, a, a2, d2]],
+              { color: COLORS.roof, kind: 'building' });
+          },
+          trigger(u0, u1, y0, y1, v0, v1, data) {
+            const q = rect(u0, u1, v0, v1);
+            return world.addTrigger([q[0], y0, q[1]], [q[2], y1, q[3]], Object.assign({ course }, data));
+          },
+          spawn(u, y, v) { const p = at(u, v); return { pos: [p[0], y, p[1]], yaw: L.yaw }; },
+        };
+        legs.push(L);
+        return L;
+      }
+      // fill the rest of a rectangle with city blocks around the route
+      function skyline(x0, z0, x1, z1, lo, hi, seed, street = true) {
+        const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
+        const hits = (a) => reserved.some(q => a[0] < q[2] + 160 && a[2] > q[0] - 160 && a[1] < q[3] + 160 && a[3] > q[1] - 160);
+        for (let x = x0; x < x1; x += 760) {
+          for (let z = z0; z < z1; z += 760) {
+            const w = 380 + rnd() * 320, d = 380 + rnd() * 320;
+            const ax = x + rnd() * (700 - w), az = z + rnd() * (700 - d);
+            const a = [ax, az, ax + w, az + d];
+            const top = lo + rnd() * (hi - lo), glass = rnd() < 0.3;
+            if (hits(a)) continue;
+            world.addBox([a[0], B, a[1]], [a[2], top, a[3]], { color: glass ? COLORS.glass : COLORS.roofSide, kind: 'building', far: true });
+          }
+        }
+        if (street) world.addBox([x0 - 2000, B - 20, z0 - 2000], [x1 + 2000, B, z1 + 2000], { color: COLORS.street, kind: 'street' });
+      }
+      return { leg, legs, skyline };
+    }
+
+    // ------------------------------------------------------------ downtown (long parkour)
+    // A courier run across the city that turns three corners: rooftops, a
+    // billboard wallrun, through an office floor and over its atrium, up a
+    // scaffold and out along a crane jib, a slide down a pitched roof, then
+    // wall-to-wall over an alley to the finish.
+    {
+      const B = -2400, kit = cityKit('downtown', B);
+      const CRANE = 0xf2b630;
+      // leg 1: south to north (-Z) over three roofs to a corner
+      const L1 = kit.leg(60000, 0, 0);
+      L1.roof(-500, 500, 0, 1400, 0);
+      L1.red(-200, -40, 0, 46, 500, 560); L1.red(80, 240, 0, 40, 540, 600);   // AC units to vault
+      L1.red(-500, 500, 60, 100, 950, 990);                                   // pipe: slide under
+      L1.box(-520, -500, 0, 100, 950, 990, COLORS.hubTrim, {}); L1.box(500, 520, 0, 100, 950, 990, COLORS.hubTrim, {});
+      L1.roof(-500, 500, 1640, 2600, -60);
+      L1.red(-500, 500, -60, -20, 2000, 2030);                                // knee wall
+      L1.roof(-500, 1000, 2800, 4000, -360);                                  // drop onto the corner roof
+      L1.box(-500, 1000, -360, -310, 3960, 4000, COLORS.roofSide, { kind: 'parapet' });
+      L1.reserve(-600, 1100, 0, 4100);
+      // leg 2: turn right (east), billboard over the street, into the office
+      const L2 = kit.leg(...L1.at(400, 3500), 1);
+      L2.red(-150, 150, -360, -316, 300, 340);
+      L2.red(-440, -400, -1000, -120, 520, 1150);                             // billboard (left)
+      L2.box(-432, -408, B, -1000, 600, 630, COLORS.hubTrim, {}); L2.box(-432, -408, B, -1000, 1080, 1110, COLORS.hubTrim, {});
+      L2.roof(-600, 600, 1100, 2300, -300);
+      const GL = COLORS.glass;
+      // the office: floor at -120, ceiling at 110, a lightwell across the middle
+      L2.roof(-600, 600, 2300, 3300, -120);
+      L2.roof(-600, 600, 3700, 4000, -120);
+      L2.box(-560, 560, 150, 160, 2340, 3960, COLORS.hub, { kind: 'interior' });       // ceiling
+      L2.box(-600, 600, 160, 760, 2300, 4000, GL, { kind: 'building' });
+      L2.box(-600, -200, -120, 160, 2300, 2340, GL, { kind: 'building' }); L2.box(200, 600, -120, 160, 2300, 2340, GL, { kind: 'building' });
+      L2.box(-600, -300, -120, 160, 3960, 4000, GL, { kind: 'building' });
+      L2.box(-600, -560, -120, 160, 2340, 3960, GL, { kind: 'building' }); L2.box(560, 600, -1200, 160, 2340, 3960, GL, { kind: 'building' });
+      L2.red(-140, 140, -300, -120, 2296, 2300);                              // climb in through the window
+      L2.red(-560, 560, -120, -78, 2600, 2650);                               // desks to vault
+      L2.box(-280, -240, -120, 160, 2780, 2820, COLORS.hubTrim, { kind: 'interior' }); L2.box(240, 280, -120, 160, 2780, 2820, COLORS.hubTrim, { kind: 'interior' });
+      L2.red(-560, 560, -60, 160, 2950, 2990);                                // half-shut shutter: slide
+      L2.red(540, 560, -400, 160, 3250, 3750);                                // wallrun panel over the lightwell
+      L2.trigger(-560, 560, -1300, -500, 3300, 3700, { type: 'kill' });
+      L2.roof(-1000, 500, 4220, 5500, -500);                                  // corner roof
+      L2.reserve(-1100, 700, 0, 5600);
+      // leg 3: turn left (north), scaffold, crane jib, pitched roof
+      const L3 = kit.leg(...L2.at(0, 4900), 0);
+      const SC = COLORS.hubTrim;
+      L3.roof(-300, 300, 1000, 1400, -320, SC); L3.red(-140, 140, -500, -320, 996, 1000);
+      L3.roof(-300, 300, 1400, 1800, -140, SC); L3.red(-140, 140, -320, -140, 1396, 1400);
+      L3.roof(-300, 300, 1800, 2200, 40, SC); L3.red(-140, 140, -140, 40, 1796, 1800);
+      L3.box(-30, 30, 0, 40, 2200, 3500, CRANE, { kind: 'crane' });         // the jib
+      L3.box(-50, 50, B, 0, 2560, 2660, CRANE, { kind: 'crane' });          // mast
+      L3.box(40, 120, -110, 0, 2560, 2660, CRANE, { kind: 'crane' });       // cab under the jib
+      L3.roof(-500, 500, 3700, 4400, -500);
+      L3.slope(-500, 500, 4400, 5400, -500, -850);
+      L3.roof(-500, 1200, 5730, 7000, -950);                                  // corner roof
+      L3.reserve(-600, 1300, 900, 7100);
+      // leg 4: turn right (east), wall to wall over the alley, the finish
+      const L4 = kit.leg(...L3.at(500, 6400), 1);
+      L4.red(-220, -180, -1350, -690, 800, 1340);
+      L4.red(180, 220, -1450, -690, 1200, 1800);
+      L4.roof(-500, 500, 1850, 2800, -990);
+      L4.red(-200, -40, -990, -946, 2200, 2260); L4.red(60, 220, -990, -950, 2350, 2410);
+      L4.roof(-600, 600, 3100, 4100, -1300);
+      L4.red(-300, 300, -1300, -1296, 3500, 3900);                            // finish pad
+      L4.trigger(-600, 600, -1300, -1100, 3450, 4100, { type: 'end' });
+      L4.box(-500, 500, B, 2600, 4300, 5300, COLORS.glass, { kind: 'building' }); // the tower you were running at
+      L4.reserve(-600, 600, 0, 4200);
+      L1.trigger(-500, 500, 0, 200, 0, 350, { type: 'start' });
+      const cps = [L2.spawn(0, -300, 1500), L2.spawn(0, -500, 4500), L3.spawn(0, -950, 5900), L4.spawn(0, -990, 2000)];
+      cps.forEach((spawn, i) => {
+        const L = [L2, L2, L3, L4][i];
+        const [u, v] = L.local(spawn.pos[0], spawn.pos[2]);
+        L.trigger(-500, 500, spawn.pos[1], spawn.pos[1] + 200, v - 100, v + 200, { type: 'checkpoint', idx: i + 1, spawn });
+      });
+      // falling between roofs: each leg's own floor of death, then a catch-all
+      L1.trigger(-600, 1100, -2000, -900, 0, 4100, { type: 'kill' });
+      L2.trigger(-1100, 700, -2000, -1000, 400, 4300, { type: 'kill' });
+      L3.trigger(-600, 1300, -2000, -1500, 1000, 7100, { type: 'kill' });
+      L4.trigger(-600, 600, -2200, -1800, 600, 4200, { type: 'kill' });
+      kit.skyline(57400, -12600, 72000, 2600, -1400, 900, 23);
+      courses.downtown = { name: 'Downtown', type: 'Parkour', difficulty: 4, color: 0x2f7de1,
+        desc: 'A courier run that turns three corners: a billboard wallrun, through an office and over its lightwell, up a scaffold, out along a crane and down to the finish.',
+        spawn: L1.spawn(0, 0, 150), stages: cps.length + 1, legs: kit.legs.map(L => ({ ox: L.ox, oz: L.oz, h: L.h })) };
+    }
+
+    // ------------------------------------------------------------ tutorial
+    // A corridor of stations, one mechanic each. Every station has a hint
+    // zone (which is also its checkpoint) and the obstacle that needs the move.
+    {
+      const tx = 30000, WALL = COLORS.hubTrim, FLOOR = COLORS.hub;
+      const floor = (z0, z1, top = 0, hw = 300) => box([tx - hw, top - 400, z1], [tx + hw, top, z0], FLOOR, { kind: 'floor' });
+      const sides = (z0, z1, bottom, top, hw = 300) => {
+        box([tx - hw - 40, bottom, z1], [tx - hw, top, z0], WALL, { kind: 'wall' });
+        box([tx + hw, bottom, z1], [tx + hw + 40, top, z0], WALL, { kind: 'wall' });
+      };
+      const steps = [];
+      const hint = (z0, z1, y, spawnZ, data) => {
+        const idx = steps.length;
+        const spawn = { pos: [tx, y, spawnZ], yaw: 0 };
+        steps.push(Object.assign({ spawn }, data));
+        world.addTrigger([tx - 700, y - 50, z1], [tx + 700, y + 400, z0], Object.assign({ type: 'hint', course: 'tutorial', idx, spawn }, data));
+      };
+
+      box([tx - 340, -400, 0], [tx + 340, 300, 40], WALL, { kind: 'wall' }); // back wall
+      // 1 move
+      floor(0, -900); sides(0, -900, -400, 260);
+      hint(0, -500, 0, -150, { title: 'Move', body: 'WASD moves, the mouse looks. Head down the corridor.', keys: ['W', 'A', 'S', 'D'], done: 'move' });
+      // 2 jump the gap
+      hint(-500, -900, 0, -600, { title: 'Jump', body: 'Press Space to jump the gap. Fall in and you go back to the last step.', keys: ['Space'], done: 'jump' });
+      // 3 bhop across a broken floor
+      floor(-1100, -1300); floor(-1420, -1620); floor(-1740, -1940); floor(-2060, -2260);
+      sides(-900, -2380, -400, 260);
+      hint(-1100, -2260, 0, -1150, { title: 'Bunnyhop', body: 'Hold Space through the landings. You jump again the moment you touch down, so you never lose speed to ground friction.', keys: ['Hold Space'], done: 'bhop' });
+      // 4 air strafe room with a speed gate
+      floor(-2380, -4840, 0, 700); sides(-2380, -4840, -400, 320, 700);
+      box([tx - 700, -400, -2420], [tx - 300, 320, -2380], WALL, {});
+      box([tx + 300, -400, -2420], [tx + 700, 320, -2380], WALL, {});
+      box([tx - 700, 0, -4840], [tx + 700, 320, -4800], COLORS.route, { door: 'strafe', kind: 'door' });
+      hint(-2420, -4800, 0, -2500, { title: 'Air strafe', body: 'Let go of W. In the air, hold D while turning the mouse right, then A while turning left. Smooth turns add speed. Reach 350 u/s to open the gate.', keys: ['A + mouse left', 'D + mouse right'], done: 'strafe' });
+      // 5 slide under the pipe
+      floor(-4840, -6100); sides(-4840, -6100, -400, 260);
+      box([tx - 300, 60, -5560], [tx + 300, 100, -5520], COLORS.route, { kind: 'route' });
+      box([tx - 300, 100, -5560], [tx + 300, 260, -5520], WALL, {});
+      hint(-4840, -5500, 0, -4950, { title: 'Slide', body: 'Run, then press Shift or C to slide under the pipe. Holding crouch as you land from a jump also slides.', keys: ['Shift', 'C'], done: 'slide' });
+      // 6 vault
+      box([tx - 300, 0, -6380], [tx + 300, 44, -6340], COLORS.route, { kind: 'route' });
+      floor(-6100, -7000); sides(-6100, -7000, -400, 300);
+      hint(-6100, -6340, 0, -6150, { title: 'Vault', body: 'Run at the low wall and press Space just before it. You hop over without losing speed.', keys: ['W', 'Space'], done: 'vault' });
+      // 7 climb and mantle onto a higher floor
+      floor(-7000, -8000, 160); sides(-7000, -8000, -400, 460);
+      box([tx - 120, 0, -7000], [tx + 120, 160, -6997], COLORS.route, { kind: 'route', nonsolid: true });
+      hint(-6400, -7000, 0, -6500, { title: 'Climb', body: 'Run straight at the wall and press Space to run up it. Keep holding W to pull yourself onto the ledge.', keys: ['W', 'Space'], done: 'mantle' });
+      // 8 wallrun across a gap
+      sides(-8000, -8600, -400, 520);
+      floor(-8600, -9500, 160); sides(-8600, -9500, -400, 460);
+      hint(-7100, -8000, 160, -7200, { title: 'Wallrun', body: 'Run along a wall at a slight angle and jump toward it while holding W to run on it. Press Space again to kick off.', keys: ['W', 'Space'], done: 'wallrun' });
+      // 9 surf
+      world.addSweep([[tx - 320, 100 - 554], [tx + 320, 100 - 554], [tx, 100]], -9580, -12800, -340, { color: COLORS.surf[0], kind: 'ramp' });
+      hint(-8600, -9500, 160, -8700, { title: 'Surf', body: 'Jump onto the ramp. Hold A or D toward it to ride the slope and keep W off. Aim a little down the ramp to go faster.', keys: ['A', 'D'], done: 'surf' });
+      box([tx - 900, -700, -14000], [tx + 900, -640, -13000], COLORS.surfPad, { kind: 'pad' });
+      world.addTrigger([tx - 900, -640, -14000], [tx + 900, -440, -13000], { type: 'end', course: 'tutorial' });
+      box([tx - 3000, -1260, -15000], [tx + 3000, -1200, 1000], COLORS.water, { nonsolid: true, water: true });
+      world.addTrigger([tx - 3000, -3000, -9500], [tx + 3000, -250, 1000], { type: 'kill', course: 'tutorial' });
+      world.addTrigger([tx - 3000, -3000, -15000], [tx + 3000, -1000, -9500], { type: 'kill', course: 'tutorial' });
+      world.addTrigger([tx - 300, 0, -400], [tx + 300, 200, 0], { type: 'start', course: 'tutorial' });
+      courses.tutorial = { name: 'Tutorial', type: 'Learn', difficulty: 0, color: 0x15191d, key: 'T', desc: 'Nine short stations: move, jump, bhop, air strafe, slide, vault, climb, wallrun and surf.', spawn: steps[0].spawn, stages: steps.length, steps };
+    }
+
+    // ------------------------------------------------------------ hub pads
+    const order = ['surf', 'bhop', 'roofs', 'canyon', 'stairway', 'crossover', 'downtown', 'cascade', 'spire', 'freerun'];
+    // first six in a row, the four advanced levels in a back row between them
+    order.forEach((name, i) => {
+      const back = i >= 6;
+      const x = back ? -450 + (i - 6) * 300 : -750 + i * 300, z = back ? -930 : -700;
+      const color = courses[name].color;
+      courses[name].key = String((i + 1) % 10);       // the tenth level is on 0
+      box([x - 90, 0, z - 90], [x + 90, 1, z + 90], color, { nonsolid: true, glow: true });
+      world.addTrigger([x - 90, 0, z - 90], [x + 90, 120, z + 90], { type: 'teleport', course: name });
+    });
+    box([-840, 0, -390], [-660, 1, -210], courses.tutorial.color, { nonsolid: true, glow: true });
+    world.addTrigger([-840, 0, -390], [-660, 120, -210], { type: 'teleport', course: 'tutorial' });
+
+    // global safety net
+    world.addTrigger([-1e6, -1e6, -1e6], [1e6, -4000, 1e6], { type: 'kill' });
+
+    return { world, courses, order, hubSpawn, COLORS };
+  }
+
+  root.StrafeMap = { buildMap };
+})(typeof window !== 'undefined' ? window : globalThis);
