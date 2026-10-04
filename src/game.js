@@ -275,11 +275,70 @@
     return 'concrete';
   }
 
+  // ------------------------------------------------------------ grounding
+  // Visual only: nothing here collides. Every level stands on something. A
+  // ground city spreads out far below, anything with nothing under it gets a
+  // column down to the ground, ramps get pylons, and water and lava sit in
+  // basins instead of hanging in the air.
+  const GROUND = -4000;
+  const deco = new P.World();
+  {
+    const POINT = { min: [0, 0, 0], max: [0, 0, 0] };
+    const below = (x, y, z) => { const t = world.trace([x, y, z], [x, GROUND, z], POINT); return t.fraction < 1 ? t.endpos[1] : null; };
+    const pools = world.brushes.filter(b => b.props.water || b.props.lava);
+    const poolBelow = (x, y, z) => { let top = null; for (const b of pools) if (x > b.min[0] && x < b.max[0] && z > b.min[2] && z < b.max[2] && b.max[1] < y) top = Math.max(top === null ? -1e9 : top, b.max[1]); return top; };
+    const isBox = (b) => b.faces.length === 6 && b.faces.every(f => Math.abs(f.n[0]) === 1 || Math.abs(f.n[1]) === 1 || Math.abs(f.n[2]) === 1);
+    const STAND = new Set(['pad', 'block', 'lane', 'floor', 'street', 'building', 'cliff', 'wall']);
+    const footprints = [];
+    for (const b of world.brushes) {
+      if (b.props.nonsolid && !(b.props.water || b.props.lava)) continue;
+      footprints.push([b.min[0], b.min[2], b.max[0], b.max[2]]);
+      if (b.min[1] <= GROUND + 1) continue;
+      const cx = (b.min[0] + b.max[0]) / 2, cz = (b.min[2] + b.max[2]) / 2;
+      if (b.props.water || b.props.lava) {
+        // a basin wall under the pool
+        deco.addBox([b.min[0], GROUND, b.min[2]], [b.max[0], b.min[1], b.max[2]], { color: b.props.lava ? 0x4a4038 : 0xb9c0c6, kind: b.props.lava ? 'cliff' : 'building' });
+        continue;
+      }
+      if (b.props.kind === 'ramp') {
+        // pylons along the ridge, down to whatever is below
+        const len = b.max[2] - b.min[2], n = Math.max(2, Math.round(len / 1400));
+        for (let i = 0; i <= n; i++) {
+          const z = b.min[2] + 200 + (len - 400) * i / n;
+          const up = world.trace([cx, GROUND, z], [cx, b.max[1] + 10, z], POINT);
+          if (up.fraction === 1 || up.brush !== b) continue;
+          const top = up.endpos[1];
+          const bot = Math.max(below(cx, top - 1, z) ?? GROUND, poolBelow(cx, top, z) ?? GROUND);
+          if (top - bot > 40) deco.addBox([cx - 60, bot, z - 60], [cx + 60, top, z + 60], { color: 0xa9b0b6, kind: 'wall' });
+        }
+        continue;
+      }
+      if (!STAND.has(b.props.kind) || !isBox(b)) continue;
+      // something solid under it already? then it is standing on that
+      const pts = [[cx, cz], [b.min[0] + 4, b.min[2] + 4], [b.max[0] - 4, b.max[2] - 4]];
+      if (pts.some(([x, z]) => below(x, b.min[1] - 1, z) !== null)) continue;
+      deco.addBox([b.min[0], GROUND, b.min[2]], [b.max[0], b.min[1], b.max[2]], { color: b.props.color, kind: b.props.kind === 'building' || b.props.kind === 'street' ? 'building' : b.props.kind });
+    }
+    // the ground, and a low city spread over it
+    deco.addBox([-160000, GROUND - 40, -160000], [160000, GROUND, 160000], { color: 0x5d646b, kind: 'street' });
+    let seed = 99;
+    const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
+    const clear = (a) => !footprints.some(q => a[0] < q[2] + 500 && a[2] > q[0] - 500 && a[1] < q[3] + 500 && a[3] > q[1] - 500);
+    for (let x = -80000; x < 90000; x += 2200) {
+      for (let z = -70000; z < 40000; z += 2200) {
+        const w = 700 + rnd() * 1100, d = 700 + rnd() * 1100, h = 250 + rnd() * rnd() * 2600;
+        const ax = x + rnd() * (2000 - w), az = z + rnd() * (2000 - d), glass = rnd() < 0.25;
+        const a = [ax, az, ax + w, az + d];
+        if (clear(a)) deco.addBox([a[0], GROUND, a[1]], [a[2], GROUND + h, a[3]], { color: glass ? 0x8fc4dd : 0xe4e2db, kind: 'building' });
+      }
+    }
+  }
+
   function buildGeometry(filter, bucketOf) {
     const out = {};
     const color = new THREE.Color();
     const get = (name) => out[name] || (out[name] = { pos: [], nor: [], uv: [], col: [], lines: [] });
-    for (const b of world.brushes) {
+    for (const b of world.brushes.concat(deco.brushes)) {
       if (!filter(b)) continue;
       color.setHex(b.props.color || 0xffffff).convertSRGBToLinear();
       const y0 = b.min[1], hgt = Math.max(1, b.max[1] - b.min[1]);
