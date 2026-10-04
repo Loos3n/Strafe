@@ -11,6 +11,8 @@ A browser prototype that mixes Mirror's Edge parkour with CS surf and bhop movem
 - `src/audio.js` synthesizes all sound with Web Audio: footsteps, jumps, landings, wind/surf/slide loops tied to speed, and a generative score whose filter opens up with speed.
 - `src/game.js` is rendering, input (pointer lock, CS sensitivity scale), HUD, timers and the main menu with live level previews.
 
+Play: open `dist/index.html` in a browser (it loads Three.js from cdnjs, so it needs a connection). No install step; Node is only needed to build and run the tests.
+
 Build: `node build.js` writes `dist/index.html`.
 Tests: `node test/sim.js` (movement checks), `node test/surfrun.js` (bot surfs the whole surf course),
 `node test/w2w.js` (bot chains the rooftop wall-to-wall section), `node test/levels.js` (bots finish Canyon, Crossover and Stairway), `node test/tutorial.js` (bot clears every tutorial station), `node test/advanced.js [level] [checkpoint]` (bots finish Cascade, Spire and Freerun). `node test/city.js [level] [checkpoint]` (bots finish Rooftops and Downtown).
