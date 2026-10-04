@@ -48,7 +48,7 @@
     { course: 'freerun', title: 'Heat', stars: [56, 80],
       brief: 'Mercer: "They are on you, Kite. Blues on the roofs behind you. Lose them across the old district. Every wall, every gap. Don\'t look back."',
       debrief: 'You lose the last of them in the ventilation stacks. Juno on comms: "The newsroom will run the story if we get the originals to the Spire by morning."' },
-    { course: 'cascade', title: 'Floodgates', stars: [25, 36],
+    { course: 'cascade', title: 'Floodgates', stars: [22, 32],
       brief: 'Mercer: "Vale opened the floodgates to cut the city in half. The only way north is the overflow ramps. Nine of them. Keep your line."',
       debrief: 'The water roars under you the whole way down. On the far side the Spire is lit up like a beacon, and so are the Blue patrols around it.' },
     { course: 'spire', title: 'The Spire', stars: [55, 80],
@@ -64,9 +64,9 @@
   // Levels whose layout changed enough that old times no longer compare. Each
   // reset drops their times and ghosts once; stars already earned stay. The
   // suffix is the leaderboard field they post under now.
-  const REBUILT = { surf: '_v3', bhop: '_v2', canyon: '_v3', stairway: '_v2', crossover: '_v3', cascade: '_v3' };
+  const REBUILT = { surf: '_v3', bhop: '_v2', canyon: '_v3', stairway: '_v2', crossover: '_v3', cascade: '_v4' };
   const RESETS = [['strafe.rebuild.v2', ['surf', 'bhop', 'canyon', 'stairway', 'crossover']],
-    ['strafe.rebuild.v3', ['surf', 'canyon', 'crossover', 'cascade']]];
+    ['strafe.rebuild.v3', ['surf', 'canyon', 'crossover', 'cascade']], ['strafe.rebuild.v4', ['cascade']]];
   for (const [flag, list] of RESETS) {
     if (load(flag)) continue;
     for (const c of list) {

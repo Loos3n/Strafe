@@ -118,33 +118,28 @@
 
 
     // ------------------------------------------------------------ cascade (long surf)
-    // Thirteen short ramps that flip from side to side across wide gaps, so
-    // every transfer is a long air strafe that has to keep its height. Two
-    // ramps climb, two steep ones build speed for them, and the faces are
-    // mostly the narrow 65 degree kind. Two checkpoints, each on a long steep
-    // ramp you drop onto from a high ledge.
+    // Nine narrow ramps that flip from side to side across wide gaps, so every
+    // transfer is a long air strafe that has to keep its height. Two ramps
+    // climb right before the longest gaps. Two checkpoints, each on a long
+    // steep ramp you drop onto from a high ledge.
     {
       const cx = -26000;
       const R60 = [320, 554], R55 = [380, 543], R65 = [280, 600];
       const defs = [
-        { dx: 0, len: 4200, drop: 1300, face: R60, gap: 1000 },   // a long steep start for speed
-        { dx: -420, len: 2600, drop: 450, face: R65, gap: 1200 },
-        { dx: 450, len: 2400, drop: 400, face: R65, gap: 1300 },
-        { dx: -450, len: 2400, drop: 400, face: R65, gap: 1300},
-        { dx: 0, len: 3400, drop: 1500, face: R55, gap: 1000, cp: true },   // steep: build speed (checkpoint)
-        { dx: 520, len: 2600, drop: -250, face: R60, gap: 1500, fall: 0.3 }, // climbs
-        { dx: -490, len: 2200, drop: 350, face: R65, gap: 1400 },
-        { dx: 480, len: 2200, drop: 350, face: R65, gap: 1400 },
-        { dx: -200, len: 3400, drop: 1500, face: R55, gap: 1000, cp: true }, // steep again (checkpoint)
-        { dx: -600, len: 2600, drop: -300, face: R60, gap: 1600, fall: 0.3 }, // climbs
-        { dx: 370, len: 2000, drop: 400, face: R65, gap: 1500 },
-        { dx: -380, len: 2000, drop: 400, face: R65, gap: 1500 },
-        { dx: 0, len: 3000, drop: 500, face: R60, gap: 1200 },
+        { dx: 0, len: 4000, drop: 900, face: R60, gap: 1000 },
+        { dx: -450, len: 3000, drop: 450, face: R65, gap: 1300 },
+        { dx: 450, len: 3000, drop: 450, face: R65, gap: 1400 },
+        { dx: 0, len: 3400, drop: 1500, face: R55, gap: 1000, cp: true },  // steep: build speed (checkpoint)
+        { dx: 520, len: 2600, drop: -250, face: R60, gap: 1500, fall: 0.3 }, // climbs into a long gap
+        { dx: -450, len: 2800, drop: 450, face: R65, gap: 1400 },
+        { dx: -100, len: 3400, drop: 1500, face: R55, gap: 1000, cp: true }, // steep again (checkpoint)
+        { dx: -550, len: 2600, drop: -250, face: R60, gap: 1500, fall: 0.3 }, // climbs
+        { dx: 400, len: 3000, drop: 500, face: R65, gap: 1200 },
       ];
       // the next ramp sits lower by what you fall crossing the gap, give or take
       const STAGE_LIFT = 2100, STAGE_OUT = 200;
       const fall = (d) => d.gap * (d.fall || 0.6);
-      let apex = 14000, z = 600;
+      let apex = 13000, z = 600;
       const spawns = [];
       defs.forEach((d, i) => {
         const rx = cx + d.dx, [W, H] = d.face;
@@ -174,8 +169,8 @@
       const zEnd = last.z1 - 3000;
       box([cx - 4000, -260, zEnd], [cx + 4000, -200, 2500], COLORS.water, { nonsolid: true, water: true });
       world.addTrigger([cx - 4000, -3000, zEnd], [cx + 4000, fy - 400, 2500], { type: 'kill', course: 'cascade' });
-      courses.cascade = { preview: { pos: [cx - 900, 14200, 1400], yaw: -0.25 }, name: 'Cascade', type: 'Surf', difficulty: 5, color: 0x2bd1a8,
-        desc: 'Thirteen narrow ramps that switch sides across wide gaps, with two climbs that bleed your speed. Only two checkpoints, each a drop from a high ledge.',
+      courses.cascade = { preview: { pos: [cx - 900, 13200, 1400], yaw: -0.25 }, name: 'Cascade', type: 'Surf', difficulty: 5, color: 0x2bd1a8,
+        desc: 'Nine narrow ramps with long jumps between them that switch sides. Two ramps climb into the widest gaps. Only two checkpoints, each a drop from a high ledge.',
         spawn: spawns[0], stages: spawns.length, ramps: defs };
     }
 
