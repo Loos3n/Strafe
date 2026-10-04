@@ -346,7 +346,7 @@
         const w = 700 + rnd() * 1100, d = 700 + rnd() * 1100, h = 250 + rnd() * rnd() * 2600;
         const ax = x + rnd() * (2000 - w), az = z + rnd() * (2000 - d), glass = rnd() < 0.25;
         const a = [ax, az, ax + w, az + d];
-        if (clear(a)) deco.addBox([a[0], GROUND, a[1]], [a[2], GROUND + h, a[3]], { color: glass ? 0x8fc4dd : 0xe4e2db, kind: 'building' });
+        if (clear(a)) deco.addBox([a[0], GROUND, a[1]], [a[2], GROUND + h, a[3]], { color: glass ? 0x8fc4dd : 0xe4e2db, kind: 'building', lowcity: !glass });
       }
     }
   }
@@ -415,7 +415,8 @@
 
   const animated = { water: null, lava: null };
   {
-    const solid = buildGeometry(b => !b.props.nonsolid && !b.props.door, bucketFor);
+    // the low city's plain blocks are drawn as models instead (see models below)
+    const solid = buildGeometry(b => !b.props.nonsolid && !b.props.door && !b.props.lowcity, bucketFor);
     const edgeMat = new THREE.LineBasicMaterial({ color: 0x1b2530, transparent: true, opacity: 0.1 });
     for (const [name, part] of Object.entries(solid)) {
       const mesh = new THREE.Mesh(part.g, MATS[name]);
@@ -464,6 +465,7 @@
     scene.add(new THREE.Mesh(glow.g, new THREE.MeshBasicMaterial({ vertexColors: true, transparent: true, opacity: 0.9 })));
   }
 
+  const roofTanks = []; // water towers on skyline roofs, placed once the models load
   // ------------------------------------------------------------ visual-only props
   // Cornices on buildings, and rooftop clutter on the skyline buildings you
   // can't reach on the route. None of this collides.
@@ -471,10 +473,8 @@
     const corniceMat = std({ map: TEX.concrete, color: 0xbfc3c6, vertexColors: false });
     const propMat = std({ map: TEX.paint, color: 0xd6d8d6, vertexColors: false, roughness: 0.6 });
     const darkMat = std({ color: 0x59616a, vertexColors: false, roughness: 0.7 });
-    const tankMat = std({ map: TEX.rock, color: 0xb38d6a, vertexColors: false });
     const unitBox = new THREE.BoxGeometry(1, 1, 1);
     const tankGeo = new THREE.CylinderGeometry(1, 1, 1, 18);
-    const coneGeo = new THREE.ConeGeometry(1, 1, 18);
     const legGeo = new THREE.CylinderGeometry(1, 1, 1, 6);
     // pieces are baked into one geometry per material so the props cost a few draw calls
     const batches = new Map();
@@ -501,10 +501,7 @@
         const r = rand();
         if (r < 0.35) {
           // water tank on legs
-          const rad = 34 + rand() * 18, h = 70 + rand() * 30;
-          for (const [lx, lz] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) add(legGeo, darkMat, px + lx * rad * 0.7, y1 + 25, pz + lz * rad * 0.7, 3, 50, 3);
-          add(tankGeo, tankMat, px, y1 + 50 + h / 2, pz, rad, h, rad);
-          add(coneGeo, darkMat, px, y1 + 50 + h + 12, pz, rad * 1.05, 24, rad * 1.05);
+          roofTanks.push([px, y1, pz, 150 + rand() * 60, rand()]);
         } else if (r < 0.8) {
           // AC unit with a fan grille
           const sx = 70 + rand() * 60, sz = 50 + rand() * 50, sy = 36 + rand() * 20;
@@ -538,6 +535,223 @@
       mesh.castShadow = mesh.receiveShadow = true;
       scene.add(mesh);
     }
+  }
+
+  // ------------------------------------------------------------ models
+  // Real models over the code-built city: KayKit buildings for the low city,
+  // water towers on skyline roofs, cars, lamps and street clutter on the
+  // streets, and an animated runner for the ghost and the Cosmetics preview.
+  // All of it is visual; collision stays on the level geometry. If the models
+  // can't load, the low city falls back to its plain blocks.
+  const models = (() => {
+    const A = window.STRAFE_ASSETS || {};
+    const parse = (k) => new Promise((res) => {
+      try {
+        if (!A[k] || !THREE.GLTFLoader) return res(null);
+        const raw = atob(A[k]), bin = new Uint8Array(raw.length);
+        for (let i = 0; i < raw.length; i++) bin[i] = raw.charCodeAt(i);
+        new THREE.GLTFLoader().parse(bin.buffer, '', res, (e) => { console.warn('model', k, e); res(null); });
+      } catch (e) { console.warn('model', k, e); res(null); }
+    });
+    return { city: parse('city'), runner: parse('runner') };
+  })();
+  // Instanced copies, grouped in square cells. A cell is drawn only when it
+  // is in view and within its detail range; past that, buildings swap to the
+  // plain blocks they replace and small props are dropped.
+  const modelChunks = [];
+  const CHUNK = 9000;
+  const cellOf = (x, z) => Math.floor(x / CHUNK) + '|' + Math.floor(z / CHUNK);
+  function placeModels(kit, list, near, altFor) {
+    const cells = new Map();
+    for (const it of list) {
+      const key = cellOf(it.x, it.z);
+      if (!cells.has(key)) cells.set(key, new Map());
+      const byName = cells.get(key);
+      if (!byName.has(it.name)) byName.set(it.name, []);
+      byName.get(it.name).push(it);
+    }
+    const M = new THREE.Matrix4(), T = new THREE.Matrix4(), q = new THREE.Quaternion(), up = new THREE.Vector3(0, 1, 0);
+    for (const [key, byName] of cells) {
+      const g = new THREE.Group(), pts = [];
+      let pad = 0;
+      for (const [name, items] of byName) {
+        const k = kit[name];
+        if (!k) continue;
+        for (const part of k.parts) {
+          const mesh = new THREE.InstancedMesh(part.geo, part.mat, items.length);
+          items.forEach((it, i) => {
+            q.setFromAxisAngle(up, it.rot || 0);
+            M.compose(new THREE.Vector3(it.x, it.y, it.z), q, new THREE.Vector3(it.sx, it.sy, it.sz));
+            mesh.setMatrixAt(i, T.multiplyMatrices(M, part.m));
+          });
+          mesh.frustumCulled = false; // the cell is culled as a whole
+          mesh.castShadow = !!k.shadow; mesh.receiveShadow = true;
+          g.add(mesh);
+        }
+        for (const it of items) {
+          pts.push(new THREE.Vector3(it.x, it.y, it.z), new THREE.Vector3(it.x, it.y + it.sy * k.size.y, it.z));
+          pad = Math.max(pad, Math.max(k.size.x * it.sx, k.size.z * it.sz) * 0.75);
+        }
+      }
+      const sphere = new THREE.Sphere().setFromPoints(pts);
+      sphere.radius += pad;
+      g.visible = false; scene.add(g);
+      const alt = altFor ? altFor(key) : null;
+      if (alt) { alt.visible = false; scene.add(alt); }
+      modelChunks.push({ g, alt, sphere, near });
+    }
+  }
+  const chunkFrustum = new THREE.Frustum(), chunkPV = new THREE.Matrix4();
+  function updateModelChunks() {
+    chunkPV.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse);
+    chunkFrustum.setFromProjectionMatrix(chunkPV);
+    const far = scene.fog.far + 2000;
+    for (const c of modelChunks) {
+      const d = c.sphere.distanceToPoint(camera.position);
+      const seen = d < far && chunkFrustum.intersectsSphere(c.sphere);
+      c.g.visible = seen && d < c.near;
+      if (c.alt) c.alt.visible = seen && d >= c.near;
+    }
+  }
+  // each top-level node in the city file is one model, measured in its own space
+  function cityKit(gltf) {
+    const kit = {};
+    gltf.scene.updateMatrixWorld(true);
+    for (const root of gltf.scene.children) {
+      const inv = new THREE.Matrix4().copy(root.matrixWorld).invert();
+      const parts = [], box = new THREE.Box3();
+      root.traverse(o => {
+        if (!o.isMesh) return;
+        const m = new THREE.Matrix4().multiplyMatrices(inv, o.matrixWorld);
+        if (!o.geometry.boundingBox) o.geometry.computeBoundingBox();
+        box.union(o.geometry.boundingBox.clone().applyMatrix4(m));
+        o.material.envMap = envMap; o.material.envMapIntensity = 0.4;
+        parts.push({ geo: o.geometry, mat: o.material, m });
+      });
+      // stand every model on y = 0, centred on its footprint
+      const c = box.getCenter(new THREE.Vector3());
+      const shift = new THREE.Matrix4().makeTranslation(-c.x, -box.min.y, -c.z);
+      for (const p of parts) p.m.premultiply(shift);
+      kit[root.name] = { parts, size: box.getSize(new THREE.Vector3()) };
+    }
+    return kit;
+  }
+  models.city.then((gltf) => {
+    if (!gltf) {
+      // no models: draw the low city as plain blocks after all
+      const low = buildGeometry(b => !!b.props.lowcity, bucketFor);
+      for (const [name, part] of Object.entries(low)) { const m = new THREE.Mesh(part.g, MATS[name]); m.receiveShadow = true; scene.add(m); }
+      return;
+    }
+    const kit = cityKit(gltf);
+    let seed = 4242;
+    const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
+    const list = [], tanks = [], street = [];
+    // the low city: the building whose proportions fit the block best, scaled to it
+    const towers = Object.keys(kit).filter(n => /^building_[A-H]$/.test(n));
+    for (const b of deco.brushes) {
+      if (!b.props.lowcity) continue;
+      const w = b.max[0] - b.min[0], d = b.max[2] - b.min[2], h = b.max[1] - b.min[1];
+      const turn = rnd() < 0.5;
+      const fw = turn ? d : w, fd = turn ? w : d;
+      let best = null, err = Infinity;
+      for (const n of towers) {
+        const z = kit[n].size, s = Math.min(fw / z.x, fd / z.z);
+        const e = Math.abs(Math.log(h / (z.y * s))) + rnd() * 0.25;
+        if (e < err) { err = e; best = n; }
+      }
+      const z = kit[best].size, s = Math.min(fw / z.x, fd / z.z);
+      const sy = Math.min(s * 1.5, Math.max(s * 0.75, h / z.y));
+      list.push({ name: best, x: (b.min[0] + b.max[0]) / 2, y: b.min[1], z: (b.min[2] + b.max[2]) / 2, sx: s, sy, sz: s, rot: (turn ? Math.PI / 2 : 0) + (rnd() < 0.5 ? Math.PI : 0) });
+    }
+    // water towers on the skyline roofs
+    for (const [x, y, z, h, r] of roofTanks) {
+      const k = kit.watertower; if (!k) break;
+      const s = h / k.size.y;
+      tanks.push({ name: 'watertower', x, y, z, sx: s, sy: s, sz: s, rot: r * Math.PI * 2 });
+    }
+    // street level: parked cars, lamps, bins and the like where nothing is built
+    const sizes = { car_sedan: 190, car_taxi: 190, car_hatchback: 170, streetlight: 330, trafficlight_A: 330, dumpster: 110, bench: 90, firehydrant: 40, trash_A: 46, box_A: 40, bush: 70 };
+    const pick = [['car_sedan', 3], ['car_taxi', 2], ['car_hatchback', 3], ['streetlight', 3], ['trafficlight_A', 1], ['dumpster', 2], ['bench', 1], ['firehydrant', 1], ['trash_A', 2], ['box_A', 1], ['bush', 2]];
+    const total = pick.reduce((n, p) => n + p[1], 0);
+    const pools = world.brushes.filter(b => b.props.water || b.props.lava);
+    const POINT = { min: [0, 0, 0], max: [0, 0, 0] };
+    for (const b of world.brushes) {
+      if (b.props.kind !== 'street') continue;
+      const top = b.max[1];
+      if (pools.some(p => p.max[1] >= top - 1 && p.min[0] < b.max[0] && p.max[0] > b.min[0] && p.min[2] < b.max[2] && p.max[2] > b.min[2])) continue;
+      for (let x = b.min[0] + 300; x < b.max[0] - 300; x += 620) {
+        for (let z = b.min[2] + 300; z < b.max[2] - 300; z += 620) {
+          if (rnd() < 0.45) continue;
+          const px = x + (rnd() - 0.5) * 300, pz = z + (rnd() - 0.5) * 300;
+          // clear sky over it, or at least room to stand under something
+          const tr = world.trace([px, top + 4, pz], [px, top + 420, pz], POINT);
+          if (tr.fraction < 1) continue;
+          let r = rnd() * total, name = pick[0][0];
+          for (const [n, wgt] of pick) { if ((r -= wgt) < 0) { name = n; break; } }
+          const k = kit[name]; if (!k) continue;
+          const s = sizes[name] / Math.max(k.size.x, k.size.y, k.size.z);
+          street.push({ name, x: px, y: top, z: pz, sx: s, sy: s, sz: s, rot: Math.floor(rnd() * 4) * Math.PI / 2 + (name.startsWith('car') ? 0 : rnd() * 0.3) });
+        }
+      }
+    }
+    for (const n of Object.keys(kit)) if (/^car/.test(n)) kit[n].shadow = true;
+    // far low-city cells fall back to their plain blocks, built per cell
+    const lowByCell = new Map();
+    for (const b of deco.brushes) if (b.props.lowcity) {
+      const key = cellOf((b.min[0] + b.max[0]) / 2, (b.min[2] + b.max[2]) / 2);
+      if (!lowByCell.has(key)) lowByCell.set(key, new Set());
+      lowByCell.get(key).add(b);
+    }
+    const blocks = (key) => {
+      const set = lowByCell.get(key); if (!set) return null;
+      const g = new THREE.Group();
+      for (const [name, part] of Object.entries(buildGeometry(b => set.has(b), bucketFor))) g.add(new THREE.Mesh(part.g, MATS[name]));
+      return g;
+    };
+    placeModels(kit, list, 9000, blocks);
+    placeModels(kit, tanks, 9000);
+    placeModels(kit, street, 6000);
+  });
+
+  // An animated runner: a copy of the model with its own materials, mixer and
+  // run / idle actions. Used for the ghost and the Cosmetics preview.
+  const RUNNER_H = 72;
+  function makeRunner(gltf, matFor) {
+    const root = THREE.SkeletonUtils.clone(gltf.scene);
+    const mats = {};
+    root.traverse(o => {
+      if (!o.isMesh) return;
+      const key = /joint/i.test(o.material.name) ? 'joints' : 'surface';
+      o.material = mats[key] || (mats[key] = matFor(key));
+      o.frustumCulled = false; o.castShadow = true;
+    });
+    // scale to a runner's height, feet on the floor, facing -z like the player
+    // measured from the bones: quantized meshes don't give a usable box
+    root.updateMatrixWorld(true);
+    let lo = Infinity, hi = -Infinity;
+    const v = new THREE.Vector3();
+    root.traverse(o => { if (o.isBone) { o.getWorldPosition(v); lo = Math.min(lo, v.y); hi = Math.max(hi, v.y); } });
+    const h = (hi - lo) / 0.9; // the head bone sits a little under the top of the head
+    const s = RUNNER_H / h, holder = new THREE.Group(), inner = new THREE.Group();
+    inner.add(root); root.scale.multiplyScalar(s); root.position.y = -lo * s + 2; root.rotation.y = Math.PI;
+    holder.add(inner);
+    const mixer = new THREE.AnimationMixer(root);
+    const clip = (n) => gltf.animations.find(a => a.name === n);
+    const run = mixer.clipAction(clip('run')), idle = mixer.clipAction(clip('idle'));
+    run.play(); idle.play();
+    let w = 0;
+    return {
+      root: holder, inner, mats,
+      // speed in units/s; in the air the stride holds still
+      update(dt, speed, air) {
+        const target = speed > 30 ? 1 : 0;
+        w += (target - w) * Math.min(1, dt * 8);
+        run.setEffectiveWeight(w); idle.setEffectiveWeight(1 - w);
+        run.setEffectiveTimeScale(air ? 0.05 : Math.max(0.6, Math.min(1.8, speed / 260)));
+        mixer.update(dt);
+      },
+    };
   }
 
   // doors: solid until a tutorial goal opens them
@@ -790,6 +1004,10 @@
     root.add(marker);
     root.visible = false;
     scene.add(root);
+    // the animated runner takes over from the block figure once it loads
+    const smat = mat.clone(); smat.skinning = true;
+    let runner = null;
+    models.runner.then(g => { if (!g) return; runner = makeRunner(g, () => smat); root.add(runner.root); body.visible = false; });
     const runs = {};
     let rec = null, phase = 0, match = 0;
     const gapEl = document.getElementById('ghostgap');
@@ -810,6 +1028,7 @@
       tint(c) {
         const col = new THREE.Color(c).convertSRGBToLinear();
         mat.color.copy(col); mat.emissive.copy(col).multiplyScalar(0.55);
+        smat.color.copy(mat.color); smat.emissive.copy(mat.emissive);
       },
       // t: ticks since the run started, or null to hide
       update(dt, t) {
@@ -832,9 +1051,10 @@
         legs[0].rotation.x = sw * 0.7 + (lift ? 0.5 : 0); legs[1].rotation.x = -sw * 0.7 - (lift ? 0.2 : 0);
         arms[0].rotation.x = -sw * 0.8 + (lift ? -1.2 : 0); arms[1].rotation.x = sw * 0.8 + (lift ? -1.2 : 0);
         body.scale.y = at(i, 4) ? 0.72 : 1;
+        if (runner) { runner.update(dt, moving ? hs : 0, air && moving); runner.inner.scale.y = at(i, 4) ? 0.72 : 1; }
         // stay visible beside you; only thin out when it is inside your view
         const d = Math.hypot(x - player.pos[0], y - player.pos[1], z - player.pos[2]);
-        mat.opacity = d < 22 ? 0 : 0.25 + 0.4 * Math.min(1, (d - 22) / 60);
+        mat.opacity = smat.opacity = d < 22 ? 0 : 0.25 + 0.4 * Math.min(1, (d - 22) / 60);
         root.visible = true;
         marker.visible = d > 120;
         // time gap: when did the ghost pass the point nearest to you?
@@ -1000,6 +1220,12 @@
         return g;
       });
       parts = { bodyG, legs, arms };
+      models.runner.then(g => {
+        if (!g) return;
+        const R = makeRunner(g, (key) => (mats[key] = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: key === 'joints' ? 0.45 : 0.6, metalness: key === 'joints' ? 0.2 : 0, skinning: true })));
+        fig.add(R.root); bodyG.visible = false; parts.runner = R;
+        if (st.skin) setSkin(st.skin);
+      });
       const floor = new THREE.Mesh(new THREE.CylinderGeometry(118, 118, 6, 48), new THREE.MeshStandardMaterial({ color: new THREE.Color(0x2a3038).convertSRGBToLinear(), roughness: 0.9 }));
       floor.position.y = -3; pScene.add(floor);
       trail = makeTrail([24, 12], 1.2, pScene, pCam);
@@ -1008,6 +1234,9 @@
       const c = (m, v) => m.color.set(v).convertSRGBToLinear();
       c(mats.sleeve, k.sleeve); c(mats.glove, k.glove); c(mats.pants, k.pants); c(mats.shirt, k.shirt);
       if (k.accent !== 'hue') c(mats.accent, k.accent);
+      // the model: shirt colour on the body, accent on the joints
+      if (mats.surface) c(mats.surface, k.shirt);
+      if (mats.joints && k.accent !== 'hue') c(mats.joints, k.accent);
     }
     function setTrail(tr) {
       const u = trail.mat.uniforms;
@@ -1029,7 +1258,8 @@
       parts.legs[0].rotation.x = sw * 0.75; parts.legs[1].rotation.x = -sw * 0.75;
       parts.arms[0].rotation.x = -sw * 0.8; parts.arms[1].rotation.x = sw * 0.8;
       parts.bodyG.position.y = Math.abs(Math.cos(st.t * 11)) * 3;
-      if (st.skin.accent === 'hue') mats.accent.color.set(hueColor(now / 1000 * 0.12)).convertSRGBToLinear();
+      if (parts.runner) parts.runner.update(dt, 300, false);
+      if (st.skin.accent === 'hue') { mats.accent.color.set(hueColor(now / 1000 * 0.12)).convertSRGBToLinear(); if (mats.joints) mats.joints.color.copy(mats.accent.color); }
       trail.mat.uniforms.t.value = now / 1000;
       if (st.trail.id !== 'none') trail.update(fig.position.x, 0, fig.position.z, now / 1000, true);
       r.render(pScene, pCam);
@@ -1689,6 +1919,8 @@
     animated.lava.uniforms.t.value = ts;
     // Runner Vision: route pieces glow and breathe
     MATS.paint.emissiveIntensity = 0.15 + Math.sin(ts * 2.4) * 0.06;
+    camera.updateMatrixWorld();
+    updateModelChunks();
     renderer.render(scene, camera);
     if (settings.body && (locked || game.demo) && !attract.active) body.render();
   }
@@ -2175,6 +2407,6 @@
   previewCourse(map.order[0]);
   showMenuState();
   if (location.hash === '#demo') game.demo = true; // headless screenshot mode
-  window.__strafe = { player, game, goCourse, place, attract, previewCourse, body, ghost, cosmetics, preview, step, setView: (y, p) => { yaw = y; pitch = p; } };
+  window.__strafe = { player, game, goCourse, place, attract, previewCourse, body, ghost, cosmetics, preview, step, modelChunks, renderer, setView: (y, p) => { yaw = y; pitch = p; } };
   requestAnimationFrame((t) => { last = t; frame(t); });
 })();
