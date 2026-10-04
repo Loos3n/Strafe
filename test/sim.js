@@ -3,18 +3,20 @@ const P = globalThis.StrafePhysics;
 const { world, courses } = globalThis.StrafeMap.buildMap(P);
 console.log('brushes', world.brushes.length, 'triggers', world.triggers.length);
 const dt = 0.01;
+const FLAT = new P.World(); FLAT.addBox([-1e5,-64,-1e5],[1e5,0,1e5],{});
+const mkFlat = () => { const p = new P.Player(FLAT); p.reset([0,0,0],0); return p; };
 function mk(pos, yaw, cfg){ const p = new P.Player(world, cfg); p.reset(pos, yaw); return p; }
 function cmd(o){ return Object.assign({forward:0, side:0, jump:false, duck:false, yaw:0, pitch:0}, o); }
 let ok = true; const check=(name,cond,info)=>{console.log((cond?'PASS ':'FAIL ')+name, info??''); if(!cond) ok=false;};
 
 // 1 ground accel
-{ const p = mk([0,0,600],0); for(let i=0;i<200;i++) p.tick(cmd({forward:1}),dt);
+{ const p = mkFlat(); for(let i=0;i<200;i++) p.tick(cmd({forward:1}),dt);
   check('run speed 250', Math.abs(p.hspeed()-250)<0.5, p.hspeed().toFixed(2)+' onGround='+p.onGround+' y='+p.pos[1].toFixed(3)); }
 // 2 friction stop
-{ const p = mk([0,0,600],0); for(let i=0;i<200;i++) p.tick(cmd({forward:1}),dt); let t=0; while(p.hspeed()>0 && t<200){p.tick(cmd({}),dt);t++;}
+{ const p = mkFlat(); for(let i=0;i<200;i++) p.tick(cmd({forward:1}),dt); let t=0; while(p.hspeed()>0 && t<200){p.tick(cmd({}),dt);t++;}
   check('stops quickly', t<60, t+' ticks'); }
 // 3 jump height
-{ const p = mk([0,0,600],0); let maxy=0; p.tick(cmd({jump:true}),dt); for(let i=0;i<100;i++){p.tick(cmd({}),dt); maxy=Math.max(maxy,p.pos[1]);}
+{ const p = mkFlat(); let maxy=0; p.tick(cmd({jump:true}),dt); for(let i=0;i<100;i++){p.tick(cmd({}),dt); maxy=Math.max(maxy,p.pos[1]);}
   check('jump height ~57', maxy>56 && maxy<60, maxy.toFixed(2)); }
 // 4 bhop strafing gains speed (on the bhop lane, flat, synced strafes)
 { const lane = world.brushes.find(b=>b.props.kind==='lane');
@@ -59,5 +61,5 @@ let ok = true; const check=(name,cond,info)=>{console.log((cond?'PASS ':'FAIL ')
 { const p = mk([0,-40,-4700],0); for(let i=0;i<200;i++) p.tick(cmd({forward:1}),dt);
   check('pipe blocks standing', p.pos[2] > -4870, 'z '+p.pos[2].toFixed(1)); }
 // 11 perf
-{ const p = mk([0,0,600],0); const t0=Date.now(); for(let i=0;i<10000;i++) p.tick(cmd({forward:1, side: (i>>6)&1?1:-1, jump:true, yaw: i*0.003}),dt); check('perf 10k ticks', true, (Date.now()-t0)+'ms'); }
+{ const p = mkFlat(); const t0=Date.now(); for(let i=0;i<10000;i++) p.tick(cmd({forward:1, side: (i>>6)&1?1:-1, jump:true, yaw: i*0.003}),dt); check('perf 10k ticks', true, (Date.now()-t0)+'ms'); }
 process.exit(ok?0:1);

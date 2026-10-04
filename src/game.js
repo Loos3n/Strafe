@@ -608,7 +608,6 @@
     else if (e.code === 'KeyF') respawn();
     else if (e.code === 'KeyQ') { if (turnLeft <= 0) turnLeft = Math.PI; } // Mirror's Edge 180° quick turn
     else if (/^Digit[0-9]$/.test(e.code) && map.order[(+e.code.slice(5) + 9) % 10]) goCourse(map.order[(+e.code.slice(5) + 9) % 10]);
-    else if (e.code === 'KeyH') goHub();
     else if (e.code === 'KeyT') goCourse('tutorial');
     else if (e.code === 'KeyM') { muted = !muted; A.setVolumes({ muted }); toast(muted ? 'Sound off' : 'Sound on'); }
   });
@@ -669,7 +668,8 @@
     prev.pos = player.pos.slice(); prev.eye = player.viewOffset;
     cam.dip = 0; cam.roll = 0;
   }
-  function goHub() {
+  // no level loaded: the menu is showing
+  function goIdle() {
     game.course = null; game.running = false; game.finished = null; game.mission = null;
     resetTutorial();
     place(map.hubSpawn);
@@ -688,9 +688,9 @@
     toast(mission === null ? c.name : (mission ? 'Job ' + mission : 'Prologue') + ': ' + STORY[mission].title);
     A.play('teleport');
   }
-  function restartCourse() { if (game.course) goCourse(game.course, game.mission); else goHub(); }
+  function restartCourse() { if (game.course) goCourse(game.course, game.mission); }
   function respawn() {
-    if (!game.course) { goHub(); return; }
+    if (!game.course) return;
     place(game.cpSpawn);
     A.play('respawn');
   }
@@ -1054,7 +1054,7 @@
   }
   function updateCourseHud() {
     const c = game.course && map.courses[game.course];
-    hud.course.textContent = c ? c.name : 'Hub';
+    hud.course.textContent = c ? c.name : '';
     hud.bestEl.textContent = c && best[game.course] ? 'Best ' + fmt(best[game.course]) : c ? 'No time yet' : 'Pick a beacon or press 1, 2, 3';
   }
   updateCourseHud();
@@ -1152,8 +1152,8 @@
     $('c-jumps').textContent = r.jumps;
     $('c-dist').textContent = (r.dist * 0.0254).toFixed(0);
     const nx = nextLevel(game.course);
-    $('c-next').textContent = nx ? 'Next: ' + map.courses[nx].name : 'Back to hub';
-    $('c-next').dataset.target = nx || 'hub';
+    $('c-next').textContent = nx ? 'Next: ' + map.courses[nx].name : 'Back to levels';
+    $('c-next').dataset.target = nx || 'levels';
     const job = game.mission !== null ? STORY[game.mission] : null;
     $('c-label').textContent = job ? (game.mission ? 'Job ' + game.mission : 'Prologue') + ' complete' : 'Level complete';
     $('c-story').hidden = !job;
@@ -1185,13 +1185,13 @@
     closeComplete();
     if (what === 'next') {
       const t = $('c-next').dataset.target;
-      if (t === 'story') { goHub(); showMenuState(); openDrawer('story'); return; }
+      if (t === 'story') { goIdle(); showMenuState(); openDrawer('story'); return; }
+      if (t === 'levels') { goIdle(); game.started = false; showMenuState(); showScreen('levels'); return; }
       if (t.startsWith('job:')) { startJob(+t.slice(4)); return; }
-      if (t === 'hub') goHub(); else goCourse(t);
+      goCourse(t);
       startPlay();
     }
     else if (what === 'retry') { restartCourse(); startPlay(); }
-    else if (what === 'hub') { goHub(); startPlay(); }
     else { showMenuState(); showScreen('levels'); } // levels: back to level select
   }
   for (const b of completeEl.querySelectorAll('[data-act]')) b.addEventListener('click', () => completeAction(b.dataset.act));
@@ -1199,7 +1199,6 @@
     if (completeEl.hidden) return;
     if (e.code === 'Enter') { e.preventDefault(); completeAction('next'); }
     else if (e.code === 'KeyR') completeAction('retry');
-    else if (e.code === 'KeyH') completeAction('hub');
     else if (e.code === 'Escape') completeAction('levels');
   });
 
@@ -1225,7 +1224,7 @@
     if (final) {
       $('tut-step').textContent = 'Tutorial complete';
       $('tut-title').textContent = 'You know the moves';
-      $('tut-body').textContent = 'Press Esc and pick a level, or H for the hub. Surf and Bhop are the gentlest starts; Crossover uses everything you just did.';
+      $('tut-body').textContent = 'Press Esc and pick a level. Surf and Bhop are the gentlest starts; Crossover uses everything you just did.';
       $('tut-keys').textContent = '';
       tutEl.classList.add('done');
       return;
@@ -1420,7 +1419,7 @@
     });
   }
   function lbSubmit(course, ticks) {
-    if (!lb.db || course === 'hub' || settings.airaccelerate !== LB_AA) return;
+    if (!lb.db || settings.airaccelerate !== LB_AA) return;
     const cur = lbMine()[course];
     if (!(typeof cur === 'number' && cur <= ticks)) lbWrite({ [course]: ticks });
   }
@@ -1441,7 +1440,7 @@
     const el = $('lb');
     if (!lb.db) { el.hidden = true; return; }
     const course = typeof selected === 'string' ? selected : null;
-    if (!course || course === 'hub') { el.hidden = true; return; }
+    if (!course) { el.hidden = true; return; }
     el.hidden = false;
     const token = ++lbToken;
     const all = lbStandings(course);
@@ -1501,27 +1500,25 @@
   // live preview camera behind the menu
   const attract = { active: true, course: map.order[0], hover: null, t0: 0, cycle: 0 };
   const flashEl = $('flash');
-  const HUB_CARD = { name: 'Hub', type: 'Practice', difficulty: 0, color: 0x9aa3ab, stages: 0,
-    desc: 'A wall to run, a box to vault, a block to climb and a small surf ramp. Beacons take you to each level.' };
   const MENU_ROWS = [{ name: 'tutorial', key: 'T' }].concat(map.order.map((name, i) => ({ name, key: String((i + 1) % 10) })),
-    map.gauntlet.map((name, i) => ({ name, key: 'G' + (i + 1) })), [{ name: 'hub', key: 'H' }]);
+    map.gauntlet.map((name, i) => ({ name, key: 'G' + (i + 1) })));
   const ALL_LEVELS = map.order.concat(map.gauntlet);
   // difficulty pips: five, or more for levels off the scale
   const pipHtml = (d, label) => '<span class="pips" aria-label="' + label + d + ' of ' + Math.max(5, d) + '">' +
     Array.from({ length: Math.max(5, d) }, (_, k) => '<i class="' + (k < d ? 'on' : '') + '"></i>').join('') + '</span>';
-  const rowCourse = (name) => name === 'hub' ? HUB_CARD : map.courses[name];
+  const rowCourse = (name) => map.courses[name];
   let selected = best.tutorial ? map.order[0] : 'tutorial';
   // the hero always describes the selected level
   function showHero(name) {
     const c = rowCourse(name);
     const tutorial = name === 'tutorial';
     $('h-type').innerHTML = '<span class="chip" style="--c:' + hex(c.color) + '">' + c.type + '</span>' +
-      (tutorial ? 'Start here' : name === 'hub' ? 'Free roam' : c.set === 'gauntlet' ? 'Gauntlet ' + (map.gauntlet.indexOf(name) + 1) + ' of 6' : map.order.indexOf(name) >= 6 ? 'Advanced' : 'Level ' + (map.order.indexOf(name) + 1));
+      (tutorial ? 'Start here' : c.set === 'gauntlet' ? 'Gauntlet ' + (map.gauntlet.indexOf(name) + 1) + ' of 6' : map.order.indexOf(name) >= 6 ? 'Advanced' : 'Level ' + (map.order.indexOf(name) + 1));
     $('h-name').textContent = c.name;
     $('h-desc').textContent = c.desc;
     $('h-diff').innerHTML = c.difficulty ? pipHtml(c.difficulty, '') : (tutorial ? 'Easy' : 'None');
     $('h-stages').textContent = c.stages ? String(c.stages) : '—';
-    $('h-best').textContent = name !== 'hub' && best[name] ? fmt(best[name]) : '—';
+    $('h-best').textContent = best[name] ? fmt(best[name]) : '—';
     updatePlayButtons();
     lbRender();
   }
@@ -1533,8 +1530,8 @@
   }
   // fly through a level; when paused on that level, show the frozen game instead
   function showPreview(name) {
-    attract.active = !(game.started && (game.course || 'hub') === name);
-    previewCourse(name === 'hub' ? null : name);
+    attract.active = !(game.started && game.course === name);
+    previewCourse(name);
   }
   function select(name, focus) {
     selected = name;
@@ -1567,13 +1564,13 @@
     ol.textContent = '';
     MENU_ROWS.forEach((r, i) => {
       const c = rowCourse(r.name);
-      if (i === 7 || i === 11 || i === MENU_ROWS.length - 1) { const sep = document.createElement('li'); sep.className = 'sep'; sep.setAttribute('aria-hidden', 'true'); ol.appendChild(sep); }
+      if (i === 7 || i === 11) { const sep = document.createElement('li'); sep.className = 'sep'; sep.setAttribute('aria-hidden', 'true'); ol.appendChild(sep); }
       const li = document.createElement('li');
       const b = document.createElement('button');
       b.className = 'card'; b.dataset.course = r.name;
       b.style.setProperty('--c', hex(c.color));
       const pips = c.difficulty ? pipHtml(c.difficulty, 'Difficulty ') : '<span>' + c.type + '</span>';
-      const bt = r.name !== 'hub' && best[r.name] ? fmt(best[r.name]) : '';
+      const bt = best[r.name] ? fmt(best[r.name]) : '';
       const adv = c.set === 'gauntlet' ? '<span class="adv">GAUNTLET</span>' : map.order.indexOf(r.name) >= 6 ? '<span class="adv">ADV</span>' : '';
       b.innerHTML = '<span class="ck"><span>' + r.key + '</span>' + adv + '</span><span class="cn">' + c.name + '</span>' +
         '<span class="cm">' + pips + '<span>' + bt + '</span></span>';
@@ -1592,11 +1589,10 @@
 
   function updatePlayButtons() {
     const paused = game.started;
-    const here = paused && (game.course || 'hub') === selected;
+    const here = paused && game.course === selected;
     $('play').innerHTML = (here ? 'Resume' : paused ? 'Play ' + rowCourse(selected).name : 'Play') + ' <kbd>Enter</kbd>';
     $('resume').hidden = !paused || here;
     $('restart').hidden = !here || !game.course;
-    $('tohub').hidden = !paused || selected === 'hub';
     $('menunote').hidden = paused;
   }
 
@@ -1630,10 +1626,10 @@
     $('paused').hidden = !paused;
     if (paused) {
       const c = game.course && map.courses[game.course];
-      $('p-course').textContent = c ? c.name : 'Hub';
+      $('p-course').textContent = c ? c.name : '';
       $('p-time').textContent = c ? fmt(game.running ? game.tick - game.startTick : game.finished || 0) : '';
       $('p-stage').textContent = c ? 'Stage ' + (game.cp + 1) + ' / ' + c.stages : '';
-      selected = game.course || 'hub';
+      if (game.course) selected = game.course;
     }
     buildLevelList();
     select(selected);
@@ -1650,8 +1646,8 @@
   }
   function playSelected() {
     A.init(); A.play('click');
-    const here = game.started && (game.course || 'hub') === selected;
-    if (!here) { if (selected === 'hub') goHub(); else goCourse(selected); }
+    const here = game.started && game.course === selected;
+    if (!here) goCourse(selected);
     startPlay();
   }
 
@@ -1775,16 +1771,14 @@
   $('m-restart').addEventListener('click', () => { A.init(); A.play('click'); restartCourse(); startPlay(); });
   $('m-play').addEventListener('click', () => { A.init(); A.play('click'); closeDrawer(); showScreen('levels'); });
   $('m-tutorial').addEventListener('click', () => { selected = 'tutorial'; playSelected(); });
-  $('m-hub').addEventListener('click', () => { selected = 'hub'; playSelected(); });
   $('m-quit').addEventListener('click', () => {
-    A.play('click'); ghost.stop(); goHub(); game.started = false; game.mission = null;
+    A.play('click'); ghost.stop(); goIdle(); game.started = false; game.mission = null;
     attract.course = null; showMenuState();
   });
   $('back').addEventListener('click', () => { A.play('click'); showScreen('title'); });
   for (const b of document.querySelectorAll('#mainnav .mbtn')) b.addEventListener('mouseenter', () => A.play('hover'));
   $('resume').addEventListener('click', () => { A.init(); A.play('click'); startPlay(); });
   $('restart').addEventListener('click', () => { A.init(); restartCourse(); startPlay(); });
-  $('tohub').addEventListener('click', () => { A.init(); goHub(); startPlay(); });
   canvas.addEventListener('click', () => { if (!locked && game.started) startPlay(); });
   document.addEventListener('pointerlockchange', () => { if (!locked) showMenuState(); });
   // the first click anywhere wakes the audio so the menu has music
@@ -1815,8 +1809,8 @@
   });
 
   // ------------------------------------------------------------ boot
-  goHub();
-  previewCourse(null);
+  goIdle();
+  previewCourse(map.order[0]);
   showMenuState();
   if (location.hash === '#demo') game.demo = true; // headless screenshot mode
   window.__strafe = { player, game, goCourse, place, attract, previewCourse, body, ghost, step, setView: (y, p) => { yaw = y; pitch = p; } };

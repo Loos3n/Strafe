@@ -279,7 +279,7 @@ table.controls { width: 100%; border-collapse: collapse; font-size: 14px; margin
 
 <div class="hud" id="top">
   <div id="timer"></div>
-  <div id="courseline"><span id="course">Hub</span><span id="stage"></span><span id="best"></span></div>
+  <div id="courseline"><span id="course"></span><span id="stage"></span><span id="best"></span></div>
   <div id="ghostgap"></div>
   <div id="split" aria-live="polite"><span id="split-label"></span><span id="split-time"></span><span id="split-delta"></span></div>
 </div>
@@ -304,7 +304,7 @@ table.controls { width: 100%; border-collapse: collapse; font-size: 14px; margin
   <span class="wide" id="k-j">JUMP</span>
   <span class="wide" id="k-c">CROUCH</span>
 </div>
-<div class="hud" id="help">R restart · F checkpoint · H hub · M mute · Esc menu</div>
+<div class="hud" id="help">R restart · F checkpoint · M mute · Esc menu</div>
 
 <div id="menu" data-screen="title">
   <section class="ts" aria-label="Main menu">
@@ -321,7 +321,6 @@ table.controls { width: 100%; border-collapse: collapse; font-size: 14px; margin
       <button class="mbtn" data-open="story" aria-expanded="false" aria-controls="drawer"><span>Story</span><small id="m-story-sub"></small></button>
       <button class="mbtn" id="m-play"><span>Play</span><small id="m-play-sub"></small></button>
       <button class="mbtn" id="m-tutorial"><span>Tutorial</span><small id="m-tut-sub"></small></button>
-      <button class="mbtn" id="m-hub"><span>Free roam</span><small>The hub</small></button>
       <button class="mbtn" data-open="settings" aria-expanded="false" aria-controls="drawer"><span>Settings</span></button>
       <button class="mbtn" data-open="controls" aria-expanded="false" aria-controls="drawer"><span>Controls</span></button>
       <button class="mbtn" id="m-quit" hidden><span>Quit to title</span></button>
@@ -351,7 +350,6 @@ table.controls { width: 100%; border-collapse: collapse; font-size: 14px; margin
       <button id="play">Play <kbd>Enter</kbd></button>
       <button class="ghost" id="resume" hidden>Resume</button>
       <button class="ghost" id="restart" hidden>Restart</button>
-      <button class="ghost" id="tohub" hidden>Hub</button>
           </div>
   </section>
   <aside id="lb" class="lv" hidden aria-labelledby="lb-title">
@@ -431,7 +429,7 @@ table.controls { width: 100%; border-collapse: collapse; font-size: 14px; margin
           <tr><td>1 to 0 / T</td><td>Jump straight to a level, or the tutorial.</td></tr>
           <tr><td>Q</td><td>Quick turn 180°. Great for climbing a wall and kicking off backwards.</td></tr>
           <tr><td>Crouch on landing</td><td>Roll out of a big drop.</td></tr>
-          <tr><td>R / F / H</td><td>Restart level, last checkpoint, back to hub.</td></tr>
+          <tr><td>R / F</td><td>Restart level, last checkpoint.</td></tr>
           <tr><td>M / Esc</td><td>Mute sound. Open this menu. In the menu, arrow keys pick a level and Enter plays it.</td></tr>
         </table>
       </div>
@@ -455,7 +453,6 @@ table.controls { width: 100%; border-collapse: collapse; font-size: 14px; margin
       <button class="cprimary" id="c-next" data-act="next"></button>
       <button class="ghost" data-act="retry">Retry <kbd>R</kbd></button>
       <button class="ghost" data-act="levels">Levels <kbd>Esc</kbd></button>
-      <button class="ghost" data-act="hub">Hub <kbd>H</kbd></button>
     </div>
   </div>
 </div>
@@ -1568,7 +1565,7 @@ table.controls { width: 100%; border-collapse: collapse; font-size: 14px; margin
 
 </script>
 <script>
-// Strafe test map: hub, surf course, bhop course and a rooftop run.
+// Strafe map: the tutorial, ten levels and the six-level Gauntlet.
 // All coordinates are Hammer units, Y up, courses run toward -Z.
 (function (root) {
   'use strict';
@@ -1591,16 +1588,7 @@ table.controls { width: 100%; border-collapse: collapse; font-size: 14px; margin
     const courses = {};
     const route = (min, max) => box(min, max, COLORS.route, { kind: 'route' });
 
-    // ------------------------------------------------------------ hub
-    box([-1024, -64, -1024], [1024, 0, 1024], COLORS.hub, { kind: 'floor' });
-    // a little practice furniture
-    box([-1024, 0, -1024], [-1000, 260, 400], COLORS.route, { kind: 'route' });     // wallrun wall
-    box([700, 0, 200], [860, 44, 260], COLORS.route, { kind: 'route' });           // vault box
-    box([700, 0, -200], [1000, 150, 0], COLORS.hubTrim, {});                       // climb + mantle block
-    world.addPrism('x', [[500, 0], [900, 0], [900, 90]], 300, 600, { color: COLORS.hubTrim }); // gentle slope (n.y ~0.98)
-    // mini surf ramp to feel the clip
-    world.addPrism('z', [[-700, 0], [-380, 0], [-540, 277]], 900, 300, { color: COLORS.surf[0] });
-
+    // where the player waits while no level is loaded (only the menu is showing)
     const hubSpawn = { pos: [0, 0, 600], yaw: 0 };
 
     // ------------------------------------------------------------ surf
@@ -2415,30 +2403,15 @@ table.controls { width: 100%; border-collapse: collapse; font-size: 14px; margin
         { t: 'pad', len: 3000, w: 1400, end: true },
       ] });
 
-    // ------------------------------------------------------------ hub pads
+    // ------------------------------------------------------------ level order and keys
     const order = ['surf', 'bhop', 'roofs', 'canyon', 'stairway', 'crossover', 'downtown', 'cascade', 'spire', 'freerun'];
-    // first six in a row, the four advanced levels in a back row between them
-    order.forEach((name, i) => {
-      const back = i >= 6;
-      const x = back ? -450 + (i - 6) * 300 : -750 + i * 300, z = back ? -930 : -700;
-      const color = courses[name].color;
-      courses[name].key = String((i + 1) % 10);       // the tenth level is on 0
-      box([x - 90, 0, z - 90], [x + 90, 1, z + 90], color, { nonsolid: true, glow: true });
-      world.addTrigger([x - 90, 0, z - 90], [x + 90, 120, z + 90], { type: 'teleport', course: name });
-    });
-    box([-840, 0, -390], [-660, 1, -210], courses.tutorial.color, { nonsolid: true, glow: true });
-    world.addTrigger([-840, 0, -390], [-660, 120, -210], { type: 'teleport', course: 'tutorial' });
+    order.forEach((name, i) => { courses[name].key = String((i + 1) % 10); }); // the tenth level is on 0
 
     // global safety net
     world.addTrigger([-1e6, -1e6, -1e6], [1e6, -4000, 1e6], { type: 'kill' });
 
     const gauntletOrder = ['g1', 'g2', 'g3', 'g4', 'g5', 'g6'];
-    gauntletOrder.forEach((name, i) => {
-      const x = -750 + i * 300, z = 820;
-      courses[name].key = 'G' + (i + 1);
-      box([x - 90, 0, z - 90], [x + 90, 1, z + 90], courses[name].color, { nonsolid: true, glow: true });
-      world.addTrigger([x - 90, 0, z - 90], [x + 90, 120, z + 90], { type: 'teleport', course: name });
-    });
+    gauntletOrder.forEach((name, i) => { courses[name].key = 'G' + (i + 1); });
 
     return { world, courses, order, gauntlet: gauntletOrder, hubSpawn, COLORS };
   }
@@ -3058,7 +3031,6 @@ table.controls { width: 100%; border-collapse: collapse; font-size: 14px; margin
     else if (e.code === 'KeyF') respawn();
     else if (e.code === 'KeyQ') { if (turnLeft <= 0) turnLeft = Math.PI; } // Mirror's Edge 180° quick turn
     else if (/^Digit[0-9]$/.test(e.code) && map.order[(+e.code.slice(5) + 9) % 10]) goCourse(map.order[(+e.code.slice(5) + 9) % 10]);
-    else if (e.code === 'KeyH') goHub();
     else if (e.code === 'KeyT') goCourse('tutorial');
     else if (e.code === 'KeyM') { muted = !muted; A.setVolumes({ muted }); toast(muted ? 'Sound off' : 'Sound on'); }
   });
@@ -3119,7 +3091,8 @@ table.controls { width: 100%; border-collapse: collapse; font-size: 14px; margin
     prev.pos = player.pos.slice(); prev.eye = player.viewOffset;
     cam.dip = 0; cam.roll = 0;
   }
-  function goHub() {
+  // no level loaded: the menu is showing
+  function goIdle() {
     game.course = null; game.running = false; game.finished = null; game.mission = null;
     resetTutorial();
     place(map.hubSpawn);
@@ -3138,9 +3111,9 @@ table.controls { width: 100%; border-collapse: collapse; font-size: 14px; margin
     toast(mission === null ? c.name : (mission ? 'Job ' + mission : 'Prologue') + ': ' + STORY[mission].title);
     A.play('teleport');
   }
-  function restartCourse() { if (game.course) goCourse(game.course, game.mission); else goHub(); }
+  function restartCourse() { if (game.course) goCourse(game.course, game.mission); }
   function respawn() {
-    if (!game.course) { goHub(); return; }
+    if (!game.course) return;
     place(game.cpSpawn);
     A.play('respawn');
   }
@@ -3504,7 +3477,7 @@ table.controls { width: 100%; border-collapse: collapse; font-size: 14px; margin
   }
   function updateCourseHud() {
     const c = game.course && map.courses[game.course];
-    hud.course.textContent = c ? c.name : 'Hub';
+    hud.course.textContent = c ? c.name : '';
     hud.bestEl.textContent = c && best[game.course] ? 'Best ' + fmt(best[game.course]) : c ? 'No time yet' : 'Pick a beacon or press 1, 2, 3';
   }
   updateCourseHud();
@@ -3602,8 +3575,8 @@ table.controls { width: 100%; border-collapse: collapse; font-size: 14px; margin
     $('c-jumps').textContent = r.jumps;
     $('c-dist').textContent = (r.dist * 0.0254).toFixed(0);
     const nx = nextLevel(game.course);
-    $('c-next').textContent = nx ? 'Next: ' + map.courses[nx].name : 'Back to hub';
-    $('c-next').dataset.target = nx || 'hub';
+    $('c-next').textContent = nx ? 'Next: ' + map.courses[nx].name : 'Back to levels';
+    $('c-next').dataset.target = nx || 'levels';
     const job = game.mission !== null ? STORY[game.mission] : null;
     $('c-label').textContent = job ? (game.mission ? 'Job ' + game.mission : 'Prologue') + ' complete' : 'Level complete';
     $('c-story').hidden = !job;
@@ -3635,13 +3608,13 @@ table.controls { width: 100%; border-collapse: collapse; font-size: 14px; margin
     closeComplete();
     if (what === 'next') {
       const t = $('c-next').dataset.target;
-      if (t === 'story') { goHub(); showMenuState(); openDrawer('story'); return; }
+      if (t === 'story') { goIdle(); showMenuState(); openDrawer('story'); return; }
+      if (t === 'levels') { goIdle(); game.started = false; showMenuState(); showScreen('levels'); return; }
       if (t.startsWith('job:')) { startJob(+t.slice(4)); return; }
-      if (t === 'hub') goHub(); else goCourse(t);
+      goCourse(t);
       startPlay();
     }
     else if (what === 'retry') { restartCourse(); startPlay(); }
-    else if (what === 'hub') { goHub(); startPlay(); }
     else { showMenuState(); showScreen('levels'); } // levels: back to level select
   }
   for (const b of completeEl.querySelectorAll('[data-act]')) b.addEventListener('click', () => completeAction(b.dataset.act));
@@ -3649,7 +3622,6 @@ table.controls { width: 100%; border-collapse: collapse; font-size: 14px; margin
     if (completeEl.hidden) return;
     if (e.code === 'Enter') { e.preventDefault(); completeAction('next'); }
     else if (e.code === 'KeyR') completeAction('retry');
-    else if (e.code === 'KeyH') completeAction('hub');
     else if (e.code === 'Escape') completeAction('levels');
   });
 
@@ -3675,7 +3647,7 @@ table.controls { width: 100%; border-collapse: collapse; font-size: 14px; margin
     if (final) {
       $('tut-step').textContent = 'Tutorial complete';
       $('tut-title').textContent = 'You know the moves';
-      $('tut-body').textContent = 'Press Esc and pick a level, or H for the hub. Surf and Bhop are the gentlest starts; Crossover uses everything you just did.';
+      $('tut-body').textContent = 'Press Esc and pick a level. Surf and Bhop are the gentlest starts; Crossover uses everything you just did.';
       $('tut-keys').textContent = '';
       tutEl.classList.add('done');
       return;
@@ -3870,7 +3842,7 @@ table.controls { width: 100%; border-collapse: collapse; font-size: 14px; margin
     });
   }
   function lbSubmit(course, ticks) {
-    if (!lb.db || course === 'hub' || settings.airaccelerate !== LB_AA) return;
+    if (!lb.db || settings.airaccelerate !== LB_AA) return;
     const cur = lbMine()[course];
     if (!(typeof cur === 'number' && cur <= ticks)) lbWrite({ [course]: ticks });
   }
@@ -3891,7 +3863,7 @@ table.controls { width: 100%; border-collapse: collapse; font-size: 14px; margin
     const el = $('lb');
     if (!lb.db) { el.hidden = true; return; }
     const course = typeof selected === 'string' ? selected : null;
-    if (!course || course === 'hub') { el.hidden = true; return; }
+    if (!course) { el.hidden = true; return; }
     el.hidden = false;
     const token = ++lbToken;
     const all = lbStandings(course);
@@ -3951,27 +3923,25 @@ table.controls { width: 100%; border-collapse: collapse; font-size: 14px; margin
   // live preview camera behind the menu
   const attract = { active: true, course: map.order[0], hover: null, t0: 0, cycle: 0 };
   const flashEl = $('flash');
-  const HUB_CARD = { name: 'Hub', type: 'Practice', difficulty: 0, color: 0x9aa3ab, stages: 0,
-    desc: 'A wall to run, a box to vault, a block to climb and a small surf ramp. Beacons take you to each level.' };
   const MENU_ROWS = [{ name: 'tutorial', key: 'T' }].concat(map.order.map((name, i) => ({ name, key: String((i + 1) % 10) })),
-    map.gauntlet.map((name, i) => ({ name, key: 'G' + (i + 1) })), [{ name: 'hub', key: 'H' }]);
+    map.gauntlet.map((name, i) => ({ name, key: 'G' + (i + 1) })));
   const ALL_LEVELS = map.order.concat(map.gauntlet);
   // difficulty pips: five, or more for levels off the scale
   const pipHtml = (d, label) => '<span class="pips" aria-label="' + label + d + ' of ' + Math.max(5, d) + '">' +
     Array.from({ length: Math.max(5, d) }, (_, k) => '<i class="' + (k < d ? 'on' : '') + '"></i>').join('') + '</span>';
-  const rowCourse = (name) => name === 'hub' ? HUB_CARD : map.courses[name];
+  const rowCourse = (name) => map.courses[name];
   let selected = best.tutorial ? map.order[0] : 'tutorial';
   // the hero always describes the selected level
   function showHero(name) {
     const c = rowCourse(name);
     const tutorial = name === 'tutorial';
     $('h-type').innerHTML = '<span class="chip" style="--c:' + hex(c.color) + '">' + c.type + '</span>' +
-      (tutorial ? 'Start here' : name === 'hub' ? 'Free roam' : c.set === 'gauntlet' ? 'Gauntlet ' + (map.gauntlet.indexOf(name) + 1) + ' of 6' : map.order.indexOf(name) >= 6 ? 'Advanced' : 'Level ' + (map.order.indexOf(name) + 1));
+      (tutorial ? 'Start here' : c.set === 'gauntlet' ? 'Gauntlet ' + (map.gauntlet.indexOf(name) + 1) + ' of 6' : map.order.indexOf(name) >= 6 ? 'Advanced' : 'Level ' + (map.order.indexOf(name) + 1));
     $('h-name').textContent = c.name;
     $('h-desc').textContent = c.desc;
     $('h-diff').innerHTML = c.difficulty ? pipHtml(c.difficulty, '') : (tutorial ? 'Easy' : 'None');
     $('h-stages').textContent = c.stages ? String(c.stages) : '—';
-    $('h-best').textContent = name !== 'hub' && best[name] ? fmt(best[name]) : '—';
+    $('h-best').textContent = best[name] ? fmt(best[name]) : '—';
     updatePlayButtons();
     lbRender();
   }
@@ -3983,8 +3953,8 @@ table.controls { width: 100%; border-collapse: collapse; font-size: 14px; margin
   }
   // fly through a level; when paused on that level, show the frozen game instead
   function showPreview(name) {
-    attract.active = !(game.started && (game.course || 'hub') === name);
-    previewCourse(name === 'hub' ? null : name);
+    attract.active = !(game.started && game.course === name);
+    previewCourse(name);
   }
   function select(name, focus) {
     selected = name;
@@ -4017,13 +3987,13 @@ table.controls { width: 100%; border-collapse: collapse; font-size: 14px; margin
     ol.textContent = '';
     MENU_ROWS.forEach((r, i) => {
       const c = rowCourse(r.name);
-      if (i === 7 || i === 11 || i === MENU_ROWS.length - 1) { const sep = document.createElement('li'); sep.className = 'sep'; sep.setAttribute('aria-hidden', 'true'); ol.appendChild(sep); }
+      if (i === 7 || i === 11) { const sep = document.createElement('li'); sep.className = 'sep'; sep.setAttribute('aria-hidden', 'true'); ol.appendChild(sep); }
       const li = document.createElement('li');
       const b = document.createElement('button');
       b.className = 'card'; b.dataset.course = r.name;
       b.style.setProperty('--c', hex(c.color));
       const pips = c.difficulty ? pipHtml(c.difficulty, 'Difficulty ') : '<span>' + c.type + '</span>';
-      const bt = r.name !== 'hub' && best[r.name] ? fmt(best[r.name]) : '';
+      const bt = best[r.name] ? fmt(best[r.name]) : '';
       const adv = c.set === 'gauntlet' ? '<span class="adv">GAUNTLET</span>' : map.order.indexOf(r.name) >= 6 ? '<span class="adv">ADV</span>' : '';
       b.innerHTML = '<span class="ck"><span>' + r.key + '</span>' + adv + '</span><span class="cn">' + c.name + '</span>' +
         '<span class="cm">' + pips + '<span>' + bt + '</span></span>';
@@ -4042,11 +4012,10 @@ table.controls { width: 100%; border-collapse: collapse; font-size: 14px; margin
 
   function updatePlayButtons() {
     const paused = game.started;
-    const here = paused && (game.course || 'hub') === selected;
+    const here = paused && game.course === selected;
     $('play').innerHTML = (here ? 'Resume' : paused ? 'Play ' + rowCourse(selected).name : 'Play') + ' <kbd>Enter</kbd>';
     $('resume').hidden = !paused || here;
     $('restart').hidden = !here || !game.course;
-    $('tohub').hidden = !paused || selected === 'hub';
     $('menunote').hidden = paused;
   }
 
@@ -4080,10 +4049,10 @@ table.controls { width: 100%; border-collapse: collapse; font-size: 14px; margin
     $('paused').hidden = !paused;
     if (paused) {
       const c = game.course && map.courses[game.course];
-      $('p-course').textContent = c ? c.name : 'Hub';
+      $('p-course').textContent = c ? c.name : '';
       $('p-time').textContent = c ? fmt(game.running ? game.tick - game.startTick : game.finished || 0) : '';
       $('p-stage').textContent = c ? 'Stage ' + (game.cp + 1) + ' / ' + c.stages : '';
-      selected = game.course || 'hub';
+      if (game.course) selected = game.course;
     }
     buildLevelList();
     select(selected);
@@ -4100,8 +4069,8 @@ table.controls { width: 100%; border-collapse: collapse; font-size: 14px; margin
   }
   function playSelected() {
     A.init(); A.play('click');
-    const here = game.started && (game.course || 'hub') === selected;
-    if (!here) { if (selected === 'hub') goHub(); else goCourse(selected); }
+    const here = game.started && game.course === selected;
+    if (!here) goCourse(selected);
     startPlay();
   }
 
@@ -4225,16 +4194,14 @@ table.controls { width: 100%; border-collapse: collapse; font-size: 14px; margin
   $('m-restart').addEventListener('click', () => { A.init(); A.play('click'); restartCourse(); startPlay(); });
   $('m-play').addEventListener('click', () => { A.init(); A.play('click'); closeDrawer(); showScreen('levels'); });
   $('m-tutorial').addEventListener('click', () => { selected = 'tutorial'; playSelected(); });
-  $('m-hub').addEventListener('click', () => { selected = 'hub'; playSelected(); });
   $('m-quit').addEventListener('click', () => {
-    A.play('click'); ghost.stop(); goHub(); game.started = false; game.mission = null;
+    A.play('click'); ghost.stop(); goIdle(); game.started = false; game.mission = null;
     attract.course = null; showMenuState();
   });
   $('back').addEventListener('click', () => { A.play('click'); showScreen('title'); });
   for (const b of document.querySelectorAll('#mainnav .mbtn')) b.addEventListener('mouseenter', () => A.play('hover'));
   $('resume').addEventListener('click', () => { A.init(); A.play('click'); startPlay(); });
   $('restart').addEventListener('click', () => { A.init(); restartCourse(); startPlay(); });
-  $('tohub').addEventListener('click', () => { A.init(); goHub(); startPlay(); });
   canvas.addEventListener('click', () => { if (!locked && game.started) startPlay(); });
   document.addEventListener('pointerlockchange', () => { if (!locked) showMenuState(); });
   // the first click anywhere wakes the audio so the menu has music
@@ -4265,8 +4232,8 @@ table.controls { width: 100%; border-collapse: collapse; font-size: 14px; margin
   });
 
   // ------------------------------------------------------------ boot
-  goHub();
-  previewCourse(null);
+  goIdle();
+  previewCourse(map.order[0]);
   showMenuState();
   if (location.hash === '#demo') game.demo = true; // headless screenshot mode
   window.__strafe = { player, game, goCourse, place, attract, previewCourse, body, ghost, step, setView: (y, p) => { yaw = y; pitch = p; } };

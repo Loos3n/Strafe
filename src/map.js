@@ -1,4 +1,4 @@
-// Strafe test map: hub, surf course, bhop course and a rooftop run.
+// Strafe map: the tutorial, ten levels and the six-level Gauntlet.
 // All coordinates are Hammer units, Y up, courses run toward -Z.
 (function (root) {
   'use strict';
@@ -21,16 +21,7 @@
     const courses = {};
     const route = (min, max) => box(min, max, COLORS.route, { kind: 'route' });
 
-    // ------------------------------------------------------------ hub
-    box([-1024, -64, -1024], [1024, 0, 1024], COLORS.hub, { kind: 'floor' });
-    // a little practice furniture
-    box([-1024, 0, -1024], [-1000, 260, 400], COLORS.route, { kind: 'route' });     // wallrun wall
-    box([700, 0, 200], [860, 44, 260], COLORS.route, { kind: 'route' });           // vault box
-    box([700, 0, -200], [1000, 150, 0], COLORS.hubTrim, {});                       // climb + mantle block
-    world.addPrism('x', [[500, 0], [900, 0], [900, 90]], 300, 600, { color: COLORS.hubTrim }); // gentle slope (n.y ~0.98)
-    // mini surf ramp to feel the clip
-    world.addPrism('z', [[-700, 0], [-380, 0], [-540, 277]], 900, 300, { color: COLORS.surf[0] });
-
+    // where the player waits while no level is loaded (only the menu is showing)
     const hubSpawn = { pos: [0, 0, 600], yaw: 0 };
 
     // ------------------------------------------------------------ surf
@@ -845,30 +836,15 @@
         { t: 'pad', len: 3000, w: 1400, end: true },
       ] });
 
-    // ------------------------------------------------------------ hub pads
+    // ------------------------------------------------------------ level order and keys
     const order = ['surf', 'bhop', 'roofs', 'canyon', 'stairway', 'crossover', 'downtown', 'cascade', 'spire', 'freerun'];
-    // first six in a row, the four advanced levels in a back row between them
-    order.forEach((name, i) => {
-      const back = i >= 6;
-      const x = back ? -450 + (i - 6) * 300 : -750 + i * 300, z = back ? -930 : -700;
-      const color = courses[name].color;
-      courses[name].key = String((i + 1) % 10);       // the tenth level is on 0
-      box([x - 90, 0, z - 90], [x + 90, 1, z + 90], color, { nonsolid: true, glow: true });
-      world.addTrigger([x - 90, 0, z - 90], [x + 90, 120, z + 90], { type: 'teleport', course: name });
-    });
-    box([-840, 0, -390], [-660, 1, -210], courses.tutorial.color, { nonsolid: true, glow: true });
-    world.addTrigger([-840, 0, -390], [-660, 120, -210], { type: 'teleport', course: 'tutorial' });
+    order.forEach((name, i) => { courses[name].key = String((i + 1) % 10); }); // the tenth level is on 0
 
     // global safety net
     world.addTrigger([-1e6, -1e6, -1e6], [1e6, -4000, 1e6], { type: 'kill' });
 
     const gauntletOrder = ['g1', 'g2', 'g3', 'g4', 'g5', 'g6'];
-    gauntletOrder.forEach((name, i) => {
-      const x = -750 + i * 300, z = 820;
-      courses[name].key = 'G' + (i + 1);
-      box([x - 90, 0, z - 90], [x + 90, 1, z + 90], courses[name].color, { nonsolid: true, glow: true });
-      world.addTrigger([x - 90, 0, z - 90], [x + 90, 120, z + 90], { type: 'teleport', course: name });
-    });
+    gauntletOrder.forEach((name, i) => { courses[name].key = 'G' + (i + 1); });
 
     return { world, courses, order, gauntlet: gauntletOrder, hubSpawn, COLORS };
   }

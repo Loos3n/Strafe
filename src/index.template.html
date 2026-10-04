@@ -279,7 +279,7 @@ table.controls { width: 100%; border-collapse: collapse; font-size: 14px; margin
 
 <div class="hud" id="top">
   <div id="timer"></div>
-  <div id="courseline"><span id="course">Hub</span><span id="stage"></span><span id="best"></span></div>
+  <div id="courseline"><span id="course"></span><span id="stage"></span><span id="best"></span></div>
   <div id="ghostgap"></div>
   <div id="split" aria-live="polite"><span id="split-label"></span><span id="split-time"></span><span id="split-delta"></span></div>
 </div>
@@ -304,7 +304,7 @@ table.controls { width: 100%; border-collapse: collapse; font-size: 14px; margin
   <span class="wide" id="k-j">JUMP</span>
   <span class="wide" id="k-c">CROUCH</span>
 </div>
-<div class="hud" id="help">R restart · F checkpoint · H hub · M mute · Esc menu</div>
+<div class="hud" id="help">R restart · F checkpoint · M mute · Esc menu</div>
 
 <div id="menu" data-screen="title">
   <section class="ts" aria-label="Main menu">
@@ -321,7 +321,6 @@ table.controls { width: 100%; border-collapse: collapse; font-size: 14px; margin
       <button class="mbtn" data-open="story" aria-expanded="false" aria-controls="drawer"><span>Story</span><small id="m-story-sub"></small></button>
       <button class="mbtn" id="m-play"><span>Play</span><small id="m-play-sub"></small></button>
       <button class="mbtn" id="m-tutorial"><span>Tutorial</span><small id="m-tut-sub"></small></button>
-      <button class="mbtn" id="m-hub"><span>Free roam</span><small>The hub</small></button>
       <button class="mbtn" data-open="settings" aria-expanded="false" aria-controls="drawer"><span>Settings</span></button>
       <button class="mbtn" data-open="controls" aria-expanded="false" aria-controls="drawer"><span>Controls</span></button>
       <button class="mbtn" id="m-quit" hidden><span>Quit to title</span></button>
@@ -351,7 +350,6 @@ table.controls { width: 100%; border-collapse: collapse; font-size: 14px; margin
       <button id="play">Play <kbd>Enter</kbd></button>
       <button class="ghost" id="resume" hidden>Resume</button>
       <button class="ghost" id="restart" hidden>Restart</button>
-      <button class="ghost" id="tohub" hidden>Hub</button>
           </div>
   </section>
   <aside id="lb" class="lv" hidden aria-labelledby="lb-title">
@@ -431,7 +429,7 @@ table.controls { width: 100%; border-collapse: collapse; font-size: 14px; margin
           <tr><td>1 to 0 / T</td><td>Jump straight to a level, or the tutorial.</td></tr>
           <tr><td>Q</td><td>Quick turn 180°. Great for climbing a wall and kicking off backwards.</td></tr>
           <tr><td>Crouch on landing</td><td>Roll out of a big drop.</td></tr>
-          <tr><td>R / F / H</td><td>Restart level, last checkpoint, back to hub.</td></tr>
+          <tr><td>R / F</td><td>Restart level, last checkpoint.</td></tr>
           <tr><td>M / Esc</td><td>Mute sound. Open this menu. In the menu, arrow keys pick a level and Enter plays it.</td></tr>
         </table>
       </div>
@@ -455,7 +453,6 @@ table.controls { width: 100%; border-collapse: collapse; font-size: 14px; margin
       <button class="cprimary" id="c-next" data-act="next"></button>
       <button class="ghost" data-act="retry">Retry <kbd>R</kbd></button>
       <button class="ghost" data-act="levels">Levels <kbd>Esc</kbd></button>
-      <button class="ghost" data-act="hub">Hub <kbd>H</kbd></button>
     </div>
   </div>
 </div>
