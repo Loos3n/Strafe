@@ -146,7 +146,7 @@ body.playing #menu { display: none; }
 #p-course { font-weight: 700; font-style: italic; font-size: 20px; }
 #p-time { font-weight: 700; font-size: 18px; font-variant-numeric: tabular-nums; }
 #p-stage { font-size: 13px; letter-spacing: .14em; text-transform: uppercase; color: var(--dim); font-weight: 600; }
-.hero { grid-row: 3; align-self: end; max-width: 640px; padding-bottom: 22px; pointer-events: auto; text-shadow: 0 2px 18px rgba(0,0,0,.45); }
+.hero { grid-row: 3; grid-column: 1; align-self: end; max-width: 640px; padding-bottom: 22px; pointer-events: auto; text-shadow: 0 2px 18px rgba(0,0,0,.45); }
 #h-type { margin: 0; display: flex; align-items: center; gap: 10px; font-family: var(--display); font-weight: 700; font-size: 14px; letter-spacing: .24em; text-transform: uppercase; }
 #h-type .chip { background: var(--c); color: #fff; padding: 3px 9px; letter-spacing: .18em; text-shadow: none; }
 #h-name { margin: 6px 0 10px; font-family: var(--display); font-weight: 800; font-style: italic; font-size: clamp(64px, 10vw, 148px); line-height: .82; letter-spacing: -.01em; padding-right: .06em; }
@@ -254,6 +254,24 @@ table.controls { width: 100%; border-collapse: collapse; font-size: 14px; margin
   .mainnav { min-width: 100%; }
 }
 @media (prefers-reduced-motion: reduce) { .mbtn, .mbtn::before { transition: none; } }
+/* ---------- online leaderboard (level select, right of the hero) */
+#lb { grid-row: 3; grid-column: 1; justify-self: end; align-self: end; margin-bottom: 22px; width: min(320px, 36vw); box-sizing: border-box; pointer-events: auto;
+  background: var(--glass); backdrop-filter: blur(8px); border-top: 4px solid var(--red); padding: 12px 14px 10px; }
+#lb[hidden] { display: none; }
+#lb-title { margin: 0 0 8px; font-family: var(--display); font-weight: 700; font-size: 13px; letter-spacing: .22em; text-transform: uppercase; color: var(--dim); }
+#lb-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 2px; }
+#lb-list li { display: grid; grid-template-columns: 26px 22px minmax(0, 1fr) auto; align-items: center; gap: 8px; padding: 4px 6px; font-size: 14px; }
+#lb-list li.me { background: rgba(219,47,42,.28); }
+#lb-list li.gap { display: block; height: 1px; padding: 0; margin: 3px 0; background: var(--line); }
+#lb-list .r { font-family: var(--display); font-weight: 700; font-size: 15px; color: var(--dim); text-align: right; }
+#lb-list li:first-child .r { color: #f2b630; }
+#lb-list img { width: 22px; height: 22px; border-radius: 50%; display: block; }
+#lb-list .n { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#lb-list .t { font-family: var(--display); font-weight: 700; font-size: 16px; font-variant-numeric: tabular-nums; }
+#lb-note { margin: 8px 0 0; font-size: 12px; color: var(--dim); line-height: 1.4; }
+#lb-note:empty { display: none; }
+#c-online { margin: 6px 0 0; font-family: var(--display); font-weight: 700; font-size: 16px; letter-spacing: .12em; text-transform: uppercase; color: var(--red); }
+@media (max-width: 900px) { #lb { display: none; } }
 </style>
 
 <canvas id="view"></canvas>
@@ -336,6 +354,11 @@ table.controls { width: 100%; border-collapse: collapse; font-size: 14px; margin
       <button class="ghost" id="tohub" hidden>Hub</button>
           </div>
   </section>
+  <aside id="lb" class="lv" hidden aria-labelledby="lb-title">
+    <h3 id="lb-title">Online top times</h3>
+    <ol id="lb-list"></ol>
+    <p id="lb-note"></p>
+  </aside>
   <nav class="strip lv" aria-label="Levels">
     <p class="striphead"><span>Levels</span><span>&larr; &rarr; to browse</span></p>
     <ol class="levels" id="levels"></ol>
@@ -420,6 +443,7 @@ table.controls { width: 100%; border-collapse: collapse; font-size: 14px; margin
     <p class="clabel" id="c-label">Level complete</p>
     <h2 id="c-name"></h2>
     <div class="ctime"><span id="c-time"></span><span id="c-best"></span></div>
+    <p id="c-online" hidden></p>
     <div id="c-story" hidden><p class="cstars" id="c-stars"></p><p class="cdebrief" id="c-debrief"></p></div>
     <dl class="cstats">
       <div><dt>Top speed</dt><dd><span id="c-top"></span> u/s</dd></div>

@@ -724,6 +724,7 @@
           bestSplits[game.course] = game.run.splits; save(SPLITS_KEY, bestSplits);
         }
         if (isBest || !ghost.has(game.course)) ghost.keep(game.course);
+        lbSubmit(game.course, ticks);
         ghost.stop();
         game.finished = ticks;
         A.play('finish');
@@ -1141,6 +1142,7 @@
     const c = map.courses[game.course], r = game.run || { top: 0, dist: 0, jumps: 0 };
     const secs = ticks * TICK;
     $('c-name').textContent = c.name;
+    lbRenderComplete();
     $('c-time').textContent = fmt(ticks);
     const badge = $('c-best');
     badge.classList.toggle('new', isBest);
@@ -1400,6 +1402,98 @@
     if (settings.body && (locked || game.demo) && !attract.active) body.render();
   }
 
+  // ------------------------------------------------------------ online leaderboard
+  // Each player's best per level lives in one shared doc, times/<their id>,
+  // which only they can write and everyone can read. Names come from the
+  // viewer's own claude.ai directory and are never stored. The board only
+  // lights up inside claude.ai; anywhere else the game runs without it.
+  const LB_AA = 150; // only runs at the standard air acceleration count
+  const lb = { db: null, user: null, me: null, docs: null, readOnly: false, writing: Promise.resolve(), backfilled: false };
+  const lbMine = () => { const d = lb.docs && lb.docs.find(x => x.id === lb.me); return d ? d.t : {}; };
+  function lbWrite(changes) {
+    if (!lb.db || !lb.me || lb.readOnly) return;
+    lb.writing = lb.writing.then(() => {
+      const body = Object.assign({}, lbMine(), changes, { at: Date.now() });
+      return lb.db.doc('times/' + lb.me).set(body);
+    }).catch((e) => {
+      if (e && (e.code === 'invalid_argument' || e.code === 'not_granted' || e.code === 'revoked')) { lb.readOnly = true; lbRender(); }
+    });
+  }
+  function lbSubmit(course, ticks) {
+    if (!lb.db || course === 'hub' || settings.airaccelerate !== LB_AA) return;
+    const cur = lbMine()[course];
+    if (!(typeof cur === 'number' && cur <= ticks)) lbWrite({ [course]: ticks });
+  }
+  // put bests set before the leaderboard existed online, once
+  function lbBackfill() {
+    if (lb.backfilled || !lb.me || settings.airaccelerate !== LB_AA) return;
+    lb.backfilled = true;
+    const mine = lbMine(), up = {};
+    for (const c of LEVEL_ORDER) if (best[c] && !(typeof mine[c] === 'number' && mine[c] <= best[c])) up[c] = best[c];
+    if (Object.keys(up).length) lbWrite(up);
+  }
+  function lbStandings(course) {
+    return (lb.docs || []).filter(d => typeof d.t[course] === 'number' && d.t[course] > 0)
+      .map(d => ({ id: d.id, ticks: d.t[course] })).sort((a, b) => a.ticks - b.ticks);
+  }
+  let lbToken = 0;
+  async function lbRender() {
+    const el = $('lb');
+    if (!lb.db) { el.hidden = true; return; }
+    const course = typeof selected === 'string' ? selected : null;
+    if (!course || course === 'hub') { el.hidden = true; return; }
+    el.hidden = false;
+    const token = ++lbToken;
+    const all = lbStandings(course);
+    const top = all.slice(0, 10);
+    const myRank = all.findIndex(r => r.id === lb.me);
+    if (myRank >= 10) top.push(null, Object.assign({ rank: myRank }, all[myRank]));
+    const ps = await lb.user.profiles(top.filter(Boolean).map(r => r.id));
+    if (token !== lbToken) return;
+    $('lb-title').textContent = 'Online top times · ' + rowCourse(course).name;
+    const ol = $('lb-list');
+    ol.textContent = '';
+    top.forEach((r, i) => {
+      const li = document.createElement('li');
+      if (!r) { li.className = 'gap'; ol.appendChild(li); return; }
+      if (r.id === lb.me) li.className = 'me';
+      const p = ps[r.id] || {};
+      const rank = document.createElement('span'); rank.className = 'r'; rank.textContent = (r.rank !== undefined ? r.rank : i) + 1;
+      const img = document.createElement('img'); img.alt = ''; img.src = p.avatarUrl || '';
+      const name = document.createElement('span'); name.className = 'n'; name.textContent = r.id === lb.me ? (p.name || 'You') + ' (you)' : p.name || 'Someone';
+      const t = document.createElement('span'); t.className = 't'; t.textContent = fmt(r.ticks);
+      li.append(rank, img, name, t);
+      ol.appendChild(li);
+    });
+    $('lb-note').textContent = !lb.docs ? 'Loading times…' : !all.length ? 'No times yet. Finish a run to set the first.' :
+      lb.readOnly ? 'You can see the board but not post to it. Ask the owner for Contributor access.' :
+      settings.airaccelerate !== LB_AA ? 'Your air acceleration is not ' + LB_AA + ', so your runs are not posted.' : '';
+    lbRenderComplete();
+  }
+  function lbRenderComplete() {
+    const el = $('c-online');
+    const all = game.course ? lbStandings(game.course) : [];
+    const k = all.findIndex(r => r.id === lb.me);
+    el.hidden = !lb.db || k < 0;
+    if (k >= 0) el.textContent = 'Online rank #' + (k + 1) + ' of ' + all.length;
+  }
+  (async () => {
+    const C = window.claude;
+    if (!C || typeof C.use !== 'function') return;
+    const [db, user] = await Promise.all([C.use('db'), C.use('user')]);
+    if (!db || !user) return;
+    const me = await user.id();
+    if (!me) return;
+    Object.assign(lb, { db, user, me });
+    if ((await user.can('data.write')) === false) lb.readOnly = true;
+    db.collection('times').limit(1000).onSnapshot((snap) => {
+      lb.docs = snap.docs.map(d => ({ id: d.id, t: d.data() || {} }));
+      if (!snap.metadata.fromCache) lbBackfill();
+      lbRender();
+    }, () => { lb.db = null; lbRender(); });
+    lbRender();
+  })();
+
   // ------------------------------------------------------------ menu
   const menu = $('menu');
   const hex = (n) => '#' + n.toString(16).padStart(6, '0');
@@ -1429,6 +1523,7 @@
     $('h-stages').textContent = c.stages ? String(c.stages) : '—';
     $('h-best').textContent = name !== 'hub' && best[name] ? fmt(best[name]) : '—';
     updatePlayButtons();
+    lbRender();
   }
   function previewCourse(name) {
     if (attract.course === name) return;
