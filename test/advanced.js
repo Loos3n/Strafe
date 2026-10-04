@@ -41,7 +41,7 @@ const brains = {
   },
   spire(p, i) {
     if (!this.route) this.route = world.brushes.filter(b => (b.props.kind === 'block' || b.props.kind === 'pad') && b.min[0] < -30000)
-      .map(b => [(b.min[0] + b.max[0]) / 2, b.max[1], (b.min[2] + b.max[2]) / 2, b.props.kind]);
+      .map(b => [(b.min[0] + b.max[0]) / 2, b.max[1], (b.min[2] + b.max[2]) / 2, b.props.kind, (b.max[0] - b.min[0]) / 2]);
     const route = this.route;
     if (p.wp === undefined) {
       p.wp = 1; let best = 1e9;
@@ -86,7 +86,8 @@ const brains = {
       const lat = [0, 70, -70, 60, -60, 0, 0];
       const k = Math.max(0, Math.min(6, Math.ceil((-13800 - z + 40) / 300)));
       const tz = k < 6 ? -13800 - k * 300 : -15900;
-      const on = Math.round((-13800 - z) / 300), far = !p.onGround || z < -13800 - on * 300 - 20 || z > -13700;
+      const on = Math.round((-13800 - z) / 300), lip = on >= 5 ? 55 : 20; // the last vent: jump from its edge for the long gap
+      const far = !p.onGround || z < -13800 - on * 300 - lip || z > -13700;
       return { forward: 1, jump: z < -13530 && far, side: lat[k] - x > 15 ? 1 : lat[k] - x < -15 ? -1 : 0, yaw: 0 };
     }
     if (z > -16950) {

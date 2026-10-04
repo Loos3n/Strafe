@@ -43,6 +43,7 @@
 
     loops.surf = makeLoop('bandpass', 2200, 0.9, 'highpass', 900);
     loops.slide = makeLoop('bandpass', 650, 1.4);
+    loops.wall = makeLoop('bandpass', 1100, 1.1, 'lowpass', 3200);
 
     applyVolumes();
     startMusic();
@@ -76,7 +77,7 @@
   function setVolumes(v) { Object.assign(vol, v); applyVolumes(); }
 
   // ---------------------------------------------------------------- per-frame
-  // s: { speed, airborne, surfing, sliding, wallrun, playing }
+  // s: { speed, airborne, surfing, sliding, wallrun, wallrunTime, playing }
   function update(s) {
     if (!ctx) return;
     const t = ctx.currentTime, k = 0.06;
@@ -88,6 +89,10 @@
     const slideAmt = s.playing && s.sliding ? Math.min(1, sp / 900) * Math.max(0, 1 - (s.slideTime || 0) / 0.9) : 0;
     loops.slide.g.gain.setTargetAtTime(slideAmt * 0.06, t, slideAmt > 0 ? 0.05 : 0.02);
     loops.slide.f.frequency.setTargetAtTime(450 + sp * 0.5, t, k);
+    // wallrun scuff: swells in, climbs in pitch as the run goes on and you start to slip
+    const wr = s.playing && s.wallrun ? Math.min(1, (s.wallrunTime || 0) / 0.12) : 0;
+    loops.wall.g.gain.setTargetAtTime(wr * (0.035 + Math.min(1, sp / 900) * 0.035), t, wr > 0 ? 0.04 : 0.03);
+    loops.wall.f.frequency.setTargetAtTime(800 + sp * 0.6 + (s.wallrunTime || 0) * 500, t, k);
     const target = s.playing ? 0.35 + Math.min(1, sp / 1400) * 0.65 : 0;
     state.intensity += (target - state.intensity) * 0.05;
     const cutoff = s.playing ? 900 + Math.min(sp, 2000) * 3.2 : 1300;
@@ -161,6 +166,14 @@
     },
     slide(t) { noiseHit(t, 'bandpass', 900, 1.2, 0.035, 0.12, null, 500); },
     whoosh(t) { noiseHit(t, 'bandpass', 400, 0.9, 0.06, 0.2, null, 1800); },
+    // catching a wall: a shoe squeak, a palm slap and a low thump; the run
+    // itself is the scuffing wall loop in update()
+    wallrun(t) {
+      tone(t, 'sine', 1150, 1650, 0.03, 0.004, 0.06);
+      tone(t + 0.02, 'sine', 1500, 1250, 0.02, 0.004, 0.05);
+      noiseHit(t, 'highpass', 2600, 0.9, 0.09, 0.035);
+      tone(t, 'sine', 120, 60, 0.12, 0.003, 0.09);
+    },
     walljump(t) {
       tone(t, 'sine', 130, 60, 0.16, 0.003, 0.1);
       noiseHit(t, 'bandpass', 600, 1, 0.06, 0.18, null, 2200);

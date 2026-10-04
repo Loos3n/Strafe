@@ -73,7 +73,9 @@ function brain(plan) {
     let take = true;
     if (here) {
       const hx = -Math.sin(yaw), hz = -Math.cos(yaw);
-      const along = here.t === 'block' ? (p.pos[0] - here.x) * hx + (z - here.cz) * hz > 12 : z < here.z1 + 90;
+      // slow on a block: use the whole top as runway before jumping for the next one
+      const runway = here.t === 'block' && t.t === 'block' && p.hspeed() < 250 ? here.w / 2 - 22 : 12;
+      const along = here.t === 'block' ? (p.pos[0] - here.x) * hx + (z - here.cz) * hz > runway : z < here.z1 + 90;
       take = along;
       if (t.t === 'pad' && here.t === 'pad') take = false;
     }

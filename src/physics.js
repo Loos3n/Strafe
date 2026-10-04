@@ -38,6 +38,7 @@
     climbSpeed: 340,
     climbTime: 0.55,
     mantleReach: 96,
+    mantleExitMin: 280, // exit speed of a mantle you came into below 150 u/s
     vaultReach: 60,
   };
 
@@ -246,6 +247,7 @@
       // Spawn points sit on surfaces; lift a hair so we never start touching.
       this.pos = [pos[0], pos[1] + 0.5, pos[2]];
       this.vel = [0, 0, 0];
+      this.approach = 0;
       this.yaw = yaw || 0;
       this.pitch = 0;
       this.ducked = false;
@@ -280,6 +282,8 @@
       this.pitch = cmd.pitch;
       const jumpPressed = cmd.jump && !this.prevJump;
       this.jumpPressed = jumpPressed;
+      // speed a moment ago, before hitting anything: what a mantle counts as "how fast you came in"
+      this.approach = Math.max(this.hspeed(), (this.approach || 0) - 2000 * dt);
       if (this.slideCooldown > 0) this.slideCooldown -= dt;
       if (this.wallrunCooldown > 0) this.wallrunCooldown -= dt;
       const wasOnGround = this.onGround;
@@ -787,7 +791,10 @@
         if (across.fraction < 1) continue;
         const rise = ledge[1] - p[1];
         const hs = this.hspeed();
-        const outSpeed = grounded ? Math.max(hs, 220) : Math.max(hs * 0.85, 200);
+        // a mantle from low speed pops you out a little faster: coming in under
+        // 150 u/s it exits at mantleExitMin, easing back to the usual 200 floor by 250
+        const floor = c.mantleExitMin + (200 - c.mantleExitMin) * Math.min(1, Math.max(0, ((this.approach || 0) - 150) / 100));
+        const outSpeed = grounded ? Math.max(hs, 220) : Math.max(hs * 0.85, floor);
         const dur = grounded ? 0.16 : Math.min(0.34, Math.max(0.16, 0.1 + rise / 500));
         this.mantle = { from: p.slice(), mid, to: [ledge[0], ledge[1] + 1, ledge[2]], t: 0, dur, out: [f[0] * outSpeed, 0, f[2] * outSpeed], vault: grounded };
         this.vel = [0, 0, 0];

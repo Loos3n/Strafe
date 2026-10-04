@@ -1060,7 +1060,7 @@
   // ------------------------------------------------------------ camera feel
   const cam = { dip: 0, dipVel: 0, roll: 0, fovKick: 0, bobPhase: 0, bob: 0, flip: 0, kick: 0, kickVel: 0, kickRoll: 0 };
 
-  const EVENT_SFX = { jump: 'jump', slide: 'slide', wallrun: 'whoosh', walljump: 'walljump', climbjump: 'walljump', climb: 'climb', vault: 'vault', mantle: 'vault' };
+  const EVENT_SFX = { jump: 'jump', slide: 'slide', wallrun: 'wallrun', walljump: 'walljump', climbjump: 'walljump', climb: 'climb', vault: 'vault', mantle: 'vault' };
   function handleEvents() {
     for (const e of player.events) {
       if (EVENT_SFX[e.type]) A.play(EVENT_SFX[e.type]);
@@ -1665,6 +1665,7 @@
     A.update({
       speed: hs, playing: locked || !!game.demo, airborne: !player.onGround,
       surfing: !player.onGround && surfing(), sliding: !!player.slide && player.onGround, slideTime: player.slide ? player.slide.t : 0,
+      wallrun: !!player.wallrun, wallrunTime: player.wallrun ? player.wallrun.t : 0,
     });
     sky.position.copy(camera.position);
 

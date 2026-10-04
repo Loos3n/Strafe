@@ -545,6 +545,7 @@ table.controls { width: 100%; border-collapse: collapse; font-size: 14px; margin
     climbSpeed: 340,
     climbTime: 0.55,
     mantleReach: 96,
+    mantleExitMin: 280, // exit speed of a mantle you came into below 150 u/s
     vaultReach: 60,
   };
 
@@ -753,6 +754,7 @@ table.controls { width: 100%; border-collapse: collapse; font-size: 14px; margin
       // Spawn points sit on surfaces; lift a hair so we never start touching.
       this.pos = [pos[0], pos[1] + 0.5, pos[2]];
       this.vel = [0, 0, 0];
+      this.approach = 0;
       this.yaw = yaw || 0;
       this.pitch = 0;
       this.ducked = false;
@@ -787,6 +789,8 @@ table.controls { width: 100%; border-collapse: collapse; font-size: 14px; margin
       this.pitch = cmd.pitch;
       const jumpPressed = cmd.jump && !this.prevJump;
       this.jumpPressed = jumpPressed;
+      // speed a moment ago, before hitting anything: what a mantle counts as "how fast you came in"
+      this.approach = Math.max(this.hspeed(), (this.approach || 0) - 2000 * dt);
       if (this.slideCooldown > 0) this.slideCooldown -= dt;
       if (this.wallrunCooldown > 0) this.wallrunCooldown -= dt;
       const wasOnGround = this.onGround;
@@ -1294,7 +1298,10 @@ table.controls { width: 100%; border-collapse: collapse; font-size: 14px; margin
         if (across.fraction < 1) continue;
         const rise = ledge[1] - p[1];
         const hs = this.hspeed();
-        const outSpeed = grounded ? Math.max(hs, 220) : Math.max(hs * 0.85, 200);
+        // a mantle from low speed pops you out a little faster: coming in under
+        // 150 u/s it exits at mantleExitMin, easing back to the usual 200 floor by 250
+        const floor = c.mantleExitMin + (200 - c.mantleExitMin) * Math.min(1, Math.max(0, ((this.approach || 0) - 150) / 100));
+        const outSpeed = grounded ? Math.max(hs, 220) : Math.max(hs * 0.85, floor);
         const dur = grounded ? 0.16 : Math.min(0.34, Math.max(0.16, 0.1 + rise / 500));
         this.mantle = { from: p.slice(), mid, to: [ledge[0], ledge[1] + 1, ledge[2]], t: 0, dur, out: [f[0] * outSpeed, 0, f[2] * outSpeed], vault: grounded };
         this.vel = [0, 0, 0];
@@ -1389,6 +1396,7 @@ table.controls { width: 100%; border-collapse: collapse; font-size: 14px; margin
 
     loops.surf = makeLoop('bandpass', 2200, 0.9, 'highpass', 900);
     loops.slide = makeLoop('bandpass', 650, 1.4);
+    loops.wall = makeLoop('bandpass', 1100, 1.1, 'lowpass', 3200);
 
     applyVolumes();
     startMusic();
@@ -1422,7 +1430,7 @@ table.controls { width: 100%; border-collapse: collapse; font-size: 14px; margin
   function setVolumes(v) { Object.assign(vol, v); applyVolumes(); }
 
   // ---------------------------------------------------------------- per-frame
-  // s: { speed, airborne, surfing, sliding, wallrun, playing }
+  // s: { speed, airborne, surfing, sliding, wallrun, wallrunTime, playing }
   function update(s) {
     if (!ctx) return;
     const t = ctx.currentTime, k = 0.06;
@@ -1434,6 +1442,10 @@ table.controls { width: 100%; border-collapse: collapse; font-size: 14px; margin
     const slideAmt = s.playing && s.sliding ? Math.min(1, sp / 900) * Math.max(0, 1 - (s.slideTime || 0) / 0.9) : 0;
     loops.slide.g.gain.setTargetAtTime(slideAmt * 0.06, t, slideAmt > 0 ? 0.05 : 0.02);
     loops.slide.f.frequency.setTargetAtTime(450 + sp * 0.5, t, k);
+    // wallrun scuff: swells in, climbs in pitch as the run goes on and you start to slip
+    const wr = s.playing && s.wallrun ? Math.min(1, (s.wallrunTime || 0) / 0.12) : 0;
+    loops.wall.g.gain.setTargetAtTime(wr * (0.035 + Math.min(1, sp / 900) * 0.035), t, wr > 0 ? 0.04 : 0.03);
+    loops.wall.f.frequency.setTargetAtTime(800 + sp * 0.6 + (s.wallrunTime || 0) * 500, t, k);
     const target = s.playing ? 0.35 + Math.min(1, sp / 1400) * 0.65 : 0;
     state.intensity += (target - state.intensity) * 0.05;
     const cutoff = s.playing ? 900 + Math.min(sp, 2000) * 3.2 : 1300;
@@ -1507,6 +1519,14 @@ table.controls { width: 100%; border-collapse: collapse; font-size: 14px; margin
     },
     slide(t) { noiseHit(t, 'bandpass', 900, 1.2, 0.035, 0.12, null, 500); },
     whoosh(t) { noiseHit(t, 'bandpass', 400, 0.9, 0.06, 0.2, null, 1800); },
+    // catching a wall: a shoe squeak, a palm slap and a low thump; the run
+    // itself is the scuffing wall loop in update()
+    wallrun(t) {
+      tone(t, 'sine', 1150, 1650, 0.03, 0.004, 0.06);
+      tone(t + 0.02, 'sine', 1500, 1250, 0.02, 0.004, 0.05);
+      noiseHit(t, 'highpass', 2600, 0.9, 0.09, 0.035);
+      tone(t, 'sine', 120, 60, 0.12, 0.003, 0.09);
+    },
     walljump(t) {
       tone(t, 'sine', 130, 60, 0.16, 0.003, 0.1);
       noiseHit(t, 'bandpass', 600, 1, 0.06, 0.18, null, 2200);
@@ -2490,7 +2510,7 @@ table.controls { width: 100%; border-collapse: collapse; font-size: 14px; margin
         { t: 'pad', gap: 400, rise: -300, len: 700, w: 600, cp: true }, { t: 'turn', dir: 1 },
         { t: 'bhop', n: 10, size: 136, step: 288, lat: [0, 90, -90, 60, -60, 0] },
         { t: 'lane', gap: 120, len: 3000, w: 256 },
-        { t: 'pad', gap: 440, rise: -300, len: 800, w: 768, end: true },
+        { t: 'pad', gap: 380, rise: -400, len: 860, w: 768, end: true },
       ] });
 
     // ------------------------------------------------------------ canyon
@@ -3645,7 +3665,7 @@ table.controls { width: 100%; border-collapse: collapse; font-size: 14px; margin
   // ------------------------------------------------------------ camera feel
   const cam = { dip: 0, dipVel: 0, roll: 0, fovKick: 0, bobPhase: 0, bob: 0, flip: 0, kick: 0, kickVel: 0, kickRoll: 0 };
 
-  const EVENT_SFX = { jump: 'jump', slide: 'slide', wallrun: 'whoosh', walljump: 'walljump', climbjump: 'walljump', climb: 'climb', vault: 'vault', mantle: 'vault' };
+  const EVENT_SFX = { jump: 'jump', slide: 'slide', wallrun: 'wallrun', walljump: 'walljump', climbjump: 'walljump', climb: 'climb', vault: 'vault', mantle: 'vault' };
   function handleEvents() {
     for (const e of player.events) {
       if (EVENT_SFX[e.type]) A.play(EVENT_SFX[e.type]);
@@ -4250,6 +4270,7 @@ table.controls { width: 100%; border-collapse: collapse; font-size: 14px; margin
     A.update({
       speed: hs, playing: locked || !!game.demo, airborne: !player.onGround,
       surfing: !player.onGround && surfing(), sliding: !!player.slide && player.onGround, slideTime: player.slide ? player.slide.t : 0,
+      wallrun: !!player.wallrun, wallrunTime: player.wallrun ? player.wallrun.t : 0,
     });
     sky.position.copy(camera.position);
 

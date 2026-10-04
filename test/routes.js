@@ -79,7 +79,7 @@ function brain(F, st) {
       const ln = here && here.t === 'lane' ? here : over || t;
       const nxt = plan[plan.indexOf(ln) + 1];
       const hop = true;
-      if (!p.onGround && z > ln.z1 + 150 && q.hspeed < 560) return Object.assign(strafeTo(q, i, ln.x, ln.z1 - 200), { jump: hop });
+      if (!p.onGround && z > ln.z1 + 150 && q.hspeed < 560) return Object.assign(strafeTo(q, i, ln.x, Math.max(ln.z1 - 200, z - 700)), { jump: hop });
       if (!p.onGround) return { forward: 1, yaw: Math.atan2(-(ln.x - q.pos[0]), -(ln.z1 - 400 - z)), jump: hop };
       return { forward: 1, yaw: Math.atan2(-(ln.x - q.pos[0]), 400), jump: hop };
     }

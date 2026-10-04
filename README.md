@@ -19,6 +19,8 @@ Tests: `node test/sim.js` (movement checks),
 
 Polish: speed lines streak past the screen edges above about 450 u/s, hard landings nod and jolt the camera, footsteps and landings sound different on concrete, metal, wooden blocks, tiled pads and gravel (`SURFACE` in `src/game.js`, `step` in `src/audio.js`), and Settings has speed lines and landing kick toggles plus a Performance group (render scale 50 to 100%, frame rate counter).
 
+Wallrun sound: catching a wall plays a shoe squeak, palm slap and thump, and the run itself is a scuffing loop that rises in pitch as the wallrun goes on. Mantle boost: a mantle you come into below 150 u/s (speed just before hitting the ledge) pops you out at `mantleExitMin` (280), easing back to the old 200 floor by 250 u/s; faster mantles are unchanged.
+
 Default tuning matches CS:GO surf/KZ servers: gravity 800, maxspeed 250, accelerate 5.5,
 airaccelerate 150, friction 5.2, stopspeed 80, jump height 57. All of it lives in `DEFAULTS` in `src/physics.js`.
 

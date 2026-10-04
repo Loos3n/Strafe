@@ -852,7 +852,7 @@
         { t: 'pad', gap: 400, rise: -300, len: 700, w: 600, cp: true }, { t: 'turn', dir: 1 },
         { t: 'bhop', n: 10, size: 136, step: 288, lat: [0, 90, -90, 60, -60, 0] },
         { t: 'lane', gap: 120, len: 3000, w: 256 },
-        { t: 'pad', gap: 440, rise: -300, len: 800, w: 768, end: true },
+        { t: 'pad', gap: 380, rise: -400, len: 860, w: 768, end: true },
       ] });
 
     // ------------------------------------------------------------ canyon
