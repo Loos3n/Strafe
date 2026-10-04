@@ -14,6 +14,47 @@
     master: 80, music: 50, sfx: 80,
   }, load(SETTINGS_KEY) || {});
   const best = load(BEST_KEY) || {};
+  // ------------------------------------------------------------ story
+  // A short courier campaign over the existing levels. Each job has a
+  // briefing, a debrief and two time targets (seconds) for the second and
+  // third star; finishing at all earns the first. The prologue has no stars.
+  const STORY_KEY = 'strafe.story.v1';
+  const STORY = [
+    { course: 'tutorial', title: 'First Day',
+      brief: 'Mercer: "Nobody runs for me until I have seen them move. The training yard is quiet this time of night. Show me every trick in the book, then we talk work."',
+      debrief: 'Mercer: "Not bad, Kite. Not good either. Go home, get some sleep. Tomorrow you carry something real."' },
+    { course: 'roofs', title: 'The Drop', stars: [68, 95],
+      brief: 'Mercer: "First job is easy money. A sealed drive goes from a rooftop letterbox to a contact three corners away. Don\'t open it. Don\'t lose it. Don\'t be seen."',
+      debrief: 'The contact is a woman in a grey coat who calls herself Juno. She checks the seal twice before she pays. Mercer: "Clients who check seals have something to hide. Not our problem."' },
+    { course: 'bhop', title: 'Foundry', stars: [24, 34],
+      brief: 'Mercer: "Juno wants another package moved, through the old foundry. The floor runs hot, so don\'t touch it. Keep hopping and keep your speed."',
+      debrief: 'Halfway across the foundry you hear radios below. Blues, city security, sweeping the yard. Mercer: "Coincidence. Probably."' },
+    { course: 'surf', title: 'Spillway', stars: [18, 26],
+      brief: 'Mercer: "The Blues have the bridges watched. Only way across the reservoir tonight is down the spillway ramps. Ride the slopes, don\'t fall in."',
+      debrief: 'Juno is waiting at the far bank. "They know a runner is moving my drives," she says. "Keep going, Kite. Two more and it is done."' },
+    { course: 'crossover', title: 'Shortcut', stars: [20, 30],
+      brief: 'Mercer: "Juno is paying double for speed. Roof, ramp, blocks, wall. One line, no stopping. I want you there before the Blues finish their shift change."',
+      debrief: 'You make the handoff with seconds to spare. On the way out you see the drive\'s label in the streetlight: "CITY WATER AUTHORITY, AUDIT, DO NOT COPY".' },
+    { course: 'downtown', title: 'Courier', stars: [70, 100],
+      brief: 'Mercer: "Big one. Pick up from an office tower downtown, out through the lightwell, over the construction site. The Blues have a drone over the crane, so be quick on the jib."',
+      debrief: 'The drone tracks you to the alley before losing you. Mercer goes quiet on comms for a long time. Then: "Kite. Juno is a journalist. And now we are part of her story."' },
+    { course: 'canyon', title: 'The Cut', stars: [20, 30],
+      brief: 'Mercer: "The Blues locked down downtown. We go around, down the storm cut on the east side. Carve the banks and don\'t stop until you hit the bottom."',
+      debrief: 'Juno takes the drive and gives you a name for the first time: Director Vale, head of the Water Authority. "He sold the reservoir and faked the audits. These drives prove it."' },
+    { course: 'stairway', title: 'Stairwell', stars: [40, 56],
+      brief: 'Mercer: "Juno\'s safe house is compromised. Her backup copy is at the top of the old stair blocks. Climb, turn, and don\'t miss a step."',
+      debrief: 'The backup is still there. So is a note, in neat handwriting: "We know who you are, runner." Mercer: "Then we finish this fast."' },
+    { course: 'freerun', title: 'Heat', stars: [56, 80],
+      brief: 'Mercer: "They are on you, Kite. Blues on the roofs behind you. Lose them across the old district. Every wall, every gap. Don\'t look back."',
+      debrief: 'You lose the last of them in the ventilation stacks. Juno on comms: "The newsroom will run the story if we get the originals to the Spire by morning."' },
+    { course: 'cascade', title: 'Floodgates', stars: [26, 38],
+      brief: 'Mercer: "Vale opened the floodgates to cut the city in half. The only way north is the overflow ramps. Nine of them. Keep your line."',
+      debrief: 'The water roars under you the whole way down. On the far side the Spire is lit up like a beacon, and so are the Blue patrols around it.' },
+    { course: 'spire', title: 'The Spire', stars: [55, 80],
+      brief: 'Juno: "The newsroom is at the top of the Spire. No stairs, no lifts, just the old block columns. Get the originals up there, Kite. Everything rides on this."',
+      debrief: 'The editor takes the drives from your hands as the sun comes up. By noon every screen in the city shows Director Vale\'s face. Mercer: "Take a week off, Kite. Then I have another job for you."' },
+  ];
+  const storyProgress = load(STORY_KEY) || {};
   // checkpoint times from each level's best run, keyed by checkpoint index
   const SPLITS_KEY = 'strafe.splits.v1';
   const bestSplits = load(SPLITS_KEY) || {};
@@ -559,7 +600,7 @@
   // ------------------------------------------------------------ game state
   const game = {
     course: null, cp: 0, cpSpawn: null, running: false, inStart: false,
-    startTick: 0, tick: 0, finished: null,
+    startTick: 0, tick: 0, finished: null, mission: null,
   };
   const prev = { pos: player.pos.slice(), eye: player.viewOffset };
 
@@ -570,24 +611,25 @@
     cam.dip = 0; cam.roll = 0;
   }
   function goHub() {
-    game.course = null; game.running = false; game.finished = null;
+    game.course = null; game.running = false; game.finished = null; game.mission = null;
     resetTutorial();
     place(map.hubSpawn);
     updateCourseHud();
   }
-  function goCourse(name) {
+  function goCourse(name, mission = null) {
     const c = map.courses[name];
     game.course = name; game.cp = 0; game.cpSpawn = c.spawn; game.running = false; game.finished = null;
+    game.mission = mission;
     ghost.stop();
     closeComplete();
     $('split').classList.remove('show');
     resetTutorial();
     place(c.spawn);
     updateCourseHud();
-    toast(c.name);
+    toast(mission === null ? c.name : (mission ? 'Job ' + mission : 'Prologue') + ': ' + STORY[mission].title);
     A.play('teleport');
   }
-  function restartCourse() { if (game.course) goCourse(game.course); else goHub(); }
+  function restartCourse() { if (game.course) goCourse(game.course, game.mission); else goHub(); }
   function respawn() {
     if (!game.course) { goHub(); return; }
     place(game.cpSpawn);
@@ -1051,6 +1093,18 @@
     const nx = nextLevel(game.course);
     $('c-next').textContent = nx ? 'Next: ' + map.courses[nx].name : 'Back to hub';
     $('c-next').dataset.target = nx || 'hub';
+    const job = game.mission !== null ? STORY[game.mission] : null;
+    $('c-label').textContent = job ? (game.mission ? 'Job ' + game.mission : 'Prologue') + ' complete' : 'Level complete';
+    $('c-story').hidden = !job;
+    if (job) {
+      $('c-name').textContent = job.title;
+      const got = finishJob(game.mission, secs);
+      $('c-stars').innerHTML = job.stars ? starHtml(got) + '<small>' + starNote(job, got) + '</small>' : '';
+      $('c-debrief').textContent = job.debrief;
+      const nj = game.mission + 1 < STORY.length ? game.mission + 1 : null;
+      $('c-next').textContent = nj !== null ? 'Next job: ' + STORY[nj].title : 'Story complete';
+      $('c-next').dataset.target = nj !== null ? 'job:' + nj : 'story';
+    }
     // let the landing play out, then hand back the mouse
     clearTimeout(completeTimer);
     completeTimer = setTimeout(() => {
@@ -1068,7 +1122,13 @@
   function completeAction(what) {
     A.init(); A.play('click');
     closeComplete();
-    if (what === 'next') { const t = $('c-next').dataset.target; if (t === 'hub') goHub(); else goCourse(t); startPlay(); }
+    if (what === 'next') {
+      const t = $('c-next').dataset.target;
+      if (t === 'story') { goHub(); showMenuState(); openDrawer('story'); return; }
+      if (t.startsWith('job:')) { startJob(+t.slice(4)); return; }
+      if (t === 'hub') goHub(); else goCourse(t);
+      startPlay();
+    }
     else if (what === 'retry') { restartCourse(); startPlay(); }
     else if (what === 'hub') { goHub(); startPlay(); }
     else showMenuState(); // levels: fall back to the main menu
@@ -1413,7 +1473,13 @@
   function openDrawer(which) {
     A.play('click');
     drawer.hidden = false;
-    $('d-title').textContent = which === 'settings' ? 'Settings' : 'Controls';
+    $('d-title').textContent = which === 'settings' ? 'Settings' : which === 'story' ? 'Story' : 'Controls';
+    drawer.classList.toggle('wide', which === 'story');
+    if (which === 'story') {
+      // brief the first job that still has stars to win
+      if (briefed === null) { let i = 0; while (i + 1 < STORY.length && jobOpen(i + 1) && storyProgress[i]) i++; briefed = i; }
+      brief(briefed);
+    }
     for (const p of drawer.querySelectorAll('[data-pane]')) p.hidden = p.dataset.pane !== which;
     for (const o of document.querySelectorAll('[data-open]')) o.setAttribute('aria-expanded', String(o.dataset.open === which));
     $('d-close').focus({ preventScroll: true });
@@ -1429,6 +1495,61 @@
     });
   }
   $('d-close').addEventListener('click', () => { A.play('click'); closeDrawer(); });
+
+  // story: jobs list, briefing, stars
+  const starCount = (job, secs) => !job.stars ? 0 : secs <= job.stars[0] ? 3 : secs <= job.stars[1] ? 2 : 1;
+  const starHtml = (n) => '★'.repeat(n) + '<i>' + '★'.repeat(3 - n) + '</i>';
+  const clock = (secs) => fmt(Math.round(secs / TICK)).replace(/\.00$/, '');
+  function starNote(job, n) {
+    return n === 3 ? 'All three stars' : n === 2 ? 'Under ' + clock(job.stars[0]) + ' for three' : 'Under ' + clock(job.stars[1]) + ' for two';
+  }
+  function finishJob(i, secs) {
+    const job = STORY[i], prev = storyProgress[i] || { stars: 0, best: null };
+    const got = starCount(job, secs);
+    storyProgress[i] = { stars: Math.max(prev.stars, got), best: prev.best === null ? secs : Math.min(prev.best, secs) };
+    save(STORY_KEY, storyProgress);
+    return got;
+  }
+  const jobOpen = (i) => i === 0 || !!storyProgress[i - 1];
+  let briefed = null;
+  function buildStory() {
+    const ol = $('st-jobs');
+    ol.textContent = '';
+    let total = 0, max = 0;
+    STORY.forEach((job, i) => {
+      if (job.stars) { total += (storyProgress[i] || { stars: 0 }).stars; max += 3; }
+      const li = document.createElement('li');
+      const b = document.createElement('button');
+      b.className = 'job';
+      b.disabled = !jobOpen(i);
+      const pr = storyProgress[i];
+      const stars = !jobOpen(i) ? 'Locked' : job.stars ? starHtml(pr ? pr.stars : 0) : pr ? 'Done' : '';
+      b.innerHTML = '<span class="n">' + (i === 0 ? 'P' : i) + '</span><span class="t">' + job.title + '<small>' + map.courses[job.course].name +
+        (pr && pr.best !== null && job.stars ? ' · best ' + clock(pr.best) : '') + '</small></span><span class="s">' + stars + '</span>';
+      if (briefed === i) b.setAttribute('aria-current', 'true');
+      b.addEventListener('click', () => { A.play('click'); brief(i); });
+      li.appendChild(b);
+      ol.appendChild(li);
+    });
+    $('st-total').textContent = 'Stars ' + total + ' / ' + max;
+  }
+  function brief(i) {
+    briefed = i;
+    const job = STORY[i];
+    $('st-brief').hidden = false;
+    $('st-num').textContent = i === 0 ? 'Prologue' : 'Job ' + i + ' of ' + (STORY.length - 1);
+    $('st-title').textContent = job.title;
+    $('st-level').textContent = map.courses[job.course].name;
+    $('st-text').textContent = job.brief;
+    $('st-targets').textContent = job.stars ? '★★★ under ' + clock(job.stars[0]) + '   ★★ under ' + clock(job.stars[1]) + '   ★ finish' : 'No time targets. Just finish.';
+    buildStory();
+    $('st-start').focus({ preventScroll: true });
+  }
+  function startJob(i) {
+    goCourse(STORY[i].course, i);
+    startPlay();
+  }
+  $('st-start').addEventListener('click', () => { A.init(); A.play('click'); if (briefed !== null) startJob(briefed); });
 
   function bindRange(id, key, fmtv, apply) {
     const el = $(id), out = $(id + '-v');

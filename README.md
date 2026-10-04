@@ -21,3 +21,5 @@ Default tuning matches CS:GO surf/KZ servers: gravity 800, maxspeed 250, acceler
 airaccelerate 150, friction 5.2, stopspeed 80, jump height 57. All of it lives in `DEFAULTS` in `src/physics.js`.
 
 Ghost replay: every run is sampled every 4 ticks; a new best (or the first finish on a level with no ghost yet) is stored in localStorage (`strafe.ghost.v1.<level>`) and replays as a see-through runner with a marker that shows through walls, plus a live "Ghost +/-s" gap under the timer. Toggle it in Settings. `__strafe.step` and `__strafe.ghost` are exposed for browser tests.
+
+Story mode: the Story button in the menu opens a courier campaign (a prologue on the tutorial plus ten jobs, one per level) with briefings, debriefs and up to three stars per job for beating time targets. Jobs unlock in order; progress is in localStorage (`strafe.story.v1`). The jobs and targets are `STORY` in `src/game.js`.

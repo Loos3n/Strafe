@@ -98,6 +98,29 @@ body.complete #menu { display: none; }
 .cprimary { all: unset; cursor: pointer; background: var(--red); color: #fff; font-family: var(--display); font-weight: 700; font-size: 19px; letter-spacing: .14em; text-transform: uppercase; padding: 11px 28px; clip-path: polygon(10px 0, 100% 0, calc(100% - 10px) 100%, 0 100%); }
 .cprimary:hover { background: #c22420; }
 .cprimary:focus-visible { outline: 3px solid var(--ink); outline-offset: 3px; }
+#c-story { margin-top: 14px; }
+.cstars { margin: 0; font-size: 34px; letter-spacing: .12em; color: #e0a400; line-height: 1; }
+.cstars i { font-style: normal; color: rgba(21,25,29,.18); }
+.cstars small { font-family: var(--display); font-size: 14px; font-weight: 600; letter-spacing: .14em; text-transform: uppercase; color: var(--muted); margin-left: 10px; vertical-align: middle; }
+.cdebrief { margin: 10px 0 0; font-size: 16px; line-height: 1.5; color: var(--ink); max-width: 52ch; }
+/* ---------- story */
+#drawer.wide { width: min(560px, 100%); }
+.sintro { margin: 14px 0 6px; font-size: 15px; line-height: 1.5; color: rgba(236,240,244,.82); }
+#st-brief { margin: 12px 0 16px; padding: 16px; background: rgba(255,255,255,.06); border-left: 3px solid var(--red); }
+.sjob, .slevel { margin: 0; font-family: var(--display); font-weight: 600; font-size: 12px; letter-spacing: .22em; text-transform: uppercase; color: rgba(236,240,244,.6); }
+#st-title { margin: 2px 0 2px; font-family: var(--display); font-weight: 800; font-style: italic; font-size: 34px; line-height: 1; }
+.stext { margin: 10px 0; font-size: 15px; line-height: 1.55; }
+.stargets { margin: 0 0 14px; font-size: 13px; color: rgba(236,240,244,.7); }
+.jobs { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+.job { all: unset; box-sizing: border-box; width: 100%; cursor: pointer; display: grid; grid-template-columns: 34px 1fr auto; align-items: center; gap: 10px; padding: 10px 12px; background: rgba(255,255,255,.04); border: 1px solid transparent; }
+.job:hover, .job[aria-current="true"] { border-color: rgba(255,255,255,.3); background: rgba(255,255,255,.08); }
+.job:focus-visible { outline: 2px solid var(--red); outline-offset: 2px; }
+.job[disabled] { cursor: default; opacity: .4; }
+.job .n { font-family: var(--display); font-weight: 700; font-size: 18px; color: rgba(236,240,244,.6); }
+.job .t { font-family: var(--display); font-weight: 700; font-size: 19px; line-height: 1.1; }
+.job .t small { display: block; font-weight: 600; font-size: 12px; letter-spacing: .16em; text-transform: uppercase; color: rgba(236,240,244,.55); }
+.job .s { font-size: 16px; letter-spacing: .1em; color: #f2b630; white-space: nowrap; }
+.job .s i { font-style: normal; color: rgba(255,255,255,.2); }
 .cbtns kbd { font-family: var(--display); font-size: 12px; border: 1px solid currentColor; padding: 0 4px; margin-left: 4px; opacity: .7; }
 @media (max-width: 560px) { .cstats { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 @media (prefers-reduced-motion: reduce) { #complete { animation: none; } }
@@ -232,6 +255,7 @@ table.controls { width: 100%; border-collapse: collapse; font-size: 14px; margin
   <header class="top">
     <h1 class="mark"><i aria-hidden="true"></i>STRAFE</h1>
     <nav class="topnav" aria-label="Menu">
+      <button class="navbtn" data-open="story" aria-expanded="false" aria-controls="drawer">Story</button>
       <button class="navbtn" data-open="settings" aria-expanded="false" aria-controls="drawer">Settings</button>
       <button class="navbtn" data-open="controls" aria-expanded="false" aria-controls="drawer">Controls</button>
     </nav>
@@ -264,6 +288,19 @@ table.controls { width: 100%; border-collapse: collapse; font-size: 14px; margin
 <aside id="drawer" hidden aria-labelledby="d-title">
   <div class="dhead"><h2 id="d-title">Settings</h2><button id="d-close" aria-label="Close (Esc)">Close</button></div>
   <div class="panes">
+    <div data-pane="story" hidden>
+      <p class="sintro">You are Kite, a runner. Mercer finds the jobs, you carry the packages over the rooftops where nobody is listening. Every job is timed: beat the targets for up to three stars.</p>
+      <p class="label"><span id="st-total"></span></p>
+      <div id="st-brief" hidden>
+        <p class="sjob" id="st-num"></p>
+        <h3 id="st-title"></h3>
+        <p class="slevel" id="st-level"></p>
+        <p class="stext" id="st-text"></p>
+        <p class="stargets" id="st-targets"></p>
+        <button class="cprimary" id="st-start">Start job</button>
+      </div>
+      <ol class="jobs" id="st-jobs"></ol>
+    </div>
     <div data-pane="settings" hidden>
         <div class="group">
           <p class="label">Sound</p>
@@ -324,9 +361,10 @@ table.controls { width: 100%; border-collapse: collapse; font-size: 14px; margin
 <div id="flash"></div>
 <div id="complete" hidden role="dialog" aria-labelledby="c-name">
   <div class="csheet">
-    <p class="clabel">Level complete</p>
+    <p class="clabel" id="c-label">Level complete</p>
     <h2 id="c-name"></h2>
     <div class="ctime"><span id="c-time"></span><span id="c-best"></span></div>
+    <div id="c-story" hidden><p class="cstars" id="c-stars"></p><p class="cdebrief" id="c-debrief"></p></div>
     <dl class="cstats">
       <div><dt>Top speed</dt><dd><span id="c-top"></span> u/s</dd></div>
       <div><dt>Average</dt><dd><span id="c-avg"></span> u/s</dd></div>
