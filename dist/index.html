@@ -20,6 +20,9 @@
 }
 html, body { height: 100%; margin: 0; overflow: hidden; background: #cfe3ef; color: var(--ink); font-family: var(--body); }
 #view { position: fixed; inset: 0; width: 100%; height: 100%; display: block; cursor: crosshair; }
+#lines { position: fixed; inset: 0; width: 100%; height: 100%; pointer-events: none; }
+body:not(.playing) #fps { display: none; }
+#fps { position: fixed; top: 10px; left: 12px; font: 600 13px/1 var(--display, sans-serif); letter-spacing: .08em; color: #fff; background: rgba(0,0,0,.45); padding: 5px 8px; pointer-events: none; z-index: 5; }
 
 /* ---------- HUD */
 .hud { position: fixed; pointer-events: none; color: var(--hud); text-shadow: 0 0 1px rgba(10,14,18,.9), 0 1px 3px rgba(10,14,18,.55), 0 0 18px rgba(10,14,18,.25); font-family: var(--display); }
@@ -295,6 +298,8 @@ table.controls { width: 100%; border-collapse: collapse; font-size: 14px; margin
 </style>
 
 <canvas id="view"></canvas>
+<canvas id="lines" aria-hidden="true"></canvas>
+<div id="fps" hidden></div>
 <div id="crosshair"></div>
 
 <div class="hud" id="top">
@@ -442,8 +447,21 @@ table.controls { width: 100%; border-collapse: collapse; font-size: 14px; margin
             <label><input type="checkbox" id="s-bob"> View bob</label>
             <label><input type="checkbox" id="s-keys"> Key display</label>
             <label><input type="checkbox" id="s-shadows"> Shadows</label>
+            <label><input type="checkbox" id="s-lines"> Speed lines</label>
+            <label><input type="checkbox" id="s-landkick"> Landing camera kick</label>
             <label><input type="checkbox" id="s-body"> Show arms and legs</label>
             <label><input type="checkbox" id="s-ghost"> Race the ghost of your best run</label>
+          </div>
+        </div>
+        <div class="group">
+          <p class="label">Performance</p>
+          <div class="settings">
+            <label for="s-scale">Render scale</label><output id="s-scale-v"></output>
+            <input type="range" id="s-scale" min="50" max="100" step="5">
+            <p class="hint">Lower draws fewer pixels for a higher frame rate. Turning off shadows helps most on slow machines.</p>
+          </div>
+          <div class="checks" style="margin-top:10px">
+            <label><input type="checkbox" id="s-fps"> Show frame rate</label>
           </div>
         </div>
       </div>
@@ -1448,10 +1466,32 @@ table.controls { width: 100%; border-collapse: collapse; font-size: 14px; margin
   }
 
   const SFX = {
+    // footsteps change with the surface: concrete roofs, metal panels and
+    // ramps, wooden bhop blocks, tiled pads and floors, gravel on the cliffs
     step(t, o) {
-      const k = o.soft ? 0.6 : 1;
-      noiseHit(t, 'bandpass', (o.pitch || 1) * (380 + Math.random() * 260), 1.6, 0.1 * k, 0.04);
-      tone(t, 'sine', 95 * (o.pitch || 1), 55, 0.07 * k, 0.003, 0.05);
+      const k = o.soft ? 0.6 : 1, p = o.pitch || 1, r = Math.random();
+      switch (o.surface) {
+        case 'metal':
+          noiseHit(t, 'bandpass', p * (2200 + r * 900), 3, 0.06 * k, 0.03);
+          tone(t, 'triangle', p * (620 + r * 180), p * 560, 0.035 * k, 0.002, 0.11);
+          tone(t, 'sine', 120 * p, 70, 0.05 * k, 0.003, 0.05);
+          break;
+        case 'wood':
+          tone(t, 'triangle', p * (210 + r * 40), 130, 0.09 * k, 0.002, 0.06);
+          noiseHit(t, 'bandpass', p * (800 + r * 300), 2.2, 0.06 * k, 0.03);
+          break;
+        case 'tile':
+          noiseHit(t, 'highpass', p * (2800 + r * 800), 1.2, 0.07 * k, 0.018);
+          tone(t, 'sine', 105 * p, 60, 0.06 * k, 0.003, 0.045);
+          break;
+        case 'gravel':
+          noiseHit(t, 'bandpass', p * (1300 + r * 500), 0.8, 0.09 * k, 0.07);
+          noiseHit(t + 0.025, 'bandpass', p * (1900 + r * 600), 0.9, 0.05 * k, 0.05);
+          break;
+        default:
+          noiseHit(t, 'bandpass', p * (380 + r * 260), 1.6, 0.1 * k, 0.04);
+          tone(t, 'sine', 95 * p, 55, 0.07 * k, 0.003, 0.05);
+      }
     },
     jump(t) {
       noiseHit(t, 'bandpass', 500, 1.1, 0.07, 0.16, null, 1700);
@@ -1461,6 +1501,9 @@ table.controls { width: 100%; border-collapse: collapse; font-size: 14px; margin
       const p = Math.min(1, Math.max(0.15, (o.speed || 300) / 900));
       tone(t, 'sine', 110, 42, 0.24 * p, 0.003, 0.14);
       noiseHit(t, 'lowpass', 700, 0.7, 0.12 * p, 0.07);
+      if (o.surface === 'metal') tone(t, 'triangle', 480, 430, 0.06 * p, 0.002, 0.22);
+      else if (o.surface === 'wood') tone(t, 'triangle', 170, 110, 0.1 * p, 0.002, 0.09);
+      else if (o.surface === 'gravel') noiseHit(t, 'bandpass', 1500, 0.8, 0.08 * p, 0.12);
     },
     slide(t) { noiseHit(t, 'bandpass', 900, 1.2, 0.035, 0.12, null, 500); },
     whoosh(t) { noiseHit(t, 'bandpass', 400, 0.9, 0.06, 0.2, null, 1800); },
@@ -2553,6 +2596,7 @@ table.controls { width: 100%; border-collapse: collapse; font-size: 14px; margin
   const settings = Object.assign({
     sens: 2.0, fov: 90, airaccelerate: 150, autohop: true,
     fovKick: true, shadows: true, bob: true, keys: true, body: true, ghost: true,
+    speedLines: true, landKick: true, scale: 100, fps: false,
     master: 80, music: 50, sfx: 80,
   }, load(SETTINGS_KEY) || {});
   const best = load(BEST_KEY) || {};
@@ -2622,7 +2666,9 @@ table.controls { width: 100%; border-collapse: collapse; font-size: 14px; margin
   // ------------------------------------------------------------ three
   const canvas = document.getElementById('view');
   const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: 'high-performance' });
-  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+  // render scale trades sharpness for frame rate
+  const applyScale = () => renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2) * settings.scale / 100);
+  applyScale();
   renderer.outputEncoding = THREE.sRGBEncoding;
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
   renderer.toneMappingExposure = 0.98;
@@ -3597,14 +3643,14 @@ table.controls { width: 100%; border-collapse: collapse; font-size: 14px; margin
   }
 
   // ------------------------------------------------------------ camera feel
-  const cam = { dip: 0, dipVel: 0, roll: 0, fovKick: 0, bobPhase: 0, bob: 0, flip: 0 };
+  const cam = { dip: 0, dipVel: 0, roll: 0, fovKick: 0, bobPhase: 0, bob: 0, flip: 0, kick: 0, kickVel: 0, kickRoll: 0 };
 
   const EVENT_SFX = { jump: 'jump', slide: 'slide', wallrun: 'whoosh', walljump: 'walljump', climbjump: 'walljump', climb: 'climb', vault: 'vault', mantle: 'vault' };
   function handleEvents() {
     for (const e of player.events) {
       if (EVENT_SFX[e.type]) A.play(EVENT_SFX[e.type]);
       tutorialEvent(e.type);
-      if (e.type === 'land' && e.speed > 120) A.play('land', { speed: e.speed });
+      if (e.type === 'land' && e.speed > 120) A.play('land', { speed: e.speed, surface: surfaceOf(player.groundBrush) });
       if (e.type === 'jump') {
         if (stats.syncAll > 10) stats.lastSync = stats.syncGood / stats.syncAll;
         stats.syncGood = stats.syncAll = 0;
@@ -3614,7 +3660,15 @@ table.controls { width: 100%; border-collapse: collapse; font-size: 14px; margin
       } else if (e.type === 'land') {
         // big drop with crouch held: tuck and roll (camera only, speed is untouched)
         if (e.speed > 620 && down('duck')) { cam.flip = 0.0001; body.act('roll', 0.55); A.play('slide'); }
-        else if (e.speed > 200) cam.dipVel -= Math.min(260, (e.speed - 150) * 0.5);
+        else if (e.speed > 200) {
+          cam.dipVel -= Math.min(260, (e.speed - 150) * 0.5);
+          // a hard landing nods the view down and jolts it sideways a touch
+          if (settings.landKick && e.speed > 330) {
+            const k = Math.min(1, (e.speed - 330) / 700);
+            cam.kickVel += 30 + k * 75;
+            cam.kickRoll = (Math.random() < 0.5 ? -1 : 1) * k * 2.2 * DEG;
+          }
+        }
         if (player.hspeed() < 20) stats.jumps = 0;
       } else if (e.type === 'climbjump') {
         turnLeft = Math.PI;
@@ -4034,6 +4088,9 @@ table.controls { width: 100%; border-collapse: collapse; font-size: 14px; margin
 
   // footsteps from distance covered, faster and lighter on walls
   let stride = 0;
+  // what a footstep sounds like on each kind of brush
+  const SURFACE = { route: 'metal', ramp: 'metal', crane: 'metal', door: 'metal', wall: 'metal', block: 'wood', pad: 'tile', lane: 'tile', floor: 'tile', interior: 'tile', cliff: 'gravel' };
+  const surfaceOf = (b) => (b && b.props && SURFACE[b.props.kind]) || 'concrete';
   function footsteps() {
     const hs = player.hspeed();
     const walking = player.onGround && !player.slide && hs > 60;
@@ -4042,8 +4099,56 @@ table.controls { width: 100%; border-collapse: collapse; font-size: 14px; margin
     const len = player.wallrun ? 70 : player.climb ? 45 : 64 + hs * 0.06;
     if (stride > len) {
       stride = 0;
-      A.play('step', { pitch: player.wallrun ? 1.35 : player.ducked ? 0.8 : 1, soft: player.ducked });
+      const surface = player.wallrun ? 'metal' : player.climb ? 'concrete' : surfaceOf(player.groundBrush);
+      A.play('step', { pitch: player.wallrun ? 1.35 : player.ducked ? 0.8 : 1, soft: player.ducked, surface });
     }
+  }
+
+  // ------------------------------------------------------------ speed lines and fps
+  // Thin streaks rush past the edges of the screen as you pass about 450 u/s
+  // and thicken toward 1500. A 2D canvas over the view keeps it cheap.
+  const speedLines = (() => {
+    const cv = document.getElementById('lines'), ctx = cv.getContext('2d');
+    const N = 70, ls = [];
+    const spawn = (l, fresh) => { l.a = Math.random() * Math.PI * 2; l.r = fresh ? 0.35 + Math.random() * 0.9 : 0.35 + Math.random() * 0.25; l.v = 1.2 + Math.random() * 1.6; l.w = 0.6 + Math.random() * 1.4; };
+    for (let i = 0; i < N; i++) { const l = {}; spawn(l, true); ls.push(l); }
+    let amt = 0, shown = false;
+    return {
+      update(dt, hs, on) {
+        amt += ((on ? Math.max(0, Math.min(1, (hs - 450) / 1050)) : 0) - amt) * Math.min(1, dt * 5);
+        if (amt < 0.01) { if (shown) { ctx.clearRect(0, 0, cv.width, cv.height); shown = false; } return; }
+        const w = cv.clientWidth, h = cv.clientHeight, pr = Math.min(window.devicePixelRatio || 1, 2);
+        if (cv.width !== Math.round(w * pr) || cv.height !== Math.round(h * pr)) { cv.width = Math.round(w * pr); cv.height = Math.round(h * pr); }
+        ctx.setTransform(pr, 0, 0, pr, 0, 0);
+        ctx.clearRect(0, 0, w, h);
+        shown = true;
+        const cx = w / 2, cy = h / 2, R = Math.hypot(cx, cy);
+        ctx.lineCap = 'round';
+        const n = Math.round(N * (0.35 + 0.65 * amt));
+        for (let i = 0; i < n; i++) {
+          const l = ls[i];
+          l.r += l.v * dt * (0.6 + amt * 1.4);
+          if (l.r > 1.15) spawn(l, false);
+          const r0 = l.r * R, r1 = r0 + R * (0.06 + 0.22 * amt) * l.v / 2;
+          const c = Math.cos(l.a), s = Math.sin(l.a);
+          // fade in from the middle so the centre of the screen stays clear
+          const fade = Math.min(1, Math.max(0, (l.r - 0.4) / 0.25));
+          const al = amt * fade;
+          ctx.beginPath(); ctx.moveTo(cx + c * r0, cy + s * r0); ctx.lineTo(cx + c * r1, cy + s * r1);
+          // a faint dark edge keeps the white streak readable over pale buildings and sky
+          ctx.strokeStyle = 'rgba(20,28,38,' + (0.16 * al).toFixed(3) + ')'; ctx.lineWidth = l.w * (1.2 + amt) + 2; ctx.stroke();
+          ctx.strokeStyle = 'rgba(255,255,255,' + (0.55 * al).toFixed(3) + ')'; ctx.lineWidth = l.w * (1.2 + amt); ctx.stroke();
+        }
+      },
+    };
+  })();
+  const fpsEl = document.getElementById('fps');
+  const fpsMeter = { n: 0, t: 0 };
+  function updateFps(dt) {
+    fpsEl.hidden = !settings.fps;
+    if (!settings.fps) return;
+    fpsMeter.n++; fpsMeter.t += dt;
+    if (fpsMeter.t >= 0.5) { fpsEl.textContent = Math.round(fpsMeter.n / fpsMeter.t) + ' FPS'; fpsMeter.n = 0; fpsMeter.t = 0; }
   }
 
   // ------------------------------------------------------------ loop
@@ -4103,6 +4208,9 @@ table.controls { width: 100%; border-collapse: collapse; font-size: 14px; margin
     cam.dipVel += (-cam.dip * 160 - cam.dipVel * 22) * dt;
     cam.dip += cam.dipVel * dt;
     if (cam.dip < -14) { cam.dip = -14; cam.dipVel = Math.max(cam.dipVel, 0); }
+    cam.kickVel += (-cam.kick * 220 - cam.kickVel * 24) * dt;
+    cam.kick += cam.kickVel * dt;
+    cam.kickRoll += (0 - cam.kickRoll) * Math.min(1, dt * 7);
 
     const hs = player.hspeed();
     if (settings.bob && player.onGround && !player.slide && hs > 40) {
@@ -4133,10 +4241,12 @@ table.controls { width: 100%; border-collapse: collapse; font-size: 14px; margin
         else { const u = cam.flip; flipPitch = -Math.PI * 2 * (u * u * (3 - 2 * u)); }
       }
       camera.position.set(ix, iy + eye + cam.dip + cam.bob - (cam.flip > 0 ? Math.sin(cam.flip * Math.PI) * 26 : 0), iz);
-      camera.rotation.set(pitch + flipPitch, yaw, cam.roll);
+      camera.rotation.set(pitch + flipPitch - cam.kick * DEG, yaw, cam.roll + cam.kickRoll);
       if (settings.body) body.update(dt, hs, pitch + flipPitch, cam.roll, cam.bob, cam.dip);
     }
     cosmetics.update(now, ix, iy, iz, hs, (locked || !!game.demo) && !attract.active);
+    speedLines.update(dt, hs, settings.speedLines && (locked || !!game.demo) && !attract.active);
+    updateFps(dt);
     A.update({
       speed: hs, playing: locked || !!game.demo, airborne: !player.onGround,
       surfing: !player.onGround && surfing(), sliding: !!player.slide && player.onGround, slideTime: player.slide ? player.slide.t : 0,
@@ -4585,6 +4695,10 @@ table.controls { width: 100%; border-collapse: collapse; font-size: 14px; margin
   bindCheck('s-kick', 'fovKick');
   bindCheck('s-bob', 'bob');
   bindCheck('s-body', 'body');
+  bindCheck('s-lines', 'speedLines');
+  bindCheck('s-landkick', 'landKick');
+  bindCheck('s-fps', 'fps');
+  bindRange('s-scale', 'scale', v => v + '%', () => { applyScale(); resize(); });
   bindCheck('s-ghost', 'ghost');
   bindCheck('s-keys', 'keys', () => hud.keys.hidden = !settings.keys);
   bindCheck('s-shadows', 'shadows', () => {

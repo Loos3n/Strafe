@@ -20,6 +20,9 @@
 }
 html, body { height: 100%; margin: 0; overflow: hidden; background: #cfe3ef; color: var(--ink); font-family: var(--body); }
 #view { position: fixed; inset: 0; width: 100%; height: 100%; display: block; cursor: crosshair; }
+#lines { position: fixed; inset: 0; width: 100%; height: 100%; pointer-events: none; }
+body:not(.playing) #fps { display: none; }
+#fps { position: fixed; top: 10px; left: 12px; font: 600 13px/1 var(--display, sans-serif); letter-spacing: .08em; color: #fff; background: rgba(0,0,0,.45); padding: 5px 8px; pointer-events: none; z-index: 5; }
 
 /* ---------- HUD */
 .hud { position: fixed; pointer-events: none; color: var(--hud); text-shadow: 0 0 1px rgba(10,14,18,.9), 0 1px 3px rgba(10,14,18,.55), 0 0 18px rgba(10,14,18,.25); font-family: var(--display); }
@@ -295,6 +298,8 @@ table.controls { width: 100%; border-collapse: collapse; font-size: 14px; margin
 </style>
 
 <canvas id="view"></canvas>
+<canvas id="lines" aria-hidden="true"></canvas>
+<div id="fps" hidden></div>
 <div id="crosshair"></div>
 
 <div class="hud" id="top">
@@ -442,8 +447,21 @@ table.controls { width: 100%; border-collapse: collapse; font-size: 14px; margin
             <label><input type="checkbox" id="s-bob"> View bob</label>
             <label><input type="checkbox" id="s-keys"> Key display</label>
             <label><input type="checkbox" id="s-shadows"> Shadows</label>
+            <label><input type="checkbox" id="s-lines"> Speed lines</label>
+            <label><input type="checkbox" id="s-landkick"> Landing camera kick</label>
             <label><input type="checkbox" id="s-body"> Show arms and legs</label>
             <label><input type="checkbox" id="s-ghost"> Race the ghost of your best run</label>
+          </div>
+        </div>
+        <div class="group">
+          <p class="label">Performance</p>
+          <div class="settings">
+            <label for="s-scale">Render scale</label><output id="s-scale-v"></output>
+            <input type="range" id="s-scale" min="50" max="100" step="5">
+            <p class="hint">Lower draws fewer pixels for a higher frame rate. Turning off shadows helps most on slow machines.</p>
+          </div>
+          <div class="checks" style="margin-top:10px">
+            <label><input type="checkbox" id="s-fps"> Show frame rate</label>
           </div>
         </div>
       </div>

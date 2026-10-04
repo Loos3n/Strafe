@@ -120,10 +120,32 @@
   }
 
   const SFX = {
+    // footsteps change with the surface: concrete roofs, metal panels and
+    // ramps, wooden bhop blocks, tiled pads and floors, gravel on the cliffs
     step(t, o) {
-      const k = o.soft ? 0.6 : 1;
-      noiseHit(t, 'bandpass', (o.pitch || 1) * (380 + Math.random() * 260), 1.6, 0.1 * k, 0.04);
-      tone(t, 'sine', 95 * (o.pitch || 1), 55, 0.07 * k, 0.003, 0.05);
+      const k = o.soft ? 0.6 : 1, p = o.pitch || 1, r = Math.random();
+      switch (o.surface) {
+        case 'metal':
+          noiseHit(t, 'bandpass', p * (2200 + r * 900), 3, 0.06 * k, 0.03);
+          tone(t, 'triangle', p * (620 + r * 180), p * 560, 0.035 * k, 0.002, 0.11);
+          tone(t, 'sine', 120 * p, 70, 0.05 * k, 0.003, 0.05);
+          break;
+        case 'wood':
+          tone(t, 'triangle', p * (210 + r * 40), 130, 0.09 * k, 0.002, 0.06);
+          noiseHit(t, 'bandpass', p * (800 + r * 300), 2.2, 0.06 * k, 0.03);
+          break;
+        case 'tile':
+          noiseHit(t, 'highpass', p * (2800 + r * 800), 1.2, 0.07 * k, 0.018);
+          tone(t, 'sine', 105 * p, 60, 0.06 * k, 0.003, 0.045);
+          break;
+        case 'gravel':
+          noiseHit(t, 'bandpass', p * (1300 + r * 500), 0.8, 0.09 * k, 0.07);
+          noiseHit(t + 0.025, 'bandpass', p * (1900 + r * 600), 0.9, 0.05 * k, 0.05);
+          break;
+        default:
+          noiseHit(t, 'bandpass', p * (380 + r * 260), 1.6, 0.1 * k, 0.04);
+          tone(t, 'sine', 95 * p, 55, 0.07 * k, 0.003, 0.05);
+      }
     },
     jump(t) {
       noiseHit(t, 'bandpass', 500, 1.1, 0.07, 0.16, null, 1700);
@@ -133,6 +155,9 @@
       const p = Math.min(1, Math.max(0.15, (o.speed || 300) / 900));
       tone(t, 'sine', 110, 42, 0.24 * p, 0.003, 0.14);
       noiseHit(t, 'lowpass', 700, 0.7, 0.12 * p, 0.07);
+      if (o.surface === 'metal') tone(t, 'triangle', 480, 430, 0.06 * p, 0.002, 0.22);
+      else if (o.surface === 'wood') tone(t, 'triangle', 170, 110, 0.1 * p, 0.002, 0.09);
+      else if (o.surface === 'gravel') noiseHit(t, 'bandpass', 1500, 0.8, 0.08 * p, 0.12);
     },
     slide(t) { noiseHit(t, 'bandpass', 900, 1.2, 0.035, 0.12, null, 500); },
     whoosh(t) { noiseHit(t, 'bandpass', 400, 0.9, 0.06, 0.2, null, 1800); },

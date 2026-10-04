@@ -17,6 +17,8 @@ Build: `node build.js` writes `dist/index.html`.
 Tests: `node test/sim.js` (movement checks),
 `node test/w2w.js` (bot chains the rooftop wall-to-wall section), `node test/routes.js [level] [checkpoint]` (one bot finishes Surf, Bhop, Canyon, Stairway and Crossover from the start and every checkpoint), `node test/tutorial.js` (bot clears every tutorial station), `node test/advanced.js [level] [checkpoint]` (bots finish Cascade, Spire and Freerun). `node test/city.js [level] [checkpoint]` (bots finish Rooftops and Downtown). `node test/gauntlet.js [level] [checkpoint]` (one plan-reading bot finishes all six Gauntlet levels).
 
+Polish: speed lines streak past the screen edges above about 450 u/s, hard landings nod and jolt the camera, footsteps and landings sound different on concrete, metal, wooden blocks, tiled pads and gravel (`SURFACE` in `src/game.js`, `step` in `src/audio.js`), and Settings has speed lines and landing kick toggles plus a Performance group (render scale 50 to 100%, frame rate counter).
+
 Default tuning matches CS:GO surf/KZ servers: gravity 800, maxspeed 250, accelerate 5.5,
 airaccelerate 150, friction 5.2, stopspeed 80, jump height 57. All of it lives in `DEFAULTS` in `src/physics.js`.
 

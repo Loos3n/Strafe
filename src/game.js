@@ -11,6 +11,7 @@
   const settings = Object.assign({
     sens: 2.0, fov: 90, airaccelerate: 150, autohop: true,
     fovKick: true, shadows: true, bob: true, keys: true, body: true, ghost: true,
+    speedLines: true, landKick: true, scale: 100, fps: false,
     master: 80, music: 50, sfx: 80,
   }, load(SETTINGS_KEY) || {});
   const best = load(BEST_KEY) || {};
@@ -80,7 +81,9 @@
   // ------------------------------------------------------------ three
   const canvas = document.getElementById('view');
   const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: 'high-performance' });
-  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+  // render scale trades sharpness for frame rate
+  const applyScale = () => renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2) * settings.scale / 100);
+  applyScale();
   renderer.outputEncoding = THREE.sRGBEncoding;
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
   renderer.toneMappingExposure = 0.98;
@@ -1055,14 +1058,14 @@
   }
 
   // ------------------------------------------------------------ camera feel
-  const cam = { dip: 0, dipVel: 0, roll: 0, fovKick: 0, bobPhase: 0, bob: 0, flip: 0 };
+  const cam = { dip: 0, dipVel: 0, roll: 0, fovKick: 0, bobPhase: 0, bob: 0, flip: 0, kick: 0, kickVel: 0, kickRoll: 0 };
 
   const EVENT_SFX = { jump: 'jump', slide: 'slide', wallrun: 'whoosh', walljump: 'walljump', climbjump: 'walljump', climb: 'climb', vault: 'vault', mantle: 'vault' };
   function handleEvents() {
     for (const e of player.events) {
       if (EVENT_SFX[e.type]) A.play(EVENT_SFX[e.type]);
       tutorialEvent(e.type);
-      if (e.type === 'land' && e.speed > 120) A.play('land', { speed: e.speed });
+      if (e.type === 'land' && e.speed > 120) A.play('land', { speed: e.speed, surface: surfaceOf(player.groundBrush) });
       if (e.type === 'jump') {
         if (stats.syncAll > 10) stats.lastSync = stats.syncGood / stats.syncAll;
         stats.syncGood = stats.syncAll = 0;
@@ -1072,7 +1075,15 @@
       } else if (e.type === 'land') {
         // big drop with crouch held: tuck and roll (camera only, speed is untouched)
         if (e.speed > 620 && down('duck')) { cam.flip = 0.0001; body.act('roll', 0.55); A.play('slide'); }
-        else if (e.speed > 200) cam.dipVel -= Math.min(260, (e.speed - 150) * 0.5);
+        else if (e.speed > 200) {
+          cam.dipVel -= Math.min(260, (e.speed - 150) * 0.5);
+          // a hard landing nods the view down and jolts it sideways a touch
+          if (settings.landKick && e.speed > 330) {
+            const k = Math.min(1, (e.speed - 330) / 700);
+            cam.kickVel += 30 + k * 75;
+            cam.kickRoll = (Math.random() < 0.5 ? -1 : 1) * k * 2.2 * DEG;
+          }
+        }
         if (player.hspeed() < 20) stats.jumps = 0;
       } else if (e.type === 'climbjump') {
         turnLeft = Math.PI;
@@ -1492,6 +1503,9 @@
 
   // footsteps from distance covered, faster and lighter on walls
   let stride = 0;
+  // what a footstep sounds like on each kind of brush
+  const SURFACE = { route: 'metal', ramp: 'metal', crane: 'metal', door: 'metal', wall: 'metal', block: 'wood', pad: 'tile', lane: 'tile', floor: 'tile', interior: 'tile', cliff: 'gravel' };
+  const surfaceOf = (b) => (b && b.props && SURFACE[b.props.kind]) || 'concrete';
   function footsteps() {
     const hs = player.hspeed();
     const walking = player.onGround && !player.slide && hs > 60;
@@ -1500,8 +1514,56 @@
     const len = player.wallrun ? 70 : player.climb ? 45 : 64 + hs * 0.06;
     if (stride > len) {
       stride = 0;
-      A.play('step', { pitch: player.wallrun ? 1.35 : player.ducked ? 0.8 : 1, soft: player.ducked });
+      const surface = player.wallrun ? 'metal' : player.climb ? 'concrete' : surfaceOf(player.groundBrush);
+      A.play('step', { pitch: player.wallrun ? 1.35 : player.ducked ? 0.8 : 1, soft: player.ducked, surface });
     }
+  }
+
+  // ------------------------------------------------------------ speed lines and fps
+  // Thin streaks rush past the edges of the screen as you pass about 450 u/s
+  // and thicken toward 1500. A 2D canvas over the view keeps it cheap.
+  const speedLines = (() => {
+    const cv = document.getElementById('lines'), ctx = cv.getContext('2d');
+    const N = 70, ls = [];
+    const spawn = (l, fresh) => { l.a = Math.random() * Math.PI * 2; l.r = fresh ? 0.35 + Math.random() * 0.9 : 0.35 + Math.random() * 0.25; l.v = 1.2 + Math.random() * 1.6; l.w = 0.6 + Math.random() * 1.4; };
+    for (let i = 0; i < N; i++) { const l = {}; spawn(l, true); ls.push(l); }
+    let amt = 0, shown = false;
+    return {
+      update(dt, hs, on) {
+        amt += ((on ? Math.max(0, Math.min(1, (hs - 450) / 1050)) : 0) - amt) * Math.min(1, dt * 5);
+        if (amt < 0.01) { if (shown) { ctx.clearRect(0, 0, cv.width, cv.height); shown = false; } return; }
+        const w = cv.clientWidth, h = cv.clientHeight, pr = Math.min(window.devicePixelRatio || 1, 2);
+        if (cv.width !== Math.round(w * pr) || cv.height !== Math.round(h * pr)) { cv.width = Math.round(w * pr); cv.height = Math.round(h * pr); }
+        ctx.setTransform(pr, 0, 0, pr, 0, 0);
+        ctx.clearRect(0, 0, w, h);
+        shown = true;
+        const cx = w / 2, cy = h / 2, R = Math.hypot(cx, cy);
+        ctx.lineCap = 'round';
+        const n = Math.round(N * (0.35 + 0.65 * amt));
+        for (let i = 0; i < n; i++) {
+          const l = ls[i];
+          l.r += l.v * dt * (0.6 + amt * 1.4);
+          if (l.r > 1.15) spawn(l, false);
+          const r0 = l.r * R, r1 = r0 + R * (0.06 + 0.22 * amt) * l.v / 2;
+          const c = Math.cos(l.a), s = Math.sin(l.a);
+          // fade in from the middle so the centre of the screen stays clear
+          const fade = Math.min(1, Math.max(0, (l.r - 0.4) / 0.25));
+          const al = amt * fade;
+          ctx.beginPath(); ctx.moveTo(cx + c * r0, cy + s * r0); ctx.lineTo(cx + c * r1, cy + s * r1);
+          // a faint dark edge keeps the white streak readable over pale buildings and sky
+          ctx.strokeStyle = 'rgba(20,28,38,' + (0.16 * al).toFixed(3) + ')'; ctx.lineWidth = l.w * (1.2 + amt) + 2; ctx.stroke();
+          ctx.strokeStyle = 'rgba(255,255,255,' + (0.55 * al).toFixed(3) + ')'; ctx.lineWidth = l.w * (1.2 + amt); ctx.stroke();
+        }
+      },
+    };
+  })();
+  const fpsEl = document.getElementById('fps');
+  const fpsMeter = { n: 0, t: 0 };
+  function updateFps(dt) {
+    fpsEl.hidden = !settings.fps;
+    if (!settings.fps) return;
+    fpsMeter.n++; fpsMeter.t += dt;
+    if (fpsMeter.t >= 0.5) { fpsEl.textContent = Math.round(fpsMeter.n / fpsMeter.t) + ' FPS'; fpsMeter.n = 0; fpsMeter.t = 0; }
   }
 
   // ------------------------------------------------------------ loop
@@ -1561,6 +1623,9 @@
     cam.dipVel += (-cam.dip * 160 - cam.dipVel * 22) * dt;
     cam.dip += cam.dipVel * dt;
     if (cam.dip < -14) { cam.dip = -14; cam.dipVel = Math.max(cam.dipVel, 0); }
+    cam.kickVel += (-cam.kick * 220 - cam.kickVel * 24) * dt;
+    cam.kick += cam.kickVel * dt;
+    cam.kickRoll += (0 - cam.kickRoll) * Math.min(1, dt * 7);
 
     const hs = player.hspeed();
     if (settings.bob && player.onGround && !player.slide && hs > 40) {
@@ -1591,10 +1656,12 @@
         else { const u = cam.flip; flipPitch = -Math.PI * 2 * (u * u * (3 - 2 * u)); }
       }
       camera.position.set(ix, iy + eye + cam.dip + cam.bob - (cam.flip > 0 ? Math.sin(cam.flip * Math.PI) * 26 : 0), iz);
-      camera.rotation.set(pitch + flipPitch, yaw, cam.roll);
+      camera.rotation.set(pitch + flipPitch - cam.kick * DEG, yaw, cam.roll + cam.kickRoll);
       if (settings.body) body.update(dt, hs, pitch + flipPitch, cam.roll, cam.bob, cam.dip);
     }
     cosmetics.update(now, ix, iy, iz, hs, (locked || !!game.demo) && !attract.active);
+    speedLines.update(dt, hs, settings.speedLines && (locked || !!game.demo) && !attract.active);
+    updateFps(dt);
     A.update({
       speed: hs, playing: locked || !!game.demo, airborne: !player.onGround,
       surfing: !player.onGround && surfing(), sliding: !!player.slide && player.onGround, slideTime: player.slide ? player.slide.t : 0,
@@ -2043,6 +2110,10 @@
   bindCheck('s-kick', 'fovKick');
   bindCheck('s-bob', 'bob');
   bindCheck('s-body', 'body');
+  bindCheck('s-lines', 'speedLines');
+  bindCheck('s-landkick', 'landKick');
+  bindCheck('s-fps', 'fps');
+  bindRange('s-scale', 'scale', v => v + '%', () => { applyScale(); resize(); });
   bindCheck('s-ghost', 'ghost');
   bindCheck('s-keys', 'keys', () => hud.keys.hidden = !settings.keys);
   bindCheck('s-shadows', 'shadows', () => {
