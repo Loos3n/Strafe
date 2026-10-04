@@ -48,7 +48,7 @@
     { course: 'freerun', title: 'Heat', stars: [56, 80],
       brief: 'Mercer: "They are on you, Kite. Blues on the roofs behind you. Lose them across the old district. Every wall, every gap. Don\'t look back."',
       debrief: 'You lose the last of them in the ventilation stacks. Juno on comms: "The newsroom will run the story if we get the originals to the Spire by morning."' },
-    { course: 'cascade', title: 'Floodgates', stars: [26, 38],
+    { course: 'cascade', title: 'Floodgates', stars: [25, 36],
       brief: 'Mercer: "Vale opened the floodgates to cut the city in half. The only way north is the overflow ramps. Nine of them. Keep your line."',
       debrief: 'The water roars under you the whole way down. On the far side the Spire is lit up like a beacon, and so are the Blue patrols around it.' },
     { course: 'spire', title: 'The Spire', stars: [55, 80],
@@ -61,15 +61,19 @@
   const bestSplits = load(SPLITS_KEY) || {};
   function load(k) { try { return JSON.parse(localStorage.getItem(k)); } catch (e) { return null; } }
   function save(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) { /* storage blocked */ } }
-  // These five were rebuilt as long routes, so times from the old short
-  // versions no longer compare. Drop them once; stars already earned stay.
-  const REBUILT = ['surf', 'bhop', 'canyon', 'stairway', 'crossover'];
-  if (!load('strafe.rebuild.v2')) {
-    for (const c of REBUILT) {
+  // Levels whose layout changed enough that old times no longer compare. Each
+  // reset drops their times and ghosts once; stars already earned stay. The
+  // suffix is the leaderboard field they post under now.
+  const REBUILT = { surf: '_v3', bhop: '_v2', canyon: '_v3', stairway: '_v2', crossover: '_v3', cascade: '_v3' };
+  const RESETS = [['strafe.rebuild.v2', ['surf', 'bhop', 'canyon', 'stairway', 'crossover']],
+    ['strafe.rebuild.v3', ['surf', 'canyon', 'crossover', 'cascade']]];
+  for (const [flag, list] of RESETS) {
+    if (load(flag)) continue;
+    for (const c of list) {
       delete best[c]; delete bestSplits[c];
       try { localStorage.removeItem('strafe.ghost.v1.' + c); } catch (e) { /* storage blocked */ }
     }
-    save(BEST_KEY, best); save(SPLITS_KEY, bestSplits); save('strafe.rebuild.v2', 1);
+    save(BEST_KEY, best); save(SPLITS_KEY, bestSplits); save(flag, 1);
   }
 
   // ------------------------------------------------------------ world
@@ -1696,8 +1700,8 @@
   // lights up inside claude.ai; anywhere else the game runs without it.
   const LB_AA = 150; // only runs at the standard air acceleration count
   const lb = { db: null, user: null, me: null, docs: null, readOnly: false, writing: Promise.resolve(), backfilled: false };
-  // the rebuilt levels post under a new field, so old short times drop off the board
-  const lbKey = (c) => REBUILT.includes(c) ? c + '_v2' : c;
+  // reworked levels post under a new field, so old times drop off the board
+  const lbKey = (c) => REBUILT[c] ? c + REBUILT[c] : c;
   const lbMine = () => { const d = lb.docs && lb.docs.find(x => x.id === lb.me); return d ? d.t : {}; };
   function lbWrite(changes) {
     if (!lb.db || !lb.me || lb.readOnly) return;
