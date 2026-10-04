@@ -1360,7 +1360,7 @@
       const knuckles = new THREE.Group(); knuckles.position.y = -3.5; wrist.add(knuckles);
       knuckles.add(boxm(2.9, 2.6, 1.15, glove, 0, -1.3, 0));
       wrist.add(boxm(0.95, 2.4, 0.95, glove, -side * 1.7, -1.6, -0.6));
-      return { shoulder, elbow, wrist, knuckles, side, cur: { x: 0.6, z: 0, y: 0, e: 1.4, w: 0, k: 0.4 } };
+      return { shoulder, elbow, wrist, knuckles, side, cur: { x: 0.6, z: 0, y: 0, e: 1.4, w: 0, k: 0.4, p: 2 } };
     }
     function makeLeg(side) {
       const hip = new THREE.Group();
@@ -1414,7 +1414,9 @@
       // [model bone, its child, rig piece from, rig piece to]
       const chains = [];
       for (const [a, side] of [[arms[0], L], [arms[1], R]]) {
-        chains.push([side('Arm'), side('ForeArm'), a.shoulder, a.elbow], [side('ForeArm'), side('Hand'), a.elbow, a.wrist], [side('Hand'), side('HandMiddle1'), a.wrist, a.knuckles]);
+        // the forearm and hand also take a palm direction, so the wrist
+        // turns the right way instead of whatever the shortest swing gives
+        chains.push([side('Arm'), side('ForeArm'), a.shoulder, a.elbow], [side('ForeArm'), side('Hand'), a.elbow, a.wrist, a], [side('Hand'), side('HandMiddle1'), a.wrist, a.knuckles, a]);
       }
       for (const [l, side] of [[legs[0], L], [legs[1], R]]) {
         chains.push([side('UpLeg'), side('Leg'), l.hip, l.knee], [side('Leg'), side('Foot'), l.knee, l.foot]);
@@ -1426,12 +1428,27 @@
       const lift = new THREE.Vector3(0, -6.5, 3).sub(sh);
       vScene.add(holder);
       armsRoot.visible = hips.visible = false;
-      // finger joints curl with the rig's knuckles
+      // finger joints curl toward the palm with the rig's knuckles. In the
+      // model's rest pose every bone shares one frame: arms out along X,
+      // palms down (-Y), so the curl axis is the same for a whole hand
       const fingers = [];
-      for (const [a, side, sgn] of [[arms[0], 'Left', 1], [arms[1], 'Right', -1]]) {
-        for (const f of ['Index', 'Middle', 'Ring', 'Pinky']) for (const j of [1, 2, 3]) { const b = bone[side + 'Hand' + f + j]; if (b) fingers.push([b, a, sgn]); }
+      for (const [a, side, sgn] of [[arms[0], 'Left', -1], [arms[1], 'Right', 1]]) {
+        const ax = new THREE.Vector3(0, 0, sgn);
+        for (const f of ['Index', 'Middle', 'Ring', 'Pinky']) for (const j of [1, 2, 3]) { const b = bone[side + 'Hand' + f + j]; if (b) fingers.push([b, a, ax, j === 1 ? 0.8 : 1]); }
+        // the thumb folds in across the curled fingers
+        const t1 = bone[side + 'HandThumb1'], t3 = bone[side + 'HandThumb3'];
+        if (t1 && t3) {
+          const d = t3.position.clone().add(bone[side + 'HandThumb2'].position).normalize();
+          const tax = d.clone().cross(new THREE.Vector3(0, -1, 0)).normalize();
+          fingers.push([t1, a, new THREE.Vector3(1, 0, 0), 0.45], [bone[side + 'HandThumb2'], a, tax, 0.35], [t3, a, tax, 0.45]);
+        }
       }
-      fp = { holder, mats, bind, chains, hipH, lift, fingers, spine: [bone.Spine1, bone.Spine2].filter(Boolean) };
+      bone.LeftHand.scale.setScalar(HAND); bone.RightHand.scale.setScalar(HAND);
+      // first-person cheat: the collarbones slide forward and out, so the
+      // hands sit further from the eye (smaller, higher, off to the sides)
+      // without bending the arms up into view
+      const reach = [[L('Shoulder') || L('Arm'), -1], [R('Shoulder') || R('Arm'), 1]].map(([b, s]) => [b, b.position.clone(), s]);
+      fp = { holder, mats, bind, chains, hipH, lift, fingers, reach, spine: [bone.Spine1, bone.Spine2].filter(Boolean) };
       cosmetics.apply();
     });
     const _a = new THREE.Vector3(), _b = new THREE.Vector3(), _c = new THREE.Vector3(), _d = new THREE.Vector3();
@@ -1456,20 +1473,40 @@
         b.quaternion.copy(_p.invert().multiply(_w));
         b.updateMatrixWorld(true);
       }
-      for (const [b, child, from, to] of fp.chains) {
+      const R = REACH;
+      for (const [b, p0, s] of fp.reach) {
+        b.position.copy(p0); b.updateMatrixWorld(true);
+        b.getWorldPosition(_c).add(_d.set(s * R[0], R[1], -R[2]));
+        b.position.copy(b.parent.worldToLocal(_c));
+        b.updateMatrixWorld(true);
+      }
+      for (const [b, child, from, to, arm] of fp.chains) {
         if (!b || !child) continue;
         from.getWorldPosition(_a); to.getWorldPosition(_b); _b.sub(_a).normalize();
-        b.getWorldPosition(_c); child.getWorldPosition(_d); _d.sub(_c).normalize();
-        _q.setFromUnitVectors(_d, _b);
-        b.getWorldQuaternion(_w).premultiply(_q);
+        if (arm) {
+          // bone frame from rest: along the bone (+-X), palm down (-Y)
+          _c.copy(child.position).normalize(); _d.set(0, -1, 0);
+          _m1.makeBasis(_c, _d, _e.crossVectors(_c, _d));
+          // target: along the rig limb, palm turned in from the rig's palm side
+          arm.wrist.getWorldQuaternion(_w); _d.set(0, 0, -1).applyQuaternion(_w);
+          _d.applyAxisAngle(_b, arm.side * arm.cur.p);
+          _d.addScaledVector(_b, -_d.dot(_b)).normalize();
+          _m2.makeBasis(_b, _d, _e.crossVectors(_b, _d));
+          _w.setFromRotationMatrix(_m2.multiply(_m1.transpose()));
+        } else {
+          b.getWorldPosition(_c); child.getWorldPosition(_d); _d.sub(_c).normalize();
+          _q.setFromUnitVectors(_d, _b);
+          b.getWorldQuaternion(_w).premultiply(_q);
+        }
         b.parent.getWorldQuaternion(_p);
         b.quaternion.copy(_p.invert().multiply(_w));
         b.updateMatrixWorld(true);
       }
-      for (const [b, a, sgn] of fp.fingers) b.quaternion.multiply(_q.setFromAxisAngle(_a.set(0, 0, 1), sgn * FCURL * a.cur.k));
+      for (const [b, a, ax, w] of fp.fingers) b.quaternion.multiply(_q.setFromAxisAngle(ax, w * FCURL * a.cur.k));
       if (fp.fingers.length) fp.holder.updateMatrixWorld(true);
     }
-    const FCURL = 1.3;
+    const FCURL = 1.5, HAND = 0.85, REACH = [3, 0, 5];
+    const _e = new THREE.Vector3(), _m1 = new THREE.Matrix4(), _m2 = new THREE.Matrix4();
 
     const st = { phase: 0, act: null, actT: 0, actDur: 0, roll: 0 };
     const lerp = (a, b, k) => a + (b - a) * k;
@@ -1478,6 +1515,14 @@
     // targets in radians: x swings the arm forward, z lifts it out sideways,
     // e bends the elbow, w tips the wrist, k curls the fingers
     function armTarget(a, mode, t, hs) {
+      // p turns the palm in around the forearm: 2 shows the back of a fist,
+      // 1 keeps an open hand flat to whatever it is reaching for
+      const g = armPose(a, mode, t, hs);
+      g.p = OPEN[mode] ? 1 : 2;
+      return g;
+    }
+    const OPEN = { climb: 1, wallhand: 1, vault: 1, surf: 1 };
+    function armPose(a, mode, t, hs) {
       const s = a.side, run = Math.min(1, hs / 260);
       const swing = Math.sin(st.phase + (s > 0 ? 0 : Math.PI));
       switch (mode) {
@@ -1488,7 +1533,7 @@
         case 'slide': return s < 0 ? { x: -0.25, z: -0.35, y: 0, e: 0.3, w: 0.2, k: 0.2 } : { x: 1.0, z: 0.25, y: 0, e: 1.0, w: 0, k: 0.6 };
         case 'surf': return { x: 0.75, z: s * 1.15, y: 0, e: 0.35, w: 0, k: 0.3 };
         case 'air': return { x: 1.15 + Math.sin(t * 3 + s) * 0.05, z: s * 0.45, y: 0, e: 0.75, w: 0, k: 0.35 };
-        default: return { x: 0.95 + swing * 0.45 * run, z: s * 0.1, y: 0, e: 1.05 - swing * 0.3 * run, w: -0.2, k: 0.9 };
+        default: return { x: 0.9 + swing * 0.45 * run, z: s * 0.15, y: 0, e: 1.1 - swing * 0.3 * run, w: -0.6, k: 1 };
       }
     }
     function legTarget(l, mode, hs) {
