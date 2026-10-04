@@ -1190,7 +1190,7 @@
     }
     else if (what === 'retry') { restartCourse(); startPlay(); }
     else if (what === 'hub') { goHub(); startPlay(); }
-    else showMenuState(); // levels: fall back to the main menu
+    else { showMenuState(); showScreen('levels'); } // levels: back to level select
   }
   for (const b of completeEl.querySelectorAll('[data-act]')) b.addEventListener('click', () => completeAction(b.dataset.act));
   window.addEventListener('keydown', (e) => {
@@ -1452,7 +1452,11 @@
     const c = attract.course ? map.courses[attract.course] : null;
     const sp = c ? (c.preview || c.spawn) : map.hubSpawn;
     const fy = sp.yaw, fx = -Math.sin(fy), fz = -Math.cos(fy);
-    const u = t - attract.t0;
+    let u = t - attract.t0;
+    if (screen === 'title' && !game.started && u > 14) {
+      previewCourse(map.order[(map.order.indexOf(attract.course) + 1) % map.order.length]);
+      u = 0;
+    }
     const dolly = Math.min(u, 30) * 55;
     camera.position.set(sp.pos[0] - fx * 700 + fx * dolly, sp.pos[1] + 620, sp.pos[2] - fz * 700 + fz * dolly);
     camera.rotation.set(-0.34, fy + Math.sin(u * 0.13) * 0.28, 0);
@@ -1498,6 +1502,31 @@
     $('menunote').hidden = paused;
   }
 
+  // two screens: the title (main or pause menu) and level select behind Play
+  let screen = 'title';
+  const titleButtons = () => [...document.querySelectorAll('#mainnav .mbtn')].filter(b => !b.hidden);
+  function refreshTitle() {
+    const paused = game.started;
+    $('m-resume').hidden = !paused;
+    $('m-restart').hidden = !paused || !game.course;
+    $('m-quit').hidden = !paused;
+    let stars = 0, max = 0;
+    STORY.forEach((job, i) => { if (job.stars) { stars += (storyProgress[i] || { stars: 0 }).stars; max += 3; } });
+    $('m-story-sub').textContent = stars ? stars + ' / ' + max + ' ★' : 'New';
+    const done = map.order.filter(n => best[n]).length;
+    $('m-play-sub').textContent = done + ' / ' + map.order.length + ' levels';
+    $('m-tut-sub').textContent = best.tutorial ? 'Done' : 'Start here';
+  }
+  function showScreen(which, focus = true) {
+    screen = which;
+    menu.dataset.screen = which;
+    menu.classList.toggle('paused', game.started);
+    if (which === 'levels') { buildLevelList(); select(selected, focus); return; }
+    refreshTitle();
+    if (!game.started) { attract.active = true; attract.hover = null; previewCourse(attract.course || map.order[0]); }
+    if (focus) { const b = titleButtons()[0]; b && b.focus({ preventScroll: true }); }
+  }
+
   function showMenuState() {
     const paused = game.started;
     $('paused').hidden = !paused;
@@ -1510,6 +1539,7 @@
     }
     buildLevelList();
     select(selected);
+    showScreen('title');
   }
 
   function startPlay() {
@@ -1643,6 +1673,17 @@
   applyAudio();
 
   $('play').addEventListener('click', () => playSelected());
+  $('m-resume').addEventListener('click', () => { A.init(); A.play('click'); startPlay(); });
+  $('m-restart').addEventListener('click', () => { A.init(); A.play('click'); restartCourse(); startPlay(); });
+  $('m-play').addEventListener('click', () => { A.init(); A.play('click'); closeDrawer(); showScreen('levels'); });
+  $('m-tutorial').addEventListener('click', () => { selected = 'tutorial'; playSelected(); });
+  $('m-hub').addEventListener('click', () => { selected = 'hub'; playSelected(); });
+  $('m-quit').addEventListener('click', () => {
+    A.play('click'); ghost.stop(); goHub(); game.started = false; game.mission = null;
+    attract.course = null; showMenuState();
+  });
+  $('back').addEventListener('click', () => { A.play('click'); showScreen('title'); });
+  for (const b of document.querySelectorAll('#mainnav .mbtn')) b.addEventListener('mouseenter', () => A.play('hover'));
   $('resume').addEventListener('click', () => { A.init(); A.play('click'); startPlay(); });
   $('restart').addEventListener('click', () => { A.init(); restartCourse(); startPlay(); });
   $('tohub').addEventListener('click', () => { A.init(); goHub(); startPlay(); });
@@ -1653,10 +1694,20 @@
   // menu keys: arrows browse levels, Enter plays, Esc closes the drawer
   window.addEventListener('keydown', (e) => {
     if (locked || !completeEl.hidden || document.body.classList.contains('playing')) return;
-    if (e.code === 'Escape') { closeDrawer(); return; }
+    if (e.code === 'Escape') { if (!drawer.hidden) closeDrawer(); else if (screen === 'levels') { A.play('click'); showScreen('title'); } return; }
     if (!drawer.hidden) return;
     const tag = document.activeElement && document.activeElement.tagName;
     if (tag === 'INPUT') return;
+    if (screen === 'title') {
+      const bs = titleButtons(), k = bs.indexOf(document.activeElement);
+      const go = (d) => { e.preventDefault(); A.play('hover'); bs[k < 0 ? (d > 0 ? 0 : bs.length - 1) : (k + d + bs.length) % bs.length].focus(); };
+      if (e.code === 'ArrowDown' || e.code === 'KeyS') go(1);
+      else if (e.code === 'ArrowUp' || e.code === 'KeyW') go(-1);
+      else if (e.code === 'Enter' && k < 0) { e.preventDefault(); bs[0].click(); }
+      else if (e.code === 'KeyT') { selected = 'tutorial'; showScreen('levels'); }
+      else if (/^Digit[0-9]$/.test(e.code) && map.order[(+e.code.slice(5) + 9) % 10]) { selected = map.order[(+e.code.slice(5) + 9) % 10]; showScreen('levels'); }
+      return;
+    }
     const i = MENU_ROWS.findIndex(r => r.name === selected);
     if (e.code === 'ArrowRight' || e.code === 'ArrowDown' || e.code === 'KeyD') { e.preventDefault(); A.play('hover'); select(MENU_ROWS[(i + 1) % MENU_ROWS.length].name, true); }
     else if (e.code === 'ArrowLeft' || e.code === 'ArrowUp' || e.code === 'KeyA') { e.preventDefault(); A.play('hover'); select(MENU_ROWS[(i - 1 + MENU_ROWS.length) % MENU_ROWS.length].name, true); }

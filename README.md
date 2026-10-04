@@ -9,7 +9,7 @@ A browser prototype that mixes Mirror's Edge parkour with CS surf and bhop movem
   The Mirror's Edge layer (slide, wallrun, wall climb, climb kick with 180° turn, mantle, vault) sits on top.
 - `src/map.js` builds the hub, a nine-station tutorial (one mechanic per station, with hint cards and a speed gate for air strafing) and ten levels: Surf, Bhop, Rooftops (a long beginner parkour run that turns three corners), Canyon (V-gorge surf), Stairway (turning bhop), Crossover (all mechanics in one run), and four long advanced levels: Downtown (a city parkour run through an office and along a crane), Cascade (nine-ramp surf with sideways transfers), Spire (small-block bhop with island-free corners) and Freerun (a full rooftop parkour run). Rooftops and Downtown are laid out with `cityKit`, which places pieces in per-leg frames so a run can turn corners and fills the skyline around the route.
 - `src/audio.js` synthesizes all sound with Web Audio: footsteps, jumps, landings, wind/surf/slide loops tied to speed, and a generative score whose filter opens up with speed.
-- `src/game.js` is rendering, input (pointer lock, CS sensitivity scale), HUD, timers and the main menu with live level previews.
+- `src/game.js` is rendering, input (pointer lock, CS sensitivity scale), HUD, timers and the menus: a title screen (Story, Play, Tutorial, Free roam, Settings, Controls; it doubles as the pause menu) over a flythrough that cycles the levels, and a level select screen behind Play.
 
 Play: open `dist/index.html` in a browser (it loads Three.js from cdnjs, so it needs a connection). No install step; Node is only needed to build and run the tests.
 
