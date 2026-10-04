@@ -103,6 +103,22 @@ body.complete #menu { display: none; }
 .cstars i { font-style: normal; color: rgba(21,25,29,.18); }
 .cstars small { font-family: var(--display); font-size: 14px; font-weight: 600; letter-spacing: .14em; text-transform: uppercase; color: var(--muted); margin-left: 10px; vertical-align: middle; }
 .cdebrief { margin: 10px 0 0; font-size: 16px; line-height: 1.5; color: var(--ink); max-width: 52ch; }
+/* ---------- cosmetics */
+.cosgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(112px, 1fr)); gap: 8px; }
+.cos { all: unset; box-sizing: border-box; cursor: pointer; display: flex; flex-direction: column; gap: 8px; padding: 10px; background: rgba(255,255,255,.04); border: 1px solid rgba(255,255,255,.08); }
+.cos:hover { background: rgba(255,255,255,.08); border-color: rgba(255,255,255,.3); }
+.cos:focus-visible { outline: 2px solid var(--red); outline-offset: 2px; }
+.cos[aria-pressed="true"] { border-color: #fff; background: rgba(255,255,255,.12); box-shadow: inset 0 0 0 1px #fff; }
+.cos[disabled] { cursor: default; }
+.cos[disabled] .sw { opacity: .28; filter: grayscale(.6); }
+.cos .sw { height: 34px; display: flex; border-radius: 2px; overflow: hidden; }
+.cos .sw i { flex: 1; }
+.cos .sw i.band { flex: .45; }
+.cos .sw.trail { height: 14px; margin-block: 10px; border-radius: 7px; }
+.cos .cn { font-family: var(--display); font-weight: 700; font-size: 16px; line-height: 1.1; }
+.cos .cn small { display: block; font-weight: 600; font-size: 12px; letter-spacing: .12em; text-transform: uppercase; color: rgba(236,240,244,.55); margin-top: 2px; }
+.cos[disabled] .cn small { color: #f2b630; }
+.cunlock { margin: 12px 0 0; font-family: var(--display); font-weight: 700; font-size: 16px; letter-spacing: .1em; text-transform: uppercase; color: #b7860b; }
 /* ---------- story */
 #drawer.wide { width: min(560px, 100%); }
 .sintro { margin: 14px 0 6px; font-size: 15px; line-height: 1.5; color: rgba(236,240,244,.82); }
@@ -321,6 +337,7 @@ table.controls { width: 100%; border-collapse: collapse; font-size: 14px; margin
       <button class="mbtn" data-open="story" aria-expanded="false" aria-controls="drawer"><span>Story</span><small id="m-story-sub"></small></button>
       <button class="mbtn" id="m-play"><span>Play</span><small id="m-play-sub"></small></button>
       <button class="mbtn" id="m-tutorial"><span>Tutorial</span><small id="m-tut-sub"></small></button>
+      <button class="mbtn" data-open="cosmetics" aria-expanded="false" aria-controls="drawer"><span>Cosmetics</span><small id="m-cos-sub"></small></button>
       <button class="mbtn" data-open="settings" aria-expanded="false" aria-controls="drawer"><span>Settings</span></button>
       <button class="mbtn" data-open="controls" aria-expanded="false" aria-controls="drawer"><span>Controls</span></button>
       <button class="mbtn" id="m-quit" hidden><span>Quit to title</span></button>
@@ -377,6 +394,12 @@ table.controls { width: 100%; border-collapse: collapse; font-size: 14px; margin
         <button class="cprimary" id="st-start">Start job</button>
       </div>
       <ol class="jobs" id="st-jobs"></ol>
+    </div>
+    <div data-pane="cosmetics" hidden>
+      <p class="sintro">Win stars on story jobs to unlock runner skins and trails. Your skin colours your arms, legs and ghost. Your trail follows you and your ghost once you pass 300 u/s.</p>
+      <p class="label" id="cos-total"></p>
+      <div class="group"><p class="label">Runner skin</p><div class="cosgrid" id="cos-skins"></div></div>
+      <div class="group"><p class="label">Trail</p><div class="cosgrid" id="cos-trails"></div></div>
     </div>
     <div data-pane="settings" hidden>
         <div class="group">
@@ -442,7 +465,7 @@ table.controls { width: 100%; border-collapse: collapse; font-size: 14px; margin
     <h2 id="c-name"></h2>
     <div class="ctime"><span id="c-time"></span><span id="c-best"></span></div>
     <p id="c-online" hidden></p>
-    <div id="c-story" hidden><p class="cstars" id="c-stars"></p><p class="cdebrief" id="c-debrief"></p></div>
+    <div id="c-story" hidden><p class="cstars" id="c-stars"></p><p class="cdebrief" id="c-debrief"></p><p class="cunlock" id="c-unlock" hidden></p></div>
     <dl class="cstats">
       <div><dt>Top speed</dt><dd><span id="c-top"></span> u/s</dd></div>
       <div><dt>Average</dt><dd><span id="c-avg"></span> u/s</dd></div>

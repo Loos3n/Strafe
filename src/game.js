@@ -800,6 +800,10 @@
       },
       has: (course) => !!get(course),
       root,
+      tint(c) {
+        const col = new THREE.Color(c).convertSRGBToLinear();
+        mat.color.copy(col); mat.emissive.copy(col).multiplyScalar(0.55);
+      },
       // t: ticks since the run started, or null to hide
       update(dt, t) {
         const g = game.course && t !== null && settings.ghost ? get(game.course) : null;
@@ -842,6 +846,117 @@
       },
     };
   })();
+
+  // ------------------------------------------------------------ cosmetics
+  // Story stars unlock runner skins and trails. A skin recolours your arms,
+  // legs and your ghost; a trail is a fading ribbon behind you and the ghost.
+  const SKINS = [
+    { id: 'kite', name: 'Kite', need: 0, sleeve: 0x1d2026, glove: 0x1a1c20, accent: 0xdb2f2a, pants: 0x2c3139, shirt: 0xf2f2ee, ghost: 0x63d6ff },
+    { id: 'courier', name: 'Courier', need: 3, sleeve: 0x22324a, glove: 0x2a2f36, accent: 0xf08a24, pants: 0x1f2a3a, shirt: 0xe9e4d8 },
+    { id: 'blueline', name: 'Blueline', need: 6, sleeve: 0xe8ecef, glove: 0x2b3440, accent: 0x2f7de1, pants: 0x3a4450, shirt: 0xffffff },
+    { id: 'nightshift', name: 'Night Shift', need: 10, sleeve: 0x0e0f12, glove: 0x0b0c0e, accent: 0x39e07a, pants: 0x121418, shirt: 0x1b1e23 },
+    { id: 'spillway', name: 'Spillway', need: 14, sleeve: 0x17595e, glove: 0x1d2a2c, accent: 0x3fd0c9, pants: 0x203236, shirt: 0xdff3f1 },
+    { id: 'ember', name: 'Ember', need: 18, sleeve: 0x2a2523, glove: 0x5a1712, accent: 0xff5a1f, pants: 0x2b2725, shirt: 0x3a302c },
+    { id: 'gold', name: 'Gold Run', need: 24, sleeve: 0x16130d, glove: 0x3a2e14, accent: 0xe0a400, pants: 0x1c1a16, shirt: 0xf3e6c0 },
+    { id: 'prism', name: 'Prism', need: 30, sleeve: 0xf4f5f7, glove: 0xd9dde2, accent: 'hue', pants: 0xc8cdd3, shirt: 0xffffff },
+  ];
+  const TRAILS = [
+    { id: 'none', name: 'None', need: 0 },
+    { id: 'streak', name: 'Streak', need: 2, color: 0xffffff, tail: 0xbfd3e6 },
+    { id: 'redline', name: 'Red Line', need: 5, color: 0xff3b30, tail: 0xb3141a },
+    { id: 'skyline', name: 'Skyline', need: 8, color: 0x7fdcff, tail: 0x2f7de1 },
+    { id: 'ember', name: 'Ember', need: 12, color: 0xffb02e, tail: 0xd8241c },
+    { id: 'toxic', name: 'Toxic', need: 16, color: 0xc8ff4f, tail: 0x22b35a },
+    { id: 'gold', name: 'Gold', need: 21, color: 0xffe07a, tail: 0xb87a00 },
+    { id: 'rainbow', name: 'Rainbow', need: 27, color: 'hue' },
+  ];
+  const storyStars = () => STORY.reduce((n, job, i) => n + (job.stars && storyProgress[i] ? storyProgress[i].stars : 0), 0);
+  const unlocked = (it) => it.need <= storyStars();
+  const pick = (list, id) => { const it = list.find(x => x.id === id); return it && unlocked(it) ? it : list[0]; };
+  const hueColor = (h) => new THREE.Color().setHSL(h % 1, 0.85, 0.58).getHex();
+
+  // height: [centre above the feet, half width]; life: seconds a point lasts
+  function makeTrail(height, life) {
+    const N = 120;
+    const g = new THREE.BufferGeometry();
+    const pos = new Float32Array(N * 6), age = new Float32Array(N * 2), side = new Float32Array(N * 2);
+    for (let i = 0; i < N; i++) side[i * 2 + 1] = 1;
+    g.setAttribute('position', new THREE.BufferAttribute(pos, 3).setUsage(THREE.DynamicDrawUsage));
+    g.setAttribute('aAge', new THREE.BufferAttribute(age, 1).setUsage(THREE.DynamicDrawUsage));
+    g.setAttribute('aV', new THREE.BufferAttribute(side, 1));
+    const idx = [];
+    for (let i = 0; i < N - 1; i++) { const a = i * 2; idx.push(a, a + 1, a + 2, a + 1, a + 3, a + 2); }
+    g.setIndex(idx);
+    const mat = new THREE.ShaderMaterial({
+      uniforms: { c0: { value: new THREE.Color() }, c1: { value: new THREE.Color() }, rainbow: { value: 0 }, t: { value: 0 }, op: { value: 1 } },
+      vertexShader: 'attribute float aAge; attribute float aV; varying float vA; varying float vV;' +
+        'void main() { vA = aAge; vV = aV; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
+      fragmentShader: 'uniform vec3 c0; uniform vec3 c1; uniform float rainbow; uniform float t; uniform float op; varying float vA; varying float vV;' +
+        'vec3 hue(float h) { return clamp(abs(mod(h * 6.0 + vec3(0.0, 4.0, 2.0), 6.0) - 3.0) - 1.0, 0.0, 1.0); }' +
+        'void main() { vec3 c = mix(mix(c0, c1, vA), hue(fract(t * 0.25 - vA * 0.9)), rainbow);' +
+        'float a = (1.0 - vA) * smoothstep(0.0, 0.06, vA) * sin(vV * 3.14159) * op;' +
+        'gl_FragColor = vec4(c, a * 0.8); }',
+      transparent: true, depthWrite: false, side: THREE.DoubleSide,
+    });
+    const mesh = new THREE.Mesh(g, mat);
+    mesh.frustumCulled = false; mesh.visible = false; mesh.renderOrder = 2;
+    scene.add(mesh);
+    const pts = [];
+    return {
+      mat, life,
+      clear() { pts.length = 0; mesh.visible = false; },
+      // x, y, z: the runner's feet; now in seconds; moving: speed is high enough to draw
+      update(x, y, z, now, moving) {
+        const last = pts[pts.length - 1];
+        if (last && Math.hypot(x - last.x, y - last.y, z - last.z) > 600) pts.length = 0; // teleported
+        if (moving && (!last || Math.hypot(x - last.x, y - last.y, z - last.z) > 8)) pts.push({ x, y, z, t: now });
+        while (pts.length && (now - pts[0].t > this.life || pts.length > N)) pts.shift();
+        const n = pts.length;
+        if (n < 2) { mesh.visible = false; return; }
+        // a ribbon that always turns its face to the camera, so it reads from any angle
+        const cp = camera.position, at = (i) => pts[Math.max(0, Math.min(n - 1, n - 1 - i))];
+        for (let i = 0; i < N; i++) {
+          // the newest point is index 0, so age runs 0 (fresh) to 1 (gone)
+          const q = at(i), qa = at(i - 1), qb = at(i + 1);
+          const a = i < n ? Math.min(1, (now - q.t) / this.life) : 1;
+          const dx = qa.x - qb.x, dy = qa.y - qb.y, dz = qa.z - qb.z;
+          const cy = q.y + height[0], vx = cp.x - q.x, vy = cp.y - cy, vz = cp.z - q.z;
+          let sx = dy * vz - dz * vy, sy = dz * vx - dx * vz, sz = dx * vy - dy * vx;
+          const sl = Math.hypot(sx, sy, sz), w = height[1] * (1 - a * 0.6);
+          if (sl > 1e-6) { sx *= w / sl; sy *= w / sl; sz *= w / sl; } else { sx = 0; sy = w; sz = 0; }
+          pos[i * 6] = q.x - sx; pos[i * 6 + 1] = cy - sy; pos[i * 6 + 2] = q.z - sz;
+          pos[i * 6 + 3] = q.x + sx; pos[i * 6 + 4] = cy + sy; pos[i * 6 + 5] = q.z + sz;
+          age[i * 2] = age[i * 2 + 1] = a;
+        }
+        g.attributes.position.needsUpdate = true; g.attributes.aAge.needsUpdate = true;
+        mesh.visible = true;
+      },
+    };
+  }
+  const trails = { me: makeTrail([22, 14], 0.85), ghost: makeTrail([30, 14], 0.85) };
+  const cosmetics = {
+    skin: SKINS[0], trail: TRAILS[0], trails,
+    apply() {
+      const k = this.skin = pick(SKINS, settings.skin), tr = this.trail = pick(TRAILS, settings.trail);
+      body.setSkin(Object.assign({}, k, { accent: k.accent === 'hue' ? hueColor(0) : k.accent }));
+      if (k.accent !== 'hue') ghost.tint(k.ghost || k.accent);
+      for (const t of [trails.me, trails.ghost]) {
+        t.mat.uniforms.rainbow.value = tr.color === 'hue' ? 1 : 0;
+        if (tr.color !== 'hue') { t.mat.uniforms.c0.value.set(tr.color); t.mat.uniforms.c1.value.set(tr.tail || tr.color); }
+        if (tr.id === 'none') t.clear();
+      }
+    },
+    // per frame: Prism cycles its colour, trails follow the runner and the ghost
+    update(now, x, y, z, hs, show) {
+      const ts = now / 1000;
+      if (this.skin.accent === 'hue') { const c = hueColor(ts * 0.12); body.setAccent(c); ghost.tint(c); }
+      const on = this.trail.id !== 'none';
+      trails.me.mat.uniforms.t.value = trails.ghost.mat.uniforms.t.value = ts;
+      if (on && show) trails.me.update(x, y, z, ts, hs > 300); else trails.me.clear();
+      const gr = ghost.root;
+      if (on && show && gr.visible && game.running) trails.ghost.update(gr.position.x, gr.position.y, gr.position.z, ts, true); else trails.ghost.clear();
+    },
+  };
 
   // ------------------------------------------------------------ stats
   const stats = { jumps: 0, jumpSpeed: 0, syncGood: 0, syncAll: 0, lastSync: null, lastYaw: 0, gain: 0 };
@@ -1020,8 +1135,16 @@
       renderer.autoClear = true;
     }
     function resize(aspect) { vCam.aspect = aspect; vCam.updateProjectionMatrix(); }
-    return { update, render, resize, act, st, armsRoot, hips };
+    // a runner skin recolours the kit; skin tone and soles stay
+    const lin = (c) => new THREE.Color(c).convertSRGBToLinear();
+    function setSkin(k) {
+      sleeve.color.copy(lin(k.sleeve)); glove.color.copy(lin(k.glove)); pants.color.copy(lin(k.pants)); shirt.color.copy(lin(k.shirt));
+      setAccent(k.accent);
+    }
+    function setAccent(c) { red.color.copy(lin(c)); shoe.color.copy(lin(c)); }
+    return { update, render, resize, act, st, armsRoot, hips, setSkin, setAccent };
   })();
+  cosmetics.apply();
   onResize = body.resize;
   body.resize(window.innerWidth / window.innerHeight);
 
@@ -1169,7 +1292,11 @@
     $('c-story').hidden = !job;
     if (job) {
       $('c-name').textContent = job.title;
+      const before = storyStars();
       const got = finishJob(game.mission, secs);
+      const fresh = SKINS.concat(TRAILS).filter(it => it.need > before && it.need <= storyStars());
+      $('c-unlock').hidden = !fresh.length;
+      $('c-unlock').textContent = 'Unlocked: ' + fresh.map(it => it.name + (SKINS.includes(it) ? ' skin' : ' trail')).join(', ') + '. Pick it in Cosmetics.';
       $('c-stars').innerHTML = job.stars ? starHtml(got) + '<small>' + starNote(job, got) + '</small>' : '';
       $('c-debrief').textContent = job.debrief;
       const nj = game.mission + 1 < STORY.length ? game.mission + 1 : null;
@@ -1385,6 +1512,7 @@
       camera.rotation.set(pitch + flipPitch, yaw, cam.roll);
       if (settings.body) body.update(dt, hs, pitch + flipPitch, cam.roll, cam.bob, cam.dip);
     }
+    cosmetics.update(now, ix, iy, iz, hs, (locked || !!game.demo) && !attract.active);
     A.update({
       speed: hs, playing: locked || !!game.demo, airborne: !player.onGround,
       surfing: !player.onGround && surfing(), sliding: !!player.slide && player.onGround, slideTime: player.slide ? player.slide.t : 0,
@@ -1623,6 +1751,8 @@
     const done = ALL_LEVELS.filter(n => best[n]).length;
     $('m-play-sub').textContent = done + ' / ' + ALL_LEVELS.length + ' levels';
     $('m-tut-sub').textContent = best.tutorial ? 'Done' : 'Start here';
+    const all = SKINS.concat(TRAILS);
+    $('m-cos-sub').textContent = all.filter(unlocked).length + ' / ' + all.length + ' unlocked';
   }
   function showScreen(which, focus = true) {
     screen = which;
@@ -1669,8 +1799,9 @@
   function openDrawer(which) {
     A.play('click');
     drawer.hidden = false;
-    $('d-title').textContent = which === 'settings' ? 'Settings' : which === 'story' ? 'Story' : 'Controls';
-    drawer.classList.toggle('wide', which === 'story');
+    $('d-title').textContent = { settings: 'Settings', story: 'Story', cosmetics: 'Cosmetics', controls: 'Controls' }[which];
+    drawer.classList.toggle('wide', which === 'story' || which === 'cosmetics');
+    if (which === 'cosmetics') buildCosmetics();
     if (which === 'story') {
       // brief the first job that still has stars to win
       if (briefed === null) { let i = 0; while (i + 1 < STORY.length && jobOpen(i + 1) && storyProgress[i]) i++; briefed = i; }
@@ -1744,6 +1875,45 @@
   function startJob(i) {
     goCourse(STORY[i].course, i);
     startPlay();
+  }
+  // cosmetics: pick a skin and a trail; locked ones show the stars they need
+  function buildCosmetics() {
+    const have = storyStars();
+    $('cos-total').textContent = 'Stars ' + have + ' / ' + STORY.filter(j => j.stars).length * 3;
+    const hexs = (n) => '#' + n.toString(16).padStart(6, '0');
+    const RAINBOW = 'linear-gradient(90deg,#ff4d4d,#ffb02e,#f5ff4f,#4fff8a,#4fc3ff,#8a5bff,#ff4dd2)';
+    const fill = (el, list, key) => {
+      el.textContent = '';
+      for (const it of list) {
+        const b = document.createElement('button');
+        b.className = 'cos';
+        b.disabled = !unlocked(it);
+        b.setAttribute('aria-pressed', String(cosmetics[key] === it));
+        const sw = document.createElement('span');
+        if (key === 'skin') {
+          sw.className = 'sw';
+          const acc = it.accent === 'hue' ? RAINBOW : hexs(it.accent);
+          sw.innerHTML = '<i style="background:' + hexs(it.sleeve) + '"></i><i class="band" style="background:' + acc + '"></i><i style="background:' + hexs(it.glove) + '"></i>';
+        } else {
+          sw.className = 'sw trail';
+          sw.style.background = it.id === 'none' ? 'rgba(255,255,255,.08)' : it.color === 'hue' ? RAINBOW : 'linear-gradient(90deg,' + hexs(it.tail) + '00,' + hexs(it.tail) + ',' + hexs(it.color) + ')';
+        }
+        const cn = document.createElement('span');
+        cn.className = 'cn';
+        cn.innerHTML = it.name + '<small>' + (b.disabled ? '★ ' + it.need : cosmetics[key] === it ? 'Equipped' : it.need ? '★ ' + it.need : 'Default') + '</small>';
+        b.append(sw, cn);
+        b.addEventListener('click', () => {
+          A.play('click');
+          settings[key] = it.id; save(SETTINGS_KEY, settings);
+          cosmetics.apply(); buildCosmetics(); refreshTitle();
+          const again = $(key === 'skin' ? 'cos-skins' : 'cos-trails').children[list.indexOf(it)];
+          again && again.focus({ preventScroll: true });
+        });
+        el.appendChild(b);
+      }
+    };
+    fill($('cos-skins'), SKINS, 'skin');
+    fill($('cos-trails'), TRAILS, 'trail');
   }
   $('st-start').addEventListener('click', () => { A.init(); A.play('click'); if (briefed !== null) startJob(briefed); });
 
@@ -1826,6 +1996,6 @@
   previewCourse(map.order[0]);
   showMenuState();
   if (location.hash === '#demo') game.demo = true; // headless screenshot mode
-  window.__strafe = { player, game, goCourse, place, attract, previewCourse, body, ghost, step, setView: (y, p) => { yaw = y; pitch = p; } };
+  window.__strafe = { player, game, goCourse, place, attract, previewCourse, body, ghost, cosmetics, step, setView: (y, p) => { yaw = y; pitch = p; } };
   requestAnimationFrame((t) => { last = t; frame(t); });
 })();
