@@ -33,8 +33,9 @@ let ok = true; const check=(name,cond,info)=>{console.log((cond?'PASS ':'FAIL ')
     p.tick(cmd({side, jump:true, yaw}), dt);
   }
   check('bhop gains speed', p.hspeed()>s0+300, s0.toFixed(0)+' -> '+p.hspeed().toFixed(0)+' jumps '+jumps+' y='+p.pos[1].toFixed(1)); }
-// 5 surf: drop onto ramp 1 west face holding into ramp
-{ const sp = courses.surf.spawn; const p = mk([-6000-180, 3000, 0], 0); p.vel=[0,0,-400];
+// 5 surf: drop onto a lone 60 degree ramp's west face holding into it
+{ const RW = new P.World(); RW.addSweep([[-6000-320, 3300-554], [-6000+320, 3300-554], [-6000, 3300]], 600, -3000, -400, { kind: 'ramp' });
+  const p = new P.Player(RW); p.reset([-6000-180, 3000, 0], 0); p.vel=[0,0,-400];
   let ground=0, minSpeed=1e9, maxS=0; let i;
   for(i=0;i<400;i++){ p.tick(cmd({side:1, yaw:0}),dt); if(p.onGround) ground++; const s=Math.hypot(...p.vel); if(i>50) minSpeed=Math.min(minSpeed,s); maxS=Math.max(maxS,s); }
   check('surf: never grounded on ramp', ground===0, 'ground ticks '+ground);

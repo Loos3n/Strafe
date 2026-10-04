@@ -24,73 +24,6 @@
     // where the player waits while no level is loaded (only the menu is showing)
     const hubSpawn = { pos: [0, 0, 600], yaw: 0 };
 
-    // ------------------------------------------------------------ surf
-    {
-      const W = 320, H = 554; // 60 degree faces, normal.y = 0.5 < 0.7 so you never "land"
-      // Each ramp descends along its length so gravity feeds you speed.
-      const ramps = [
-        { cx: -6000, apex: 3300, z0: 600, z1: -3000, drop: 400 },
-        { cx: -5880, apex: 2550, z0: -3500, z1: -7000, drop: 400 },
-        { cx: -6000, apex: 1800, z0: -7500, z1: -11000, drop: 400 },
-        { cx: -6120, apex: 1050, z0: -11500, z1: -15000, drop: 400 },
-      ];
-      const spawns = [];
-      ramps.forEach((r, i) => {
-        world.addSweep([[r.cx - W, r.apex - H], [r.cx + W, r.apex - H], [r.cx, r.apex]], r.z0, r.z1, -r.drop,
-          { color: COLORS.surf[i % COLORS.surf.length], kind: 'ramp' });
-        // stage platform, just off the ramp's west face
-        const top = r.apex + 60;
-        box([r.cx - W - 500, top - 40, r.z0 - 700], [r.cx - W - 60, top, r.z0 - 100], COLORS.surfPad, { kind: 'pad' });
-        const spawn = { pos: [r.cx - W - 300, top, r.z0 - 300], yaw: -1.05 };
-        spawns.push(spawn);
-        if (i > 0) {
-          world.addTrigger([r.cx - 2000, -150, r.z0 - 200], [r.cx + 2000, 5000, r.z0 + 300],
-            { type: 'checkpoint', course: 'surf', idx: i, spawn });
-        }
-      });
-      // finish platform
-      box([-6900, 140, -16400], [-5300, 200, -15400], COLORS.surfPad, { kind: 'pad' });
-      world.addTrigger([-6900, 200, -16400], [-5300, 400, -15400], { type: 'end', course: 'surf' });
-      world.addTrigger([-6000 - W - 500, 3360, -100], [-6000 - W - 60, 3600, 500], { type: 'start', course: 'surf' });
-      // water
-      box([-9000, -260, -18000], [-3000, -200, 2500], COLORS.water, { nonsolid: true, water: true });
-      world.addTrigger([-9000, -3000, -18000], [-3000, -150, 2500], { type: 'kill', course: 'surf' });
-      courses.surf = { name: 'Surf', type: 'Surf', difficulty: 1, color: COLORS.surf[0], desc: 'Four descending 60° ramps over water. Hold the strafe key into the ramp.', spawn: spawns[0], stages: ramps.length };
-    }
-
-    // ------------------------------------------------------------ bhop
-    {
-      const cx = 6000;
-      box([cx - 256, -1300, -256], [cx + 256, 0, 256], COLORS.bhopPad, { kind: 'pad' });
-      world.addTrigger([cx - 256, 0, -256], [cx + 256, 160, 256], { type: 'start', course: 'bhop' });
-      const spacing = [240, 240, 256, 256, 272, 272, 288, 288, 304, 304, 320, 320, 336, 352, 368, 384];
-      const lateral = [0, 70, -70, 0, 100, -60, 40, -110, 0, 120, -120, 60, -60, 0, 90, -90];
-      let z = -256 - 120;
-      let cp = null;
-      spacing.forEach((s, i) => {
-        if (i === 8) {
-          // checkpoint island
-          const zc = z - 140;
-          box([cx - 192, -1300, zc - 192], [cx + 192, 0, zc + 192], COLORS.bhopPad, { kind: 'pad' });
-          cp = { pos: [cx, 0, zc + 150], yaw: 0 };
-          world.addTrigger([cx - 192, 0, zc - 192], [cx + 192, 160, zc + 192], { type: 'checkpoint', course: 'bhop', idx: 1, spawn: cp });
-          z = zc - 192 - 130;
-        }
-        const x = cx + lateral[i];
-        box([x - 80, -1300, z - 160], [x + 80, 0, z], COLORS.bhop, { kind: 'block' });
-        z -= s;
-      });
-      // speed lane: one long strip to chain hops, then a long jump to the finish
-      const laneStart = z + 120;
-      box([cx - 128, -1300, laneStart - 3000], [cx + 128, 0, laneStart], COLORS.bhop, { kind: 'lane' });
-      const endZ = laneStart - 3000 - 480;
-      box([cx - 384, -1300, endZ - 512], [cx + 384, 0, endZ], COLORS.bhopPad, { kind: 'pad' });
-      world.addTrigger([cx - 384, 0, endZ - 512], [cx + 384, 200, endZ], { type: 'end', course: 'bhop' });
-      box([cx - 3000, -1240, endZ - 1500], [cx + 3000, -1200, 1500], COLORS.lava, { nonsolid: true, lava: true });
-      world.addTrigger([cx - 3000, -3000, endZ - 1500], [cx + 3000, -300, 1500], { type: 'kill', course: 'bhop' });
-      courses.bhop = { name: 'Bhop', type: 'Bhop', difficulty: 2, color: COLORS.bhop, desc: 'Blocks over lava with widening gaps, then a speed lane and a long jump.', spawn: { pos: [cx, 0, 150], yaw: 0 }, stages: 2 };
-    }
-
     // ------------------------------------------------------------ rooftops
     {
       const B = -1600; // street level
@@ -183,122 +116,6 @@
         spawn: { pos: [0, 0, -3100], yaw: 0 }, stages: 6, legs: kit.legs.map(L => ({ ox: L.ox, oz: L.oz, h: L.h })) };
     }
 
-
-    // ------------------------------------------------------------ canyon (surf)
-    // One-sided ramp banks face each other in a V, staggered along the gorge.
-    // Carve down one bank and up the other before your side runs out.
-    {
-      const cx = -14000, W = 360, H = 624; // 60 degree faces
-      const banks = [
-        { side: -1, top: 4200, z0: 600, z1: -4400 },
-        { side: 1, top: 3900, z0: -2400, z1: -7400 },
-        { side: -1, top: 3500, z0: -5400, z1: -10400 },
-        { side: 1, top: 3100, z0: -8400, z1: -13400 },
-      ];
-      const DROP = 500, BACK = W - 8; // toes overlap: a closed V you can carve across
-      const spawns = [];
-      banks.forEach((b, i) => {
-        const back = cx + b.side * BACK, toe = back - b.side * W;
-        // the bank and the rock shelf behind it are one brush, so the top follows the slope
-        const outer = back + b.side * 160;
-        world.addSweep([[outer, b.top - H - 1400], [toe, b.top - H], [back, b.top], [outer, b.top]], b.z0, b.z1, -DROP,
-          { color: COLORS.canyon[i % COLORS.canyon.length], kind: 'ramp' });
-        // rock wall along the outer edge (after the drop-in) so overshooting a
-        // carve smacks into stone instead of launching you out of the gorge
-        const len = b.z0 - b.z1, wz0 = b.z0 - 800, wTop = b.top - DROP * (800 / len);
-        world.addSweep([[back, wTop], [outer, wTop], [outer, wTop + 420], [back, wTop + 420]], wz0, b.z1, -DROP * ((len - 800) / len),
-          { color: COLORS.canyonRock, kind: 'cliff' });
-        const top = b.top + 60;
-        const x0 = back + b.side * 160, x1 = back + b.side * 560;
-        box([Math.min(x0, x1), top - 40, b.z0 - 600], [Math.max(x0, x1), top, b.z0 - 100], COLORS.surfPad, { kind: 'pad' });
-        const spawn = { pos: [back + b.side * 300, top, b.z0 - 350], yaw: b.side < 0 ? -0.9 : 0.9 };
-        spawns.push(spawn);
-        if (i > 0) world.addTrigger([cx - 3000, -150, b.z0 - 700], [cx + 3000, 6000, b.z0 - 50], { type: 'checkpoint', course: 'canyon', idx: i, spawn });
-      });
-      world.addTrigger([cx - BACK - 560, 4260, -100], [cx - BACK - 160, 4500, 600], { type: 'start', course: 'canyon' });
-      box([cx - 900, 1500, -15600], [cx + 900, 1560, -14200], COLORS.surfPad, { kind: 'pad' });
-      world.addTrigger([cx - 900, 1560, -15600], [cx + 900, 1760, -14200], { type: 'end', course: 'canyon' });
-      box([cx - 3000, -260, -17000], [cx + 3000, -200, 2000], COLORS.water, { nonsolid: true, water: true });
-      world.addTrigger([cx - 3000, -3000, -17000], [cx + 3000, 1300, 2000], { type: 'kill', course: 'canyon' });
-      courses.canyon = { preview: { pos: [cx, 4300, 1200], yaw: 0 }, name: 'Canyon', type: 'Surf', difficulty: 3, color: COLORS.canyon[0], desc: 'A V-shaped gorge whose banks run out in turns. Carve down one side and up the other.', spawn: spawns[0], stages: banks.length };
-    }
-
-    // ------------------------------------------------------------ stairway (bhop)
-    // Blocks that climb, turn and fall away, so you have to steer in the air.
-    {
-      const ox = 14000;
-      box([ox - 256, -1300, -256], [ox + 256, 0, 256], COLORS.bhopPad, { kind: 'pad' });
-      world.addTrigger([ox - 256, 0, -256], [ox + 256, 160, 256], { type: 'start', course: 'stairway' });
-      // segments: count, step length, height change per block, heading change (radians) after
-      const segs = [
-        { n: 6, step: 250, dy: 30, turn: 0 },
-        { n: 5, step: 270, dy: 30, turn: Math.PI / 2 },
-        { n: 5, step: 300, dy: -60, turn: -Math.PI / 2 },
-        { n: 6, step: 340, dy: -80, turn: -Math.PI / 2 },
-        { n: 6, step: 300, dy: 20, turn: Math.PI / 2 },
-      ];
-      let x = ox, z = -256 - 140, y = 0, head = 0, idx = 0;
-      segs.forEach((sg, si) => {
-        for (let k = 0; k < sg.n; k++) {
-          y += sg.dy;
-          box([x - 72, y - 1300, z - 72], [x + 72, y, z + 72], COLORS.stair[si % COLORS.stair.length], { kind: 'block' });
-          x += -Math.sin(head) * sg.step; z += -Math.cos(head) * sg.step;
-        }
-        // landing island at each corner, which is also a checkpoint
-        head += sg.turn;
-        const isl = si < segs.length - 1;
-        const half = isl ? 150 : 300;
-        box([x - half, y - 1300, z - half], [x + half, y, z + half], COLORS.bhopPad, { kind: 'pad' });
-        if (isl) {
-          idx++;
-          const spawn = { pos: [x, y, z], yaw: head };
-          world.addTrigger([x - half, y, z - half], [x + half, y + 160, z + half], { type: 'checkpoint', course: 'stairway', idx, spawn });
-          x += -Math.sin(head) * 330; z += -Math.cos(head) * 330;
-        } else {
-          world.addTrigger([x - half, y, z - half], [x + half, y + 200, z + half], { type: 'end', course: 'stairway' });
-        }
-      });
-      box([ox - 4000, -1240, -9000], [ox + 4000, -1200, 2000], COLORS.lava, { nonsolid: true, lava: true });
-      world.addTrigger([ox - 4000, -3000, -9000], [ox + 4000, -700, 2000], { type: 'kill', course: 'stairway' });
-      courses.stairway = { name: 'Stairway', type: 'Bhop', difficulty: 4, color: COLORS.stair[1], desc: 'Climbing, turning and falling block lines. Steer through the corners in the air.', spawn: { pos: [ox, 0, 150], yaw: 0 }, stages: idx + 1 };
-    }
-
-    // ------------------------------------------------------------ crossover (everything)
-    // Tower top, slide down the roof, drop onto a surf ramp, bhop the blocks,
-    // wallrun the last gap and mantle up to the finish.
-    {
-      const z0 = 16000;
-      const B = -400;
-      box([-500, B, z0 - 1000], [500, 2000, z0], COLORS.roof, { kind: 'building' });
-      world.addTrigger([-500, 2000, z0 - 400], [500, 2200, z0], { type: 'start', course: 'crossover' });
-      route([-120, 2000, z0 - 700], [120, 2044, z0 - 640]);
-      world.addPrism('x', [[z0 - 1000, 2000], [z0 - 2500, 1600], [z0 - 2500, B], [z0 - 1000, B]], -400, 400, { color: COLORS.roof, kind: 'building' });
-      // surf ramp, hanging free
-      world.addSweep([[-320, 1300 - 554], [320, 1300 - 554], [0, 1300]], z0 - 3000, z0 - 6200, -400, { color: COLORS.surf[1], kind: 'ramp' });
-      const cpA = { pos: [0, 400, z0 - 6800], yaw: 0 };
-      box([-400, -400, z0 - 7050], [400, 400, z0 - 6450], COLORS.bhopPad, { kind: 'pad' });
-      world.addTrigger([-400, 400, z0 - 7050], [400, 560, z0 - 6450], { type: 'checkpoint', course: 'crossover', idx: 1, spawn: cpA });
-      const lat = [0, 90, -90, 60, -60, 0];
-      for (let i = 0; i < lat.length; i++) {
-        const bz = z0 - 7400 - i * 330;
-        box([lat[i] - 90, -400, bz - 90], [lat[i] + 90, 400, bz + 90], COLORS.bhop, { kind: 'block' });
-      }
-      const rz = z0 - 7400 - lat.length * 330 - 100;
-      box([-500, B, rz - 600], [500, 400, rz], COLORS.roof, { kind: 'building' });
-      const cpB = { pos: [0, 400, rz - 100], yaw: 0 };
-      world.addTrigger([-500, 400, rz - 300], [500, 600, rz], { type: 'checkpoint', course: 'crossover', idx: 2, spawn: cpB });
-      route([380, 0, rz - 650], [420, 800, rz - 1300]);   // billboard
-      box([-500, B, rz - 2250], [500, 520, rz - 1150], COLORS.roof, { kind: 'building' });
-      route([-140, 390, rz - 1152], [140, 520, rz - 1149]);   // mantle lip
-      world.addTrigger([-500, 520, rz - 2250], [500, 720, rz - 1550], { type: 'end', course: 'crossover' });
-      box([-3000, B - 20, z0 - 12000], [3000, B, z0 + 1000], COLORS.street, { kind: 'street' });
-      world.addTrigger([-3000, B - 2000, z0 - 12000], [3000, 100, z0 + 1000], { type: 'kill', course: 'crossover' });
-      // a couple of neighbours for scale
-      box([-1700, B, z0 - 2600], [-900, 1200, z0 - 1400], COLORS.glass, { kind: 'building' });
-      box([900, B, z0 - 4200], [1800, 1500, z0 - 3000], COLORS.roofSide, { kind: 'building' });
-      box([-1800, B, z0 - 9000], [-1000, 1100, z0 - 7600], COLORS.roofSide, { kind: 'building' });
-      courses.crossover = { name: 'Crossover', type: 'Mixed', difficulty: 5, color: 0x1d2a35, desc: 'All of it in one line: slide a roof, surf, bhop, wallrun, mantle the finish.', spawn: { pos: [0, 2000, z0 - 150], yaw: 0 }, stages: 3 };
-    }
 
     // ------------------------------------------------------------ cascade (long surf)
     // Nine ramps with sideways transfers, mixed angles, a steep speed ramp and
@@ -834,6 +651,280 @@
         { t: 'bhop', n: 14, size: 96, step: 310, dy: -30, zig: 110 },
         { t: 'surf', face: 65, len: 2600, drop: 900 },
         { t: 'pad', len: 3000, w: 1400, end: true },
+      ] });
+
+    // ------------------------------------------------------------ route kit
+    // Long surf and bhop runs in the Downtown style: a route of pieces laid
+    // out in legs that turn corners on square pads, between city skylines.
+    // Pieces: pad, bhop (block line), lane (speed strip), surf (two-sided
+    // ramp), bank (one-sided ramp against a cliff, for gorges), slide (a
+    // sloped roof) and wall (a gap crossed by wallrunning a billboard).
+    // Every leg keeps its plan in local coordinates (x right, z forward is
+    // negative) so a bot can ride any level.
+    function routeKit(name, ox, oz, top, def) {
+      const DIRS = [[0, -1], [1, 0], [0, 1], [-1, 0]];
+      const legs = [];
+      let L = null;
+      function frame(fx, fz, h) {
+        const f = DIRS[h], r = DIRS[(h + 1) % 4];
+        L = { ox: fx, oz: fz, h, yaw: Math.atan2(-f[0], -f[1]), items: [],
+          at: (x, z) => [fx + r[0] * x + f[0] * -z, fz + r[1] * x + f[1] * -z] };
+        legs.push(L);
+      }
+      frame(ox, oz, 0);
+      const W3 = (x, y, z) => { const p = L.at(x, z); return [p[0], y, p[1]]; };
+      const lbox = (x0, x1, y0, y1, z0, z1, props) => {
+        const a = L.at(x0, z0), b = L.at(x1, z1);
+        return world.addBox([Math.min(a[0], b[0]), y0, Math.min(a[1], b[1])], [Math.max(a[0], b[0]), y1, Math.max(a[1], b[1])], props);
+      };
+      const ltrig = (x0, x1, y0, y1, z0, z1, data) => {
+        const a = L.at(x0, z0), b = L.at(x1, z1);
+        return world.addTrigger([Math.min(a[0], b[0]), y0, Math.min(a[1], b[1])], [Math.max(a[0], b[0]), y1, Math.max(a[1], b[1])], Object.assign({ course: name }, data));
+      };
+      // a convex brush from cross-section loops at two depths (local coords)
+      const lprism = (loop0, z0, loop1, z1, props) => {
+        const a = loop0.map(([x, y]) => W3(x, y, z0)), b = loop1.map(([x, y]) => W3(x, y, z1));
+        const faces = [a, b];
+        for (let i = 0; i < a.length; i++) { const j = (i + 1) % a.length; faces.push([a[i], a[j], b[j], b[i]]); }
+        return world.addHull(faces, props);
+      };
+      let x = 0, y = top, z = 0, cp = 0, lo = top, spawn = null, prev = null, prevPad = null;
+      const pal = def.palette;
+      def.segs.forEach((sg, si) => {
+        const col = pal[si % pal.length];
+        if (sg.t === 'turn') {
+          // pivot on the pad we stand on: its centre becomes the new origin
+          const p = prevPad, c = L.at(p.x, (p.z0 + p.z1) / 2);
+          frame(c[0], c[1], (L.h + sg.dir + 4) % 4);
+          // a checkpoint on the corner respawns you in its middle, facing the new way
+          if (p.trig) p.trig.spawn = { pos: [c[0], p.y, c[1]], yaw: L.yaw };
+          L.items.push({ t: 'pad', x: 0, y: p.y, z0: p.w / 2, z1: -p.w / 2, w: p.len, corner: true });
+          x = 0; z = -p.w / 2; prev = sg;
+          return;
+        }
+        if (sg.t === 'pad' || sg.t === 'lane') {
+          const w = sg.w || 600, len = sg.len || 600;
+          if (prev && (prev.t === 'surf' || prev.t === 'bank')) {
+            y = prev.endApex - prev.H - (sg.fall || 450); z = prev.z1 + (sg.back || 200); x = sg.x !== undefined ? sg.x : prev.cx;
+          } else {
+            z -= sg.gap || 0; y += sg.rise || 0; if (sg.x !== undefined) x = sg.x;
+          }
+          const kind = sg.t === 'lane' ? 'lane' : 'pad';
+          lbox(x - w / 2, x + w / 2, y - 60, y, z - len, z, { color: sg.t === 'lane' ? col : COLORS.bhopPad, kind });
+          if (sg.lip) lbox(x - w / 2 + 160, x + w / 2 - 160, y - 130, y, z - 3, z, { color: COLORS.route, kind: 'route' });
+          const here = { pos: (() => { const q = W3(x, y, z - Math.min(300, len / 2)); return q; })(), yaw: L.yaw };
+          if (!spawn) { spawn = here; ltrig(x - w / 2, x + w / 2, y, y + 160, z - len, z, { type: 'start' }); }
+          let trig = null;
+          if (spawn !== here && sg.cp) { cp++; trig = ltrig(x - w / 2, x + w / 2, y, y + 160, z - len, z, { type: 'checkpoint', idx: cp, spawn: here }); }
+          else if (spawn !== here && sg.end) ltrig(x - w / 2, x + w / 2, y, y + 220, z - len, z, { type: 'end' });
+          const it = { t: sg.t, x, y, z0: z, z1: z - len, w, len, end: !!sg.end };
+          Object.defineProperty(it, 'trig', { value: trig, enumerable: false });
+          L.items.push(it); prevPad = it;
+          z -= len;
+        } else if (sg.t === 'slide') {
+          // a pitched roof falling forward: crouch-slide down it and fly off the end
+          const w = sg.w || 700, len = sg.len;
+          lprism([[x - w / 2, y], [x + w / 2, y], [x + w / 2, sg.base], [x - w / 2, sg.base]], z,
+            [[x - w / 2, y - sg.drop], [x + w / 2, y - sg.drop], [x + w / 2, sg.base], [x - w / 2, sg.base]], z - len, { color: COLORS.roof, kind: 'building' });
+          L.items.push({ t: 'slide', x, y, y1: y - sg.drop, z0: z, z1: z - len, w });
+          z -= len; y -= sg.drop;
+        } else if (sg.t === 'wall') {
+          // a gap with a billboard along one side: wallrun it to the next pad
+          const s = sg.side, wx = x + s * 330;
+          lbox(wx - 20, wx + 20, y - 250, y + 420, z - 50, z - sg.len, { color: COLORS.route, kind: 'route' });
+          L.items.push({ t: 'wall', x, y, side: s, wx, z0: z, z1: z - sg.gap });
+          z -= sg.gap;
+        } else if (sg.t === 'bhop') {
+          const size = sg.size, h = size / 2;
+          for (let k = 0; k < sg.n; k++) {
+            if (k) y += sg.dy || 0;
+            x += sg.drift || 0;
+            const lat = sg.zig ? (k % 2 ? sg.zig : -sg.zig) : sg.lat ? sg.lat[k % sg.lat.length] : 0;
+            const cz = z - (k === 0 ? (sg.first || sg.step) - h : sg.step);
+            z = cz;
+            lbox(x + lat - h, x + lat + h, y - 60, y, cz - h, cz + h, { color: col, kind: 'block' });
+            L.items.push({ t: 'block', x: x + lat, y, z0: cz + h, z1: cz - h, cz, w: size });
+            lo = Math.min(lo, y);
+          }
+          z -= h;
+        } else if (sg.t === 'surf' || sg.t === 'bank') {
+          let [W, H] = { 55: [380, 543], 60: [320, 554], 65: [280, 600] }[sg.face || 60];
+          if (sg.t === 'bank') { W *= 1.6; H *= 1.6; } // gorge banks run deep, nearly to the middle
+          const fromRamp = prev && (prev.t === 'surf' || prev.t === 'bank');
+          const apex = fromRamp ? prev.endApex - (sg.fall || 500) : y - (sg.fall || 250);
+          const z0 = z - (sg.gap || (fromRamp ? 800 : 60));
+          let cx = (fromRamp ? prev.cx : x) + (sg.dx || 0);
+          if (sg.t === 'bank') cx = (def.center || 0) + sg.side * (def.gorge || 520);
+          const z1 = z0 - sg.len, e = apex - sg.drop;
+          if (sg.t === 'surf') {
+            lprism([[cx - W, apex - H], [cx + W, apex - H], [cx, apex]], z0, [[cx - W, e - H], [cx + W, e - H], [cx, e]], z1, { color: col, kind: 'ramp' });
+          } else {
+            // the face drops from the cliff edge toward the middle of the gorge
+            const s = sg.side, inX = cx - s * W;
+            lprism([[cx, apex], [inX, apex - H], [cx, apex - H]], z0, [[cx, e], [inX, e - H], [cx, e - H]], z1, { color: col, kind: 'ramp' });
+            lbox(Math.min(cx, cx + s * 700), Math.max(cx, cx + s * 700), def.base, Math.max(apex, e) + 260, z1 - 400, z0 + 400, { color: COLORS.canyonRock, kind: 'cliff' });
+          }
+          Object.assign(sg, { cx, z1, endApex: e, H });
+          L.items.push({ t: 'ramp', cx, apex, z0, z1, drop: sg.drop, W, H, bank: sg.t === 'bank' ? sg.side : 0 });
+          lo = Math.min(lo, e - H);
+          x = cx; z = z1; y = e;
+        }
+        if (sg.t === 'pad' || sg.t === 'lane') lo = Math.min(lo, y);
+        prev = sg;
+      });
+      const kill = lo - 600;
+      // the whole route's footprint, for the kill volume and the skyline gaps
+      const pts = [];
+      for (const lg of legs) for (const it of lg.items) {
+        const xs = it.t === 'ramp' ? [it.cx - 900, it.cx + 900] : [it.x - 900, it.x + 900];
+        for (const xx of xs) for (const zz of [it.z0 + 600, it.z1 - 900]) pts.push(lg.at(xx, zz));
+      }
+      const bx0 = Math.min(...pts.map(p => p[0])), bx1 = Math.max(...pts.map(p => p[0]));
+      const bz0 = Math.min(...pts.map(p => p[1])), bz1 = Math.max(...pts.map(p => p[1]));
+      world.addTrigger([bx0 - 4000, kill - 4000, bz0 - 4000], [bx1 + 4000, kill, bz1 + 4000], { type: 'kill', course: name });
+      if (def.pool) box([bx0 - 3000, def.base - 60, bz0 - 3000], [bx1 + 3000, def.base, bz1 + 3000], def.pool === 'lava' ? COLORS.lava : COLORS.water,
+        def.pool === 'lava' ? { nonsolid: true, lava: true } : { nonsolid: true, water: true });
+      // city blocks around the route, kept clear of every leg's corridor
+      if (def.skyline) {
+        const corridors = [];
+        for (const lg of legs) {
+          const q = [];
+          for (const it of lg.items) { const xs = it.t === 'ramp' ? [it.cx - 700, it.cx + 700] : [it.x - 700, it.x + 700]; for (const xx of xs) for (const zz of [it.z0 + 500, it.z1 - 500]) q.push(lg.at(xx, zz)); }
+          corridors.push([Math.min(...q.map(p => p[0])), Math.min(...q.map(p => p[1])), Math.max(...q.map(p => p[0])), Math.max(...q.map(p => p[1]))]);
+        }
+        let seed = def.skyline.seed;
+        const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
+        const hits = (a) => corridors.some(q => a[0] < q[2] + 160 && a[2] > q[0] - 160 && a[1] < q[3] + 160 && a[3] > q[1] - 160);
+        for (let gx = bx0 - 2500; gx < bx1 + 2500; gx += 900) for (let gz = bz0 - 2500; gz < bz1 + 2500; gz += 900) {
+          const w = 420 + rnd() * 400, d = 420 + rnd() * 400;
+          const ax = gx + rnd() * (840 - w), az = gz + rnd() * (840 - d), a = [ax, az, ax + w, az + d];
+          const t = def.skyline.lo + rnd() * (def.skyline.hi - def.skyline.lo), glass = rnd() < 0.3;
+          if (!hits(a)) world.addBox([a[0], def.base, a[1]], [a[2], t, a[3]], { color: glass ? COLORS.glass : COLORS.roofSide, kind: 'building', far: true });
+        }
+        world.addBox([bx0 - 3000, def.base - 20, bz0 - 3000], [bx1 + 3000, def.base, bz1 + 3000], { color: COLORS.street, kind: 'street' });
+      }
+      const first = legs[0].items[0];
+      courses[name] = Object.assign({ spawn, stages: cp + 1, legs: legs.map(lg => ({ ox: lg.ox, oz: lg.oz, h: lg.h, items: lg.items })),
+        preview: { pos: (() => { const p = legs[0].at(0, 400); return [p[0], top, p[1]]; })(), yaw: legs[0].yaw } },
+        { name: def.name, type: def.type, difficulty: def.difficulty, color: def.color, desc: def.desc, route: true });
+    }
+
+    // ------------------------------------------------------------ surf
+    // Ten wide descending ramps between towers, three stages turning corners
+    // on landing roofs. The gentle one: few sideways transfers.
+    routeKit('surf', -125000, 90000, 16000, {
+      name: 'Surf', type: 'Surf', difficulty: 1, color: COLORS.surf[0], palette: COLORS.surf, base: 1200, pool: 'water',
+      skyline: { lo: 3000, hi: 12000, seed: 11 },
+      desc: 'Ten wide ramps down through the towers, turning three corners on landing roofs. Hold the strafe key into the ramp.',
+      segs: [
+        { t: 'pad', len: 600 },
+        { t: 'surf', face: 55, len: 3600, drop: 400 },
+        { t: 'surf', face: 60, len: 3600, drop: 400 },
+        { t: 'surf', face: 60, len: 3400, drop: 400, dx: 200 },
+        { t: 'pad', len: 3000, w: 1400, cp: true }, { t: 'turn', dir: 1 },
+        { t: 'surf', face: 55, len: 3800, drop: 450 },
+        { t: 'surf', face: 60, len: 3600, drop: 400, dx: 250 },
+        { t: 'surf', face: 60, len: 3600, drop: 400, dx: -250 },
+        { t: 'pad', len: 3000, w: 1400, cp: true }, { t: 'turn', dir: -1 },
+        { t: 'surf', face: 60, len: 3600, drop: 450 },
+        { t: 'surf', face: 55, len: 4000, drop: 500 },
+        { t: 'pad', len: 3000, w: 1400, cp: true }, { t: 'turn', dir: 1 },
+        { t: 'surf', face: 60, len: 3600, drop: 400 },
+        { t: 'surf', face: 60, len: 3600, drop: 400, dx: -300 },
+        { t: 'pad', len: 3000, w: 1400, end: true },
+      ] });
+
+    // ------------------------------------------------------------ bhop
+    // Block lines over a lava street with widening gaps, four legs that turn
+    // on islands, two speed lanes and a long jump to finish.
+    routeKit('bhop', -75000, 90000, 3000, {
+      name: 'Bhop', type: 'Bhop', difficulty: 2, color: COLORS.bhop, palette: [COLORS.bhop, 0xffb340, 0xe5533d], base: 0, pool: 'lava',
+      skyline: { lo: 1200, hi: 6500, seed: 23 },
+      desc: 'Four block lines over a lava street with widening gaps, turning on islands, then speed lanes and a long jump.',
+      segs: [
+        { t: 'pad', len: 500, w: 500 },
+        { t: 'bhop', n: 10, size: 160, step: 240 },
+        { t: 'pad', gap: 130, len: 400, w: 400, cp: true }, { t: 'turn', dir: 1 },
+        { t: 'bhop', n: 10, size: 150, step: 256, lat: [0, 70, -70, 0, 100, -60] },
+        { t: 'pad', gap: 130, len: 400, w: 400, cp: true }, { t: 'turn', dir: -1 },
+        { t: 'bhop', n: 10, size: 144, step: 272, lat: [0, 60, -60, 40, -110, 120] },
+        { t: 'lane', gap: 120, len: 2400, w: 256 },
+        { t: 'pad', gap: 400, rise: -300, len: 700, w: 600, cp: true }, { t: 'turn', dir: 1 },
+        { t: 'bhop', n: 10, size: 136, step: 288, lat: [0, 90, -90, 60, -60, 0] },
+        { t: 'lane', gap: 120, len: 3000, w: 256 },
+        { t: 'pad', gap: 440, rise: -300, len: 800, w: 768, end: true },
+      ] });
+
+    // ------------------------------------------------------------ canyon
+    // A gorge cut through the city: banks alternate sides, each one lower,
+    // and the gorge turns twice on ledges. Carve down one side, up the other.
+    routeKit('canyon', -45000, 90000, 15000, {
+      name: 'Canyon', type: 'Surf', difficulty: 3, color: COLORS.canyon[0], palette: COLORS.canyon, base: 1500, pool: 'water', gorge: 450,
+      skyline: { lo: 4000, hi: 11000, seed: 37 },
+      desc: 'A long gorge whose banks swap sides as it falls, turning twice on rock ledges. Carve down one side and up the other.',
+      segs: [
+        { t: 'pad', len: 600 },
+        { t: 'bank', side: -1, face: 60, len: 3600, drop: 400 },
+        { t: 'bank', side: 1, face: 60, len: 3400, drop: 400 },
+        { t: 'bank', side: -1, face: 60, len: 3400, drop: 400 },
+        { t: 'bank', side: 1, face: 60, len: 3400, drop: 400 },
+        { t: 'pad', len: 3000, w: 1400, cp: true }, { t: 'turn', dir: 1 },
+        { t: 'bank', side: 1, face: 60, len: 3600, drop: 450 },
+        { t: 'bank', side: -1, face: 65, len: 3400, drop: 400 },
+        { t: 'bank', side: 1, face: 60, len: 3400, drop: 400 },
+        { t: 'pad', len: 3000, w: 1400, cp: true }, { t: 'turn', dir: -1 },
+        { t: 'bank', side: -1, face: 60, len: 3600, drop: 450 },
+        { t: 'bank', side: 1, face: 65, len: 3400, drop: 400 },
+        { t: 'bank', side: -1, face: 60, len: 3400, drop: 400 },
+        { t: 'bank', side: 1, face: 65, len: 3200, drop: 400 },
+        { t: 'pad', len: 3000, w: 1400, end: true },
+      ] });
+
+    // ------------------------------------------------------------ stairway
+    // Five block lines that climb and fall, turning on corner islands.
+    routeKit('stairway', -8000, 90000, 3000, {
+      name: 'Stairway', type: 'Bhop', difficulty: 4, color: COLORS.stair[1], palette: COLORS.stair, base: -1500, pool: 'lava',
+      skyline: { lo: 0, hi: 6000, seed: 53 },
+      desc: 'Five block lines that climb and fall over the lava street, turning on corner islands. Steer the corners in the air.',
+      segs: [
+        { t: 'pad', len: 500, w: 500 },
+        { t: 'bhop', n: 10, size: 128, step: 265, dy: 24 },
+        { t: 'pad', gap: 130, len: 360, w: 360, cp: true }, { t: 'turn', dir: 1 },
+        { t: 'bhop', n: 10, size: 128, step: 280, dy: -30, zig: 60 },
+        { t: 'pad', gap: 130, len: 360, w: 360 }, { t: 'turn', dir: -1 },
+        { t: 'bhop', n: 12, size: 120, step: 270, dy: 20, lat: [0, 70, -70, 0] },
+        { t: 'pad', gap: 130, len: 360, w: 360, cp: true }, { t: 'turn', dir: -1 },
+        { t: 'bhop', n: 10, size: 120, step: 300, dy: -45, lat: [0, 60, -60] },
+        { t: 'pad', gap: 130, len: 360, w: 360 }, { t: 'turn', dir: 1 },
+        { t: 'bhop', n: 12, size: 112, step: 280, zig: 75 },
+        { t: 'pad', gap: 130, len: 500, w: 500, end: true },
+      ] });
+
+    // ------------------------------------------------------------ crossover
+    // Everything in one long line: slide a roof onto a ramp, surf a transfer,
+    // bhop, wallrun a billboard, mantle, then all of it again round two corners.
+    routeKit('crossover', 22000, 90000, 9000, {
+      name: 'Crossover', type: 'Mixed', difficulty: 5, color: 0x1d2a35, palette: [COLORS.surf[1], COLORS.bhop, COLORS.surf[3], 0xffb340], base: 0,
+      skyline: { lo: 1500, hi: 8000, seed: 71 },
+      desc: 'All of it, twice, round two corners: slide a roof onto a ramp, surf a transfer, bhop, wallrun a billboard and mantle the next roof.',
+      segs: [
+        { t: 'pad', len: 700, w: 900 },
+        { t: 'slide', len: 1500, drop: 400, base: 0 },
+        { t: 'surf', face: 60, len: 3200, drop: 400 },
+        { t: 'surf', face: 60, len: 3200, drop: 400, dx: 350 },
+        { t: 'pad', len: 3000, w: 1400, cp: true }, { t: 'turn', dir: 1 },
+        { t: 'bhop', n: 8, size: 150, step: 275, lat: [0, 80, -80, 0] },
+        { t: 'pad', gap: 130, len: 800, w: 900 },
+        { t: 'wall', side: 1, len: 700, gap: 550 },
+        { t: 'pad', rise: 120, len: 1100, w: 1100, lip: true, cp: true }, { t: 'turn', dir: -1 },
+        { t: 'slide', len: 1500, drop: 400, base: 0 },
+        { t: 'surf', face: 55, len: 3400, drop: 450 },
+        { t: 'surf', face: 60, len: 3200, drop: 400, dx: -350 },
+        { t: 'pad', len: 3000, w: 1400, cp: true },
+        { t: 'bhop', n: 8, size: 136, step: 285, zig: 70 },
+        { t: 'pad', gap: 130, len: 800, w: 900 },
+        { t: 'wall', side: -1, len: 700, gap: 550 },
+        { t: 'pad', rise: 120, len: 900, w: 900, lip: true, end: true },
       ] });
 
     // ------------------------------------------------------------ level order and keys

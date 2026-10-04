@@ -26,22 +26,22 @@
     { course: 'roofs', title: 'The Drop', stars: [68, 95],
       brief: 'Mercer: "First job is easy money. A sealed drive goes from a rooftop letterbox to a contact three corners away. Don\'t open it. Don\'t lose it. Don\'t be seen."',
       debrief: 'The contact is a woman in a grey coat who calls herself Juno. She checks the seal twice before she pays. Mercer: "Clients who check seals have something to hide. Not our problem."' },
-    { course: 'bhop', title: 'Foundry', stars: [24, 34],
+    { course: 'bhop', title: 'Foundry', stars: [50, 72],
       brief: 'Mercer: "Juno wants another package moved, through the old foundry. The floor runs hot, so don\'t touch it. Keep hopping and keep your speed."',
       debrief: 'Halfway across the foundry you hear radios below. Blues, city security, sweeping the yard. Mercer: "Coincidence. Probably."' },
-    { course: 'surf', title: 'Spillway', stars: [18, 26],
+    { course: 'surf', title: 'Spillway', stars: [56, 80],
       brief: 'Mercer: "The Blues have the bridges watched. Only way across the reservoir tonight is down the spillway ramps. Ride the slopes, don\'t fall in."',
       debrief: 'Juno is waiting at the far bank. "They know a runner is moving my drives," she says. "Keep going, Kite. Two more and it is done."' },
-    { course: 'crossover', title: 'Shortcut', stars: [20, 30],
+    { course: 'crossover', title: 'Shortcut', stars: [58, 83],
       brief: 'Mercer: "Juno is paying double for speed. Roof, ramp, blocks, wall. One line, no stopping. I want you there before the Blues finish their shift change."',
       debrief: 'You make the handoff with seconds to spare. On the way out you see the drive\'s label in the streetlight: "CITY WATER AUTHORITY, AUDIT, DO NOT COPY".' },
     { course: 'downtown', title: 'Courier', stars: [70, 100],
       brief: 'Mercer: "Big one. Pick up from an office tower downtown, out through the lightwell, over the construction site. The Blues have a drone over the crane, so be quick on the jib."',
       debrief: 'The drone tracks you to the alley before losing you. Mercer goes quiet on comms for a long time. Then: "Kite. Juno is a journalist. And now we are part of her story."' },
-    { course: 'canyon', title: 'The Cut', stars: [20, 30],
+    { course: 'canyon', title: 'The Cut', stars: [55, 80],
       brief: 'Mercer: "The Blues locked down downtown. We go around, down the storm cut on the east side. Carve the banks and don\'t stop until you hit the bottom."',
       debrief: 'Juno takes the drive and gives you a name for the first time: Director Vale, head of the Water Authority. "He sold the reservoir and faked the audits. These drives prove it."' },
-    { course: 'stairway', title: 'Stairwell', stars: [40, 56],
+    { course: 'stairway', title: 'Stairwell', stars: [54, 78],
       brief: 'Mercer: "Juno\'s safe house is compromised. Her backup copy is at the top of the old stair blocks. Climb, turn, and don\'t miss a step."',
       debrief: 'The backup is still there. So is a note, in neat handwriting: "We know who you are, runner." Mercer: "Then we finish this fast."' },
     { course: 'freerun', title: 'Heat', stars: [56, 80],
@@ -60,6 +60,16 @@
   const bestSplits = load(SPLITS_KEY) || {};
   function load(k) { try { return JSON.parse(localStorage.getItem(k)); } catch (e) { return null; } }
   function save(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) { /* storage blocked */ } }
+  // These five were rebuilt as long routes, so times from the old short
+  // versions no longer compare. Drop them once; stars already earned stay.
+  const REBUILT = ['surf', 'bhop', 'canyon', 'stairway', 'crossover'];
+  if (!load('strafe.rebuild.v2')) {
+    for (const c of REBUILT) {
+      delete best[c]; delete bestSplits[c];
+      try { localStorage.removeItem('strafe.ghost.v1.' + c); } catch (e) { /* storage blocked */ }
+    }
+    save(BEST_KEY, best); save(SPLITS_KEY, bestSplits); save('strafe.rebuild.v2', 1);
+  }
 
   // ------------------------------------------------------------ world
   const map = window.StrafeMap.buildMap(P);
@@ -324,8 +334,8 @@
     let seed = 99;
     const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
     const clear = (a) => !footprints.some(q => a[0] < q[2] + 500 && a[2] > q[0] - 500 && a[1] < q[3] + 500 && a[3] > q[1] - 500);
-    for (let x = -80000; x < 168000; x += 2200) {
-      for (let z = -70000; z < 40000; z += 2200) {
+    for (let x = -137200; x < 168000; x += 2200) {
+      for (let z = -70000; z < 101000; z += 2200) {
         const w = 700 + rnd() * 1100, d = 700 + rnd() * 1100, h = 250 + rnd() * rnd() * 2600;
         const ax = x + rnd() * (2000 - w), az = z + rnd() * (2000 - d), glass = rnd() < 0.25;
         const a = [ax, az, ax + w, az + d];
@@ -1408,6 +1418,8 @@
   // lights up inside claude.ai; anywhere else the game runs without it.
   const LB_AA = 150; // only runs at the standard air acceleration count
   const lb = { db: null, user: null, me: null, docs: null, readOnly: false, writing: Promise.resolve(), backfilled: false };
+  // the rebuilt levels post under a new field, so old short times drop off the board
+  const lbKey = (c) => REBUILT.includes(c) ? c + '_v2' : c;
   const lbMine = () => { const d = lb.docs && lb.docs.find(x => x.id === lb.me); return d ? d.t : {}; };
   function lbWrite(changes) {
     if (!lb.db || !lb.me || lb.readOnly) return;
@@ -1420,20 +1432,21 @@
   }
   function lbSubmit(course, ticks) {
     if (!lb.db || settings.airaccelerate !== LB_AA) return;
-    const cur = lbMine()[course];
-    if (!(typeof cur === 'number' && cur <= ticks)) lbWrite({ [course]: ticks });
+    const cur = lbMine()[lbKey(course)];
+    if (!(typeof cur === 'number' && cur <= ticks)) lbWrite({ [lbKey(course)]: ticks });
   }
   // put bests set before the leaderboard existed online, once
   function lbBackfill() {
     if (lb.backfilled || !lb.me || settings.airaccelerate !== LB_AA) return;
     lb.backfilled = true;
     const mine = lbMine(), up = {};
-    for (const c of LEVEL_ORDER) if (best[c] && !(typeof mine[c] === 'number' && mine[c] <= best[c])) up[c] = best[c];
+    for (const c of LEVEL_ORDER) if (best[c] && !(typeof mine[lbKey(c)] === 'number' && mine[lbKey(c)] <= best[c])) up[lbKey(c)] = best[c];
     if (Object.keys(up).length) lbWrite(up);
   }
   function lbStandings(course) {
-    return (lb.docs || []).filter(d => typeof d.t[course] === 'number' && d.t[course] > 0)
-      .map(d => ({ id: d.id, ticks: d.t[course] })).sort((a, b) => a.ticks - b.ticks);
+    const k = lbKey(course);
+    return (lb.docs || []).filter(d => typeof d.t[k] === 'number' && d.t[k] > 0)
+      .map(d => ({ id: d.id, ticks: d.t[k] })).sort((a, b) => a.ticks - b.ticks);
   }
   let lbToken = 0;
   async function lbRender() {
