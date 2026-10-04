@@ -876,7 +876,7 @@
   const hueColor = (h) => new THREE.Color().setHSL(h % 1, 0.85, 0.58).getHex();
 
   // height: [centre above the feet, half width]; life: seconds a point lasts
-  function makeTrail(height, life) {
+  function makeTrail(height, life, into = scene, cam = camera) {
     const N = 120;
     const g = new THREE.BufferGeometry();
     const pos = new Float32Array(N * 6), age = new Float32Array(N * 2), side = new Float32Array(N * 2);
@@ -900,7 +900,7 @@
     });
     const mesh = new THREE.Mesh(g, mat);
     mesh.frustumCulled = false; mesh.visible = false; mesh.renderOrder = 2;
-    scene.add(mesh);
+    into.add(mesh);
     const pts = [];
     return {
       mat, life,
@@ -914,7 +914,7 @@
         const n = pts.length;
         if (n < 2) { mesh.visible = false; return; }
         // a ribbon that always turns its face to the camera, so it reads from any angle
-        const cp = camera.position, at = (i) => pts[Math.max(0, Math.min(n - 1, n - 1 - i))];
+        const cp = cam.position, at = (i) => pts[Math.max(0, Math.min(n - 1, n - 1 - i))];
         for (let i = 0; i < N; i++) {
           // the newest point is index 0, so age runs 0 (fresh) to 1 (gone)
           const q = at(i), qa = at(i - 1), qb = at(i + 1);
@@ -957,6 +957,88 @@
       if (on && show && gr.visible && game.running) trails.ghost.update(gr.position.x, gr.position.y, gr.position.z, ts, true); else trails.ghost.clear();
     },
   };
+
+  // The Cosmetics screen's preview: a small runner on a turntable, jogging a
+  // circle in whatever skin and trail you point at, locked ones included.
+  const preview = (() => {
+    const cv = document.getElementById('cos-view');
+    let r = null, pScene, pCam, fig, trail, mats, parts;
+    const st = { skin: null, trail: null, on: false, t: 0, last: 0 };
+    function build() {
+      r = new THREE.WebGLRenderer({ canvas: cv, antialias: true, alpha: true });
+      r.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+      r.outputEncoding = THREE.sRGBEncoding;
+      pScene = new THREE.Scene();
+      pCam = new THREE.PerspectiveCamera(32, 2, 1, 2000);
+      pCam.position.set(0, 105, 250); pCam.lookAt(0, 26, 0);
+      pScene.add(new THREE.HemisphereLight(0xeef6ff, 0x5a5f66, 0.9));
+      const sunL = new THREE.DirectionalLight(0xfff3e2, 0.9); sunL.position.set(1, 2, 1.5); pScene.add(sunL);
+      const M = (c) => new THREE.MeshStandardMaterial({ color: c, roughness: 0.7 });
+      mats = { skin: M(0xc79275), sleeve: M(0), glove: M(0), accent: M(0), pants: M(0), shirt: M(0), hair: M(0x2a2420) };
+      mats.skin.color.set(0xc79275).convertSRGBToLinear(); mats.hair.color.set(0x2a2420).convertSRGBToLinear();
+      const box = (w, h, d, m, x, y, z, parent) => { const o = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), m); o.position.set(x, y, z); parent.add(o); return o; };
+      const limb = (x, y, parent) => { const g = new THREE.Group(); g.position.set(x, y, 0); parent.add(g); return g; };
+      fig = new THREE.Group(); pScene.add(fig);
+      const bodyG = new THREE.Group(); fig.add(bodyG);
+      box(20, 24, 11, mats.shirt, 0, 48, 0, bodyG);
+      box(20.4, 3, 11.4, mats.accent, 0, 37.5, 0, bodyG);
+      box(19, 6, 10, mats.pants, 0, 34, 0, bodyG);
+      box(13, 13, 13, mats.skin, 0, 67, 0, bodyG);
+      box(13.6, 5, 13.6, mats.hair, 0, 72.5, 0.4, bodyG);
+      const legs = [-5, 5].map(x => { const g = limb(x, 32, bodyG); box(8, 30, 8, mats.pants, 0, -15, 0, g); box(8.4, 5, 13, mats.accent, 0, -31, -2, g); return g; });
+      const arms = [-13.5, 13.5].map(x => {
+        const g = limb(x, 58, bodyG);
+        box(6.4, 11, 6.4, mats.sleeve, 0, -5.5, 0, g); box(5.6, 10, 5.6, mats.skin, 0, -15, 0, g);
+        box(6, 2.4, 6, mats.accent, 0, -18.5, 0, g); box(6.4, 6, 6.4, mats.glove, 0, -22.5, 0, g);
+        return g;
+      });
+      parts = { bodyG, legs, arms };
+      const floor = new THREE.Mesh(new THREE.CylinderGeometry(118, 118, 6, 48), new THREE.MeshStandardMaterial({ color: new THREE.Color(0x2a3038).convertSRGBToLinear(), roughness: 0.9 }));
+      floor.position.y = -3; pScene.add(floor);
+      trail = makeTrail([24, 12], 1.2, pScene, pCam);
+    }
+    function setSkin(k) {
+      const c = (m, v) => m.color.set(v).convertSRGBToLinear();
+      c(mats.sleeve, k.sleeve); c(mats.glove, k.glove); c(mats.pants, k.pants); c(mats.shirt, k.shirt);
+      if (k.accent !== 'hue') c(mats.accent, k.accent);
+    }
+    function setTrail(tr) {
+      const u = trail.mat.uniforms;
+      u.rainbow.value = tr.color === 'hue' ? 1 : 0;
+      if (tr.color !== 'hue' && tr.id !== 'none') { u.c0.value.set(tr.color); u.c1.value.set(tr.tail || tr.color); }
+      if (tr.id === 'none') trail.clear();
+    }
+    function loop(now) {
+      if (!st.on) return;
+      requestAnimationFrame(loop);
+      const dt = Math.min(0.25, (now - (st.last || now)) / 1000); st.last = now; st.t += dt;
+      const w = cv.clientWidth, h = cv.clientHeight;
+      if (w && (cv.width !== Math.round(w * r.getPixelRatio()) || cv.height !== Math.round(h * r.getPixelRatio()))) { r.setSize(w, h, false); pCam.aspect = w / h; pCam.updateProjectionMatrix(); }
+      // jog a circle, facing along it
+      const a = st.t * 1.6, R = 72;
+      fig.position.set(Math.cos(a) * R, 0, Math.sin(a) * R);
+      fig.rotation.y = -a + Math.PI;
+      const sw = Math.sin(st.t * 11);
+      parts.legs[0].rotation.x = sw * 0.75; parts.legs[1].rotation.x = -sw * 0.75;
+      parts.arms[0].rotation.x = -sw * 0.8; parts.arms[1].rotation.x = sw * 0.8;
+      parts.bodyG.position.y = Math.abs(Math.cos(st.t * 11)) * 3;
+      if (st.skin.accent === 'hue') mats.accent.color.set(hueColor(now / 1000 * 0.12)).convertSRGBToLinear();
+      trail.mat.uniforms.t.value = now / 1000;
+      if (st.trail.id !== 'none') trail.update(fig.position.x, 0, fig.position.z, now / 1000, true);
+      r.render(pScene, pCam);
+    }
+    return {
+      show(skin, tr) {
+        if (!r) build();
+        if (skin !== st.skin) { st.skin = skin; setSkin(skin); }
+        if (tr !== st.trail) { st.trail = tr; setTrail(tr); }
+        if (!st.on) { st.on = true; st.last = 0; requestAnimationFrame(loop); }
+      },
+      stop() { st.on = false; },
+      get skin() { return st.skin; }, get trail() { return st.trail; },
+      get trailObj() { return trail; },
+    };
+  })();
 
   // ------------------------------------------------------------ stats
   const stats = { jumps: 0, jumpSpeed: 0, syncGood: 0, syncAll: 0, lastSync: null, lastYaw: 0, gain: 0 };
@@ -1801,7 +1883,7 @@
     drawer.hidden = false;
     $('d-title').textContent = { settings: 'Settings', story: 'Story', cosmetics: 'Cosmetics', controls: 'Controls' }[which];
     drawer.classList.toggle('wide', which === 'story' || which === 'cosmetics');
-    if (which === 'cosmetics') buildCosmetics();
+    if (which === 'cosmetics') buildCosmetics(); else preview.stop();
     if (which === 'story') {
       // brief the first job that still has stars to win
       if (briefed === null) { let i = 0; while (i + 1 < STORY.length && jobOpen(i + 1) && storyProgress[i]) i++; briefed = i; }
@@ -1814,6 +1896,7 @@
   function closeDrawer() {
     if (drawer.hidden) return;
     drawer.hidden = true;
+    preview.stop();
     for (const o of document.querySelectorAll('[data-open]')) o.setAttribute('aria-expanded', 'false');
   }
   for (const t of document.querySelectorAll('[data-open]')) {
@@ -1887,7 +1970,9 @@
       for (const it of list) {
         const b = document.createElement('button');
         b.className = 'cos';
-        b.disabled = !unlocked(it);
+        const locked = !unlocked(it);
+        if (locked) b.setAttribute('aria-disabled', 'true');
+        if (preview[key] === it && cosmetics[key] !== it) b.classList.add('previewing');
         b.setAttribute('aria-pressed', String(cosmetics[key] === it));
         const sw = document.createElement('span');
         if (key === 'skin') {
@@ -1900,10 +1985,15 @@
         }
         const cn = document.createElement('span');
         cn.className = 'cn';
-        cn.innerHTML = it.name + '<small>' + (b.disabled ? '★ ' + it.need : cosmetics[key] === it ? 'Equipped' : it.need ? '★ ' + it.need : 'Default') + '</small>';
+        cn.innerHTML = it.name + '<small>' + (locked ? '★ ' + it.need : cosmetics[key] === it ? 'Equipped' : it.need ? '★ ' + it.need : 'Default') + '</small>';
         b.append(sw, cn);
+        // pointing at an item previews it; clicking equips it, or pins the preview if locked
+        b.addEventListener('pointerenter', () => showPreview(key, it));
+        b.addEventListener('focus', () => showPreview(key, it));
         b.addEventListener('click', () => {
           A.play('click');
+          if (locked) { pinned[key] = it; showPreview(key, it); buildCosmetics(); return; }
+          pinned[key] = null;
           settings[key] = it.id; save(SETTINGS_KEY, settings);
           cosmetics.apply(); buildCosmetics(); refreshTitle();
           const again = $(key === 'skin' ? 'cos-skins' : 'cos-trails').children[list.indexOf(it)];
@@ -1914,7 +2004,20 @@
     };
     fill($('cos-skins'), SKINS, 'skin');
     fill($('cos-trails'), TRAILS, 'trail');
+    showPreview();
   }
+  // the preview shows what you point at, else a pinned locked item, else what you wear
+  const pinned = { skin: null, trail: null };
+  const hovering = { skin: null, trail: null };
+  function showPreview(key, it) {
+    if (key) { hovering.skin = hovering.trail = null; hovering[key] = it; }
+    const sk = hovering.skin || pinned.skin || cosmetics.skin, tr = hovering.trail || pinned.trail || cosmetics.trail;
+    preview.show(sk, tr);
+    const lock = [sk, tr].filter(x => !unlocked(x));
+    $('cos-cap').innerHTML = sk.name + ' skin · ' + (tr.id === 'none' ? 'no trail' : tr.name + ' trail') +
+      (lock.length ? '<small>Locked: ' + lock.map(x => x.name + ' needs ★ ' + x.need).join(', ') + '</small>' : '');
+  }
+  for (const id of ['cos-skins', 'cos-trails']) $(id).addEventListener('pointerleave', () => { hovering.skin = hovering.trail = null; showPreview(); });
   $('st-start').addEventListener('click', () => { A.init(); A.play('click'); if (briefed !== null) startJob(briefed); });
 
   function bindRange(id, key, fmtv, apply) {
@@ -1996,6 +2099,6 @@
   previewCourse(map.order[0]);
   showMenuState();
   if (location.hash === '#demo') game.demo = true; // headless screenshot mode
-  window.__strafe = { player, game, goCourse, place, attract, previewCourse, body, ghost, cosmetics, step, setView: (y, p) => { yaw = y; pitch = p; } };
+  window.__strafe = { player, game, goCourse, place, attract, previewCourse, body, ghost, cosmetics, preview, step, setView: (y, p) => { yaw = y; pitch = p; } };
   requestAnimationFrame((t) => { last = t; frame(t); });
 })();
