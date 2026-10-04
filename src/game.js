@@ -320,11 +320,11 @@
       deco.addBox([b.min[0], GROUND, b.min[2]], [b.max[0], b.min[1], b.max[2]], { color: b.props.color, kind: b.props.kind === 'building' || b.props.kind === 'street' ? 'building' : b.props.kind });
     }
     // the ground, and a low city spread over it
-    deco.addBox([-160000, GROUND - 40, -160000], [160000, GROUND, 160000], { color: 0x5d646b, kind: 'street' });
+    deco.addBox([-160000, GROUND - 40, -160000], [230000, GROUND, 160000], { color: 0x5d646b, kind: 'street' });
     let seed = 99;
     const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
     const clear = (a) => !footprints.some(q => a[0] < q[2] + 500 && a[2] > q[0] - 500 && a[1] < q[3] + 500 && a[3] > q[1] - 500);
-    for (let x = -80000; x < 90000; x += 2200) {
+    for (let x = -80000; x < 168000; x += 2200) {
       for (let z = -70000; z < 40000; z += 2200) {
         const w = 700 + rnd() * 1100, d = 700 + rnd() * 1100, h = 250 + rnd() * rnd() * 2600;
         const ax = x + rnd() * (2000 - w), az = z + rnd() * (2000 - d), glass = rnd() < 0.25;
@@ -1130,7 +1130,7 @@
   }
 
   // ------------------------------------------------------------ level complete
-  const LEVEL_ORDER = ['tutorial'].concat(map.order);
+  const LEVEL_ORDER = ['tutorial'].concat(map.order, map.gauntlet);
   const completeEl = $('complete');
   let completeTimer = 0;
   function nextLevel(name) {
@@ -1409,7 +1409,12 @@
   const flashEl = $('flash');
   const HUB_CARD = { name: 'Hub', type: 'Practice', difficulty: 0, color: 0x9aa3ab, stages: 0,
     desc: 'A wall to run, a box to vault, a block to climb and a small surf ramp. Beacons take you to each level.' };
-  const MENU_ROWS = [{ name: 'tutorial', key: 'T' }].concat(map.order.map((name, i) => ({ name, key: String((i + 1) % 10) })), [{ name: 'hub', key: 'H' }]);
+  const MENU_ROWS = [{ name: 'tutorial', key: 'T' }].concat(map.order.map((name, i) => ({ name, key: String((i + 1) % 10) })),
+    map.gauntlet.map((name, i) => ({ name, key: 'G' + (i + 1) })), [{ name: 'hub', key: 'H' }]);
+  const ALL_LEVELS = map.order.concat(map.gauntlet);
+  // difficulty pips: five, or more for levels off the scale
+  const pipHtml = (d, label) => '<span class="pips" aria-label="' + label + d + ' of ' + Math.max(5, d) + '">' +
+    Array.from({ length: Math.max(5, d) }, (_, k) => '<i class="' + (k < d ? 'on' : '') + '"></i>').join('') + '</span>';
   const rowCourse = (name) => name === 'hub' ? HUB_CARD : map.courses[name];
   let selected = best.tutorial ? map.order[0] : 'tutorial';
   // the hero always describes the selected level
@@ -1417,11 +1422,10 @@
     const c = rowCourse(name);
     const tutorial = name === 'tutorial';
     $('h-type').innerHTML = '<span class="chip" style="--c:' + hex(c.color) + '">' + c.type + '</span>' +
-      (tutorial ? 'Start here' : name === 'hub' ? 'Free roam' : map.order.indexOf(name) >= 6 ? 'Advanced' : 'Level ' + (map.order.indexOf(name) + 1));
+      (tutorial ? 'Start here' : name === 'hub' ? 'Free roam' : c.set === 'gauntlet' ? 'Gauntlet ' + (map.gauntlet.indexOf(name) + 1) + ' of 6' : map.order.indexOf(name) >= 6 ? 'Advanced' : 'Level ' + (map.order.indexOf(name) + 1));
     $('h-name').textContent = c.name;
     $('h-desc').textContent = c.desc;
-    $('h-diff').innerHTML = c.difficulty ? '<span class="pips" aria-label="' + c.difficulty + ' of 5">' +
-      [1, 2, 3, 4, 5].map(k => '<i class="' + (k <= c.difficulty ? 'on' : '') + '"></i>').join('') + '</span>' : (tutorial ? 'Easy' : 'None');
+    $('h-diff').innerHTML = c.difficulty ? pipHtml(c.difficulty, '') : (tutorial ? 'Easy' : 'None');
     $('h-stages').textContent = c.stages ? String(c.stages) : '—';
     $('h-best').textContent = name !== 'hub' && best[name] ? fmt(best[name]) : '—';
     updatePlayButtons();
@@ -1454,7 +1458,7 @@
     const fy = sp.yaw, fx = -Math.sin(fy), fz = -Math.cos(fy);
     let u = t - attract.t0;
     if (screen === 'title' && !game.started && u > 14) {
-      previewCourse(map.order[(map.order.indexOf(attract.course) + 1) % map.order.length]);
+      previewCourse(ALL_LEVELS[(ALL_LEVELS.indexOf(attract.course) + 1) % ALL_LEVELS.length]);
       u = 0;
     }
     const dolly = Math.min(u, 30) * 55;
@@ -1468,15 +1472,14 @@
     ol.textContent = '';
     MENU_ROWS.forEach((r, i) => {
       const c = rowCourse(r.name);
-      if (i === 7 || i === MENU_ROWS.length - 1) { const sep = document.createElement('li'); sep.className = 'sep'; sep.setAttribute('aria-hidden', 'true'); ol.appendChild(sep); }
+      if (i === 7 || i === 11 || i === MENU_ROWS.length - 1) { const sep = document.createElement('li'); sep.className = 'sep'; sep.setAttribute('aria-hidden', 'true'); ol.appendChild(sep); }
       const li = document.createElement('li');
       const b = document.createElement('button');
       b.className = 'card'; b.dataset.course = r.name;
       b.style.setProperty('--c', hex(c.color));
-      const pips = c.difficulty ? '<span class="pips" aria-label="Difficulty ' + c.difficulty + ' of 5">' +
-        [1, 2, 3, 4, 5].map(k => '<i class="' + (k <= c.difficulty ? 'on' : '') + '"></i>').join('') + '</span>' : '<span>' + c.type + '</span>';
+      const pips = c.difficulty ? pipHtml(c.difficulty, 'Difficulty ') : '<span>' + c.type + '</span>';
       const bt = r.name !== 'hub' && best[r.name] ? fmt(best[r.name]) : '';
-      const adv = map.order.indexOf(r.name) >= 6 ? '<span class="adv">ADV</span>' : '';
+      const adv = c.set === 'gauntlet' ? '<span class="adv">GAUNTLET</span>' : map.order.indexOf(r.name) >= 6 ? '<span class="adv">ADV</span>' : '';
       b.innerHTML = '<span class="ck"><span>' + r.key + '</span>' + adv + '</span><span class="cn">' + c.name + '</span>' +
         '<span class="cm">' + pips + '<span>' + bt + '</span></span>';
       b.addEventListener('mouseenter', () => { A.play('hover'); showPreview(r.name); });
@@ -1513,8 +1516,8 @@
     let stars = 0, max = 0;
     STORY.forEach((job, i) => { if (job.stars) { stars += (storyProgress[i] || { stars: 0 }).stars; max += 3; } });
     $('m-story-sub').textContent = stars ? stars + ' / ' + max + ' ★' : 'New';
-    const done = map.order.filter(n => best[n]).length;
-    $('m-play-sub').textContent = done + ' / ' + map.order.length + ' levels';
+    const done = ALL_LEVELS.filter(n => best[n]).length;
+    $('m-play-sub').textContent = done + ' / ' + ALL_LEVELS.length + ' levels';
     $('m-tut-sub').textContent = best.tutorial ? 'Done' : 'Start here';
   }
   function showScreen(which, focus = true) {

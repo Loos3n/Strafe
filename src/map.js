@@ -693,6 +693,158 @@
       courses.tutorial = { name: 'Tutorial', type: 'Learn', difficulty: 0, color: 0x15191d, key: 'T', desc: 'Nine short stations: move, jump, bhop, air strafe, slide, vault, climb, wallrun and surf.', spawn: steps[0].spawn, stages: steps.length, steps };
     }
 
+    // ------------------------------------------------------------ gauntlet
+    // Six numbered levels, each harder than the last, built from three pieces:
+    // pads, bhop block lines and surf ramps. Later ones chain bhop straight
+    // into surf and back, with smaller blocks, steeper ramps, sideways
+    // transfers and fewer checkpoints. Every level runs toward -Z.
+    const FACES = { 55: [380, 543], 60: [320, 554], 65: [280, 600] };
+    function gauntlet(name, ox, top, def) {
+      let x = ox, y = top, z = 0, cp = 0, lo = top, spawn = null, prev = null;
+      const plan = [];
+      const pal = def.palette;
+      def.segs.forEach((sg, si) => {
+        const col = pal[si % pal.length];
+        if (sg.t === 'pad') {
+          const w = sg.w || 600, len = sg.len || 600;
+          // a pad after a ramp catches you: drop below the ramp end and start under its tail
+          if (prev && prev.t === 'surf') { y = prev.endApex - prev.face[1] - (sg.fall || 450); z = prev.z1 + (sg.back || 200); x = prev.cx; }
+          else if (sg.gap) z -= sg.gap;
+          box([x - w / 2, y - 60, z - len], [x + w / 2, y, z], COLORS.bhopPad, { kind: 'pad' });
+          const here = { pos: [x, y, z - Math.min(300, len / 2)], yaw: 0 };
+          const first = !spawn;
+          if (first) { spawn = here; world.addTrigger([x - w / 2, y, z - len], [x + w / 2, y + 160, z], { type: 'start', course: name }); }
+          else if (sg.cp) { cp++; world.addTrigger([x - w / 2, y, z - len], [x + w / 2, y + 160, z], { type: 'checkpoint', course: name, idx: cp, spawn: here }); }
+          else if (sg.end) world.addTrigger([x - w / 2, y, z - len], [x + w / 2, y + 200, z], { type: 'end', course: name });
+          plan.push({ t: 'pad', x, y, z0: z, z1: z - len, w, end: !!sg.end });
+          z -= len;
+        } else if (sg.t === 'bhop') {
+          const size = sg.size, h = size / 2;
+          for (let k = 0; k < sg.n; k++) {
+            if (k) y += sg.dy || 0;
+            x += sg.drift || 0;
+            const lat = sg.zig ? (k % 2 ? sg.zig : -sg.zig) : sg.lat ? sg.lat[k % sg.lat.length] : 0;
+            const cz = z - (k === 0 ? (sg.first || sg.step) - h : sg.step) - (k === 0 ? 0 : 0);
+            z = cz;
+            box([x + lat - h, y - 60, cz - h], [x + lat + h, y, cz + h], col, { kind: 'block' });
+            plan.push({ t: 'block', x: x + lat, y, z0: cz + h, z1: cz - h, cz, w: size });
+            lo = Math.min(lo, y);
+          }
+          z -= h;
+        } else if (sg.t === 'surf') {
+          const face = FACES[sg.face || 60], [W, H] = face;
+          // from a ramp: the next one starts lower and further on; from ground: hop down onto it
+          const fromRamp = prev && prev.t === 'surf';
+          const apex = fromRamp ? prev.endApex - (sg.fall || 500) : y - (sg.fall || 250);
+          const z0 = z - (sg.gap || (fromRamp ? 800 : 60));
+          const cx = (fromRamp ? prev.cx : x) + (sg.dx || 0);
+          const z1 = z0 - sg.len;
+          world.addSweep([[cx - W, apex - H], [cx + W, apex - H], [cx, apex]], z0, z1, -sg.drop, { color: col, kind: 'ramp' });
+          sg.cx = cx; sg.z1 = z1; sg.endApex = apex - sg.drop; sg.face = face;
+          plan.push({ t: 'ramp', cx, apex, z0, z1, drop: sg.drop, W, H });
+          lo = Math.min(lo, apex - sg.drop - H);
+          x = cx; z = z1; y = apex - sg.drop;
+        }
+        if (sg.t === 'pad') lo = Math.min(lo, y);
+        prev = sg;
+      });
+      // water or lava far below, with a kill plane above it
+      const pool = lo - 1400;
+      const zs = plan.map(q => q.z1);
+      const zMin = Math.min(...zs) - 3000;
+      const lava = def.pool === 'lava';
+      box([ox - 5000, pool - 60, zMin], [ox + 5000, pool, 2500], lava ? COLORS.lava : COLORS.water, lava ? { nonsolid: true, lava: true } : { nonsolid: true, water: true });
+      world.addTrigger([ox - 5000, pool - 3000, zMin], [ox + 5000, lo - 600, 2500], { type: 'kill', course: name });
+      courses[name] = { name: def.name, type: def.type, difficulty: def.difficulty, color: pal[0], desc: def.desc,
+        spawn, stages: cp + 1, plan, set: 'gauntlet', preview: { pos: [ox, top, 300], yaw: 0 } };
+    }
+    const GBHOP = [0xf08a24, 0xffb340, 0xe5533d], GSURF = [0x2fb5c7, 0x4f74ee, 0x8f55e0, 0xe0457b];
+    gauntlet('g1', 96000, 6000, {
+      name: 'Lift', type: 'Mixed', difficulty: 1, palette: [0x2fb5c7, 0xf08a24, 0x4f74ee, 0xffb340], pool: 'water',
+      desc: 'Gauntlet 1. Hop a short line of wide blocks, drop onto a gentle ramp, land and hop to the finish.',
+      segs: [
+        { t: 'pad', len: 600 },
+        { t: 'bhop', n: 7, size: 176, step: 250 },
+        { t: 'surf', face: 55, len: 3000, drop: 400 },
+        { t: 'pad', len: 3000, w: 1400, cp: true },
+        { t: 'bhop', n: 7, size: 176, step: 250, lat: [0, 40, -40] },
+        { t: 'pad', gap: 120, len: 600, end: true },
+      ] });
+    gauntlet('g2', 107000, 6500, {
+      name: 'Drift', type: 'Mixed', difficulty: 2, palette: [0x4f74ee, 0xffb340, 0x2fb5c7, 0xf08a24], pool: 'water',
+      desc: 'Gauntlet 2. Weaving blocks into a surf ramp, a sideways transfer to a second ramp, then a climbing block line.',
+      segs: [
+        { t: 'pad', len: 600 },
+        { t: 'bhop', n: 9, size: 150, step: 260, lat: [0, 70, -70, 0, 60, -60] },
+        { t: 'surf', face: 60, len: 3400, drop: 400 },
+        { t: 'surf', face: 60, len: 3200, drop: 400, dx: 300 },
+        { t: 'pad', len: 3000, w: 1400, cp: true },
+        { t: 'bhop', n: 9, size: 136, step: 265, dy: 20, lat: [0, 60, -60] },
+        { t: 'pad', gap: 120, len: 600, end: true },
+      ] });
+    gauntlet('g3', 118000, 7000, {
+      name: 'Sidewinder', type: 'Mixed', difficulty: 3, palette: [0x8f55e0, 0xf08a24, 0x2fb5c7, 0xe5533d], pool: 'lava',
+      desc: 'Gauntlet 3. A curving block line, two ramps with a hard sideways transfer, then falling blocks to the end.',
+      segs: [
+        { t: 'pad', len: 600 },
+        { t: 'surf', face: 60, len: 3400, drop: 450, fall: 200 },
+        { t: 'pad', len: 3000, w: 1400, cp: true },
+        { t: 'bhop', n: 11, size: 128, step: 275, zig: 55, drift: 30 },
+        { t: 'surf', face: 60, len: 3200, drop: 450 },
+        { t: 'surf', face: 65, len: 3200, drop: 400, dx: -380 },
+        { t: 'pad', len: 3000, w: 1400, cp: true },
+        { t: 'bhop', n: 10, size: 120, step: 290, dy: -30, lat: [0, 70, -70, 0] },
+        { t: 'pad', gap: 120, len: 600, end: true },
+      ] });
+    gauntlet('g4', 129000, 8000, {
+      name: 'Undertow', type: 'Mixed', difficulty: 4, palette: [0xe0457b, 0xffb340, 0x4f74ee, 0xf08a24], pool: 'water',
+      desc: 'Gauntlet 4. Small blocks straight into a steep ramp, a climbing transfer, then hop off the blocks into two more ramps.',
+      segs: [
+        { t: 'pad', len: 600 },
+        { t: 'bhop', n: 10, size: 120, step: 285, lat: [0, 80, -80, 40, -40] },
+        { t: 'surf', face: 65, len: 3400, drop: 500 },
+        { t: 'surf', face: 60, len: 3000, drop: -150, dx: 420 },
+        { t: 'pad', len: 3000, w: 1400, cp: true },
+        { t: 'bhop', n: 12, size: 112, step: 290, zig: 95 },
+        { t: 'surf', face: 55, len: 3200, drop: 450 },
+        { t: 'surf', face: 65, len: 3200, drop: 450, dx: -420 },
+        { t: 'pad', len: 3000, w: 1400, end: true },
+      ] });
+    gauntlet('g5', 140000, 9000, {
+      name: 'Freefall', type: 'Mixed', difficulty: 5, palette: [0x2bd1a8, 0xe5533d, 0x4f74ee, 0xffb340], pool: 'lava',
+      desc: 'Gauntlet 5. A steep drop into a wide transfer, a curving line of small blocks, then a climbing ramp to finish. One checkpoint.',
+      segs: [
+        { t: 'pad', len: 600 },
+        { t: 'surf', face: 65, len: 2600, drop: 900, fall: 200 },
+        { t: 'surf', face: 60, len: 3400, drop: 450, dx: 460 },
+        { t: 'pad', len: 3000, w: 1400 },
+        { t: 'bhop', n: 12, size: 104, step: 295, zig: 90, drift: -35 },
+        { t: 'surf', face: 65, len: 3200, drop: 500 },
+        { t: 'pad', len: 3000, w: 1400, cp: true },
+        { t: 'bhop', n: 13, size: 104, step: 290, dy: 22, zig: 100 },
+        { t: 'surf', face: 60, len: 3200, drop: 450 },
+        { t: 'surf', face: 65, len: 3000, drop: -180, dx: -460 },
+        { t: 'pad', len: 3000, w: 1400, end: true },
+      ] });
+    gauntlet('g6', 151000, 10000, {
+      name: 'Terminal', type: 'Mixed', difficulty: 6, palette: [0x15191d, 0xdb2f2a, 0x8f55e0, 0xf08a24], pool: 'lava',
+      desc: 'Gauntlet 6. The longest and hardest: the smallest blocks, steep ramps, transfers both ways, and one checkpoint at the halfway mark.',
+      segs: [
+        { t: 'pad', len: 600 },
+        { t: 'bhop', n: 12, size: 104, step: 295, lat: [0, 100, -100, 50, -50] },
+        { t: 'surf', face: 65, len: 3200, drop: 600 },
+        { t: 'surf', face: 65, len: 3000, drop: 450, dx: 500 },
+        { t: 'surf', face: 60, len: 3000, drop: -200, dx: -500 },
+        { t: 'pad', len: 3000, w: 1400 },
+        { t: 'bhop', n: 14, size: 96, step: 300, zig: 105, drift: 30 },
+        { t: 'surf', face: 65, len: 3000, drop: 500 },
+        { t: 'surf', face: 65, len: 3000, drop: 500, dx: 480 },
+        { t: 'pad', len: 3000, w: 1400, cp: true },
+        { t: 'bhop', n: 14, size: 96, step: 310, dy: -30, zig: 110 },
+        { t: 'surf', face: 65, len: 2600, drop: 900 },
+        { t: 'pad', len: 3000, w: 1400, end: true },
+      ] });
+
     // ------------------------------------------------------------ hub pads
     const order = ['surf', 'bhop', 'roofs', 'canyon', 'stairway', 'crossover', 'downtown', 'cascade', 'spire', 'freerun'];
     // first six in a row, the four advanced levels in a back row between them
@@ -710,7 +862,15 @@
     // global safety net
     world.addTrigger([-1e6, -1e6, -1e6], [1e6, -4000, 1e6], { type: 'kill' });
 
-    return { world, courses, order, hubSpawn, COLORS };
+    const gauntletOrder = ['g1', 'g2', 'g3', 'g4', 'g5', 'g6'];
+    gauntletOrder.forEach((name, i) => {
+      const x = -750 + i * 300, z = 820;
+      courses[name].key = 'G' + (i + 1);
+      box([x - 90, 0, z - 90], [x + 90, 1, z + 90], courses[name].color, { nonsolid: true, glow: true });
+      world.addTrigger([x - 90, 0, z - 90], [x + 90, 120, z + 90], { type: 'teleport', course: name });
+    });
+
+    return { world, courses, order, gauntlet: gauntletOrder, hubSpawn, COLORS };
   }
 
   root.StrafeMap = { buildMap };
