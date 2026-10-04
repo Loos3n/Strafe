@@ -5,7 +5,7 @@
   'use strict';
 
   let ctx = null;
-  let master, sfxBus, musicBus, musicFilter, reverb, reverbSend, noise;
+  let master, sfxBus, musicBus, musicFilter, reverb, reverbSend, musicVerb, noise;
   const loops = {};
   const vol = { master: 0.8, music: 0.5, sfx: 0.8, muted: false };
   const state = { speed: 0, playing: false, intensity: 0 };
@@ -35,6 +35,8 @@
     reverb = ctx.createConvolver(); reverb.buffer = ir;
     reverbSend = ctx.createGain(); reverbSend.gain.value = 0.9;
     reverbSend.connect(reverb); reverb.connect(master);
+    // the music's own send into the hall, so the music volume covers its reverb too
+    musicVerb = ctx.createGain(); musicVerb.connect(reverbSend);
 
     const nlen = ctx.sampleRate * 2;
     noise = ctx.createBuffer(1, nlen, ctx.sampleRate);
@@ -72,6 +74,7 @@
     master.gain.setTargetAtTime(vol.muted ? 0 : vol.master, t, 0.03);
     sfxBus.gain.setTargetAtTime(vol.sfx, t, 0.03);
     musicBus.gain.setTargetAtTime(vol.music * 0.55, t, 0.03);
+    musicVerb.gain.setTargetAtTime(vol.music / 0.5, t, 0.03); // unity at the default 50%
   }
 
   function setVolumes(v) { Object.assign(vol, v); applyVolumes(); }
@@ -242,7 +245,7 @@
   function schedule() {
     if (!ctx || ctx.state !== 'running') return;
     while (nextTime < ctx.currentTime + 0.15) {
-      playStep(step, nextTime);
+      if (vol.music > 0) playStep(step, nextTime); // music off: keep time, play nothing
       step = (step + 1) % 64;
       nextTime += STEP;
     }
@@ -268,7 +271,7 @@
         voice(t, 'sawtooth', midi(n), 0.018, 0.9, STEP * 15, 1.6, musicFilter, -7);
         voice(t, 'sawtooth', midi(n), 0.018, 0.9, STEP * 15, 1.6, musicFilter, 7);
       }
-      voice(t, 'sine', midi(ch.pad[0] + 12), 0.02, 1.2, STEP * 14, 1.8, reverbSend);
+      voice(t, 'sine', midi(ch.pad[0] + 12), 0.02, 1.2, STEP * 14, 1.8, musicVerb);
     }
     // arpeggio, sparse in the menu, every 16th at speed
     const arpOn = I > 0.55 || i % 2 === 0;
@@ -294,7 +297,7 @@
       }
       if (i % 4 === 2) noiseHit(t, 'highpass', 7500, 0.7, 0.05 * d, 0.05, musicBus);
       if (I > 0.6 && i % 2 === 1) noiseHit(t, 'highpass', 9000, 0.7, 0.018 * d, 0.03, musicBus);
-      if (i === 4 || i === 12) noiseHit(t, 'bandpass', 1800, 0.8, 0.07 * d, 0.12, reverbSend);
+      if (i === 4 || i === 12) noiseHit(t, 'bandpass', 1800, 0.8, 0.07 * d, 0.12, musicVerb);
     }
   }
 
