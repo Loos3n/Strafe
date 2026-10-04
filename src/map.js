@@ -118,60 +118,80 @@
 
 
     // ------------------------------------------------------------ cascade (long surf)
-    // Nine narrow ramps that flip from side to side across wide gaps, so every
-    // transfer is a long air strafe that has to keep its height. Two ramps
-    // climb right before the longest gaps. Two checkpoints, each on a long
-    // steep ramp you drop onto from a high ledge.
+    // Nine narrow ramps that flip from side to side across wide gaps, and the
+    // line bends between some of them, so a transfer has to turn in the air
+    // as well as carry across. Two ramps climb right before the longest gaps.
+    // Two checkpoints, each on a long steep ramp you drop onto from a high
+    // ledge.
     {
       const cx = -26000;
       // narrower than the usual faces: a landing window of about 200 units
       const R60 = [240, 554], R55 = [380, 543], R65 = [210, 600];
+      // turn: how far the line bends (radians, + is left) crossing the gap before this ramp
       const defs = [
         { dx: 0, len: 4000, drop: 900, face: R60, gap: 1000 },
         { dx: -580, len: 3000, drop: 450, face: R65, gap: 1300 },
-        { dx: 580, len: 3000, drop: 450, face: R65, gap: 1400 },
+        { dx: 580, len: 3000, drop: 450, face: R65, gap: 1400, turn: 0.3 },
         { dx: 0, len: 3400, drop: 1500, face: R55, gap: 1000, cp: true, fall: 0.9 },  // steep: build speed (checkpoint)
         { dx: 680, len: 2600, drop: -250, face: R60, gap: 1500, fall: 0.4 }, // climbs into a long gap
         { dx: -580, len: 2800, drop: 450, face: R65, gap: 1400 },
         { dx: -130, len: 3400, drop: 1500, face: R55, gap: 1000, cp: true, fall: 0.9 }, // steep again (checkpoint)
-        { dx: -720, len: 2600, drop: -250, face: R60, gap: 1500, fall: 0.4 }, // climbs
-        { dx: 520, len: 3000, drop: 500, face: R65, gap: 1200 },
+        { dx: -720, len: 2600, drop: -250, face: R60, gap: 1500, fall: 0.4, turn: -0.3 }, // climbs
+        { dx: 520, len: 3000, drop: 500, face: R65, gap: 1200, turn: 0.3 },
       ];
       // the next ramp sits lower by what you fall crossing the gap, give or take
       const STAGE_LIFT = 2100, STAGE_OUT = 200;
       const fall = (d) => d.gap * (d.fall || 0.6);
-      let apex = 13000, z = 600;
-      const spawns = [];
+      // a ramp as a triangular prism along any heading (yaw 0 runs toward -z)
+      const ramp = (x, z, hd, len, W, H, apex, drop, props) => {
+        const fx = -Math.sin(hd), fz = -Math.cos(hd), rx = Math.cos(hd), rz = -Math.sin(hd);
+        const end = (t, y) => [[x + fx * t - rx * W, y - H, z + fz * t - rz * W], [x + fx * t, y, z + fz * t], [x + fx * t + rx * W, y - H, z + fz * t + rz * W]];
+        const [l0, a0, r0] = end(0, apex), [l1, a1, r1] = end(len, apex - drop);
+        return world.addHull([[l0, r0, r1, l1], [a0, r0, r1, a1], [a0, l0, l1, a1], [l0, a0, r0], [l1, a1, r1]], props);
+      };
+      let apex = 13000, hd = 0, px = cx, pz = 600;
+      const spawns = [], pts = [];
       defs.forEach((d, i) => {
-        const rx = cx + d.dx, [W, H] = d.face;
-        world.addSweep([[rx - W, apex - H], [rx + W, apex - H], [rx, apex]], z, z - d.len, -d.drop,
-          { color: COLORS.surf[i % COLORS.surf.length], kind: 'ramp' });
-        d.cx = rx; d.z0 = z; d.z1 = z - d.len; d.apex = apex; d.W = W; d.H = H;
+        const [W, H] = d.face;
+        if (i) { const gap = defs[i - 1].gap; hd += d.turn || 0; px += -Math.sin(hd) * gap; pz += -Math.cos(hd) * gap; }
+        const fx = -Math.sin(hd), fz = -Math.cos(hd), rgx = Math.cos(hd), rgz = -Math.sin(hd);
+        const x = px + rgx * d.dx, z = pz + rgz * d.dx;
+        ramp(x, z, hd, d.len, W, H, apex, d.drop, { color: COLORS.surf[i % COLORS.surf.length], kind: 'ramp' });
+        Object.assign(d, { x, z, hd, fx, fz, rx: rgx, rz: rgz, apex, W, H, cx: x, z0: z, z1: z + fz * d.len });
+        pts.push([x, z], [x + fx * d.len, z + fz * d.len]);
         if (i === 0 || d.cp) {
           // later stages start from a ledge high above the ramp: the drop in
           // gives back the speed a full run would be carrying
           const lift = i ? STAGE_LIFT : 60, out = i ? STAGE_OUT : 0;
-          const top = apex + lift;
-          box([rx - W - 520 - out, top - 40, z - 700], [rx - W - 80 - out, top, z - 100], COLORS.surfPad, { kind: 'pad' });
-          const spawn = { pos: [rx - W - 300 - out, top, z - 300], yaw: -1.05 };
+          const top = apex + lift, side = W + 300 + out;
+          const sx = x - rgx * side + fx * 300, sz = z - rgz * side + fz * 300;
+          // the ledge is turned with the ramp, so you step off it toward the ramp
+          const c = (u, v, y) => [sx + rgx * u + fx * v, y, sz + rgz * u + fz * v];
+          const q = [[-220, -300], [220, -300], [220, 300], [-220, 300]];
+          world.addHull([q.map(([u, v]) => c(u, v, top)), q.map(([u, v]) => c(u, v, top - 40)),
+            ...q.map(([u, v], j) => { const [u2, v2] = q[(j + 1) % 4]; return [c(u, v, top), c(u2, v2, top), c(u2, v2, top - 40), c(u, v, top - 40)]; })],
+            { color: COLORS.surfPad, kind: 'pad' });
+          const spawn = { pos: [sx, top, sz], yaw: hd - 1.05 };
           spawns.push(spawn);
-          if (i > 0) world.addTrigger([cx - 3000, apex - 3000, z - 200], [cx + 3000, apex + 2000, z + 300],
+          if (i > 0) world.addTrigger([x - 1600, apex - 3000, z - 1600], [x + 1600, apex + 2000, z + 1600],
             { type: 'checkpoint', course: 'cascade', idx: spawns.length - 1, spawn });
+          else world.addTrigger([sx - 220, top, sz - 300], [sx + 220, top + 240, sz + 300], { type: 'start', course: 'cascade' });
         }
         apex = apex - d.drop - fall(d);
-        z = z - d.len - d.gap;
+        px += fx * d.len; pz += fz * d.len;
       });
       const last = defs[defs.length - 1];
       const fy = last.apex - last.drop - 700;
-      box([last.cx - 900, fy - 60, last.z1 - 1900], [last.cx + 900, fy, last.z1 - 500], COLORS.surfPad, { kind: 'pad' });
-      world.addTrigger([last.cx - 900, fy, last.z1 - 1900], [last.cx + 900, fy + 200, last.z1 - 500], { type: 'end', course: 'cascade' });
-      const s0 = defs[0];
-      world.addTrigger([s0.cx - s0.W - 520, s0.apex + 60, s0.z0 - 700], [s0.cx - s0.W - 80, s0.apex + 300, s0.z0 - 100], { type: 'start', course: 'cascade' });
-      const zEnd = last.z1 - 3000;
-      box([cx - 4000, -260, zEnd], [cx + 4000, -200, 2500], COLORS.water, { nonsolid: true, water: true });
-      world.addTrigger([cx - 4000, -3000, zEnd], [cx + 4000, fy - 400, 2500], { type: 'kill', course: 'cascade' });
+      const ex = last.x + last.fx * (last.len + 1200), ez = last.z + last.fz * (last.len + 1200);
+      box([ex - 900, fy - 60, ez - 900], [ex + 900, fy, ez + 900], COLORS.surfPad, { kind: 'pad' });
+      world.addTrigger([ex - 900, fy, ez - 900], [ex + 900, fy + 200, ez + 900], { type: 'end', course: 'cascade' });
+      pts.push([ex, ez]);
+      const x0 = Math.min(...pts.map(p => p[0])) - 4000, x1 = Math.max(...pts.map(p => p[0])) + 4000;
+      const z0 = Math.min(...pts.map(p => p[1])) - 3000, z1 = Math.max(...pts.map(p => p[1])) + 2000;
+      box([x0, -260, z0], [x1, -200, z1], COLORS.water, { nonsolid: true, water: true });
+      world.addTrigger([x0, -3000, z0], [x1, fy - 400, z1], { type: 'kill', course: 'cascade' });
       courses.cascade = { preview: { pos: [cx - 900, 13200, 1400], yaw: -0.25 }, name: 'Cascade', type: 'Surf', difficulty: 5, color: 0x2bd1a8,
-        desc: 'Nine narrow ramps with long jumps between them that switch sides. Two ramps climb into the widest gaps. Only two checkpoints, each a drop from a high ledge.',
+        desc: 'Nine narrow ramps with long jumps that switch sides, and the line bends between them, so you turn in the air too. Two ramps climb into the widest gaps. Only two checkpoints, each a drop from a high ledge.',
         spawn: spawns[0], stages: spawns.length, ramps: defs };
     }
 

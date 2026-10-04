@@ -64,9 +64,9 @@
   // Levels whose layout changed enough that old times no longer compare. Each
   // reset drops their times and ghosts once; stars already earned stay. The
   // suffix is the leaderboard field they post under now.
-  const REBUILT = { surf: '_v3', bhop: '_v2', canyon: '_v3', stairway: '_v2', crossover: '_v3', cascade: '_v5' };
+  const REBUILT = { surf: '_v3', bhop: '_v2', canyon: '_v3', stairway: '_v2', crossover: '_v3', cascade: '_v6' };
   const RESETS = [['strafe.rebuild.v2', ['surf', 'bhop', 'canyon', 'stairway', 'crossover']],
-    ['strafe.rebuild.v3', ['surf', 'canyon', 'crossover', 'cascade']], ['strafe.rebuild.v4', ['cascade']], ['strafe.rebuild.v5', ['cascade']]];
+    ['strafe.rebuild.v3', ['surf', 'canyon', 'crossover', 'cascade']], ['strafe.rebuild.v4', ['cascade']], ['strafe.rebuild.v5', ['cascade']], ['strafe.rebuild.v6', ['cascade']]];
   for (const [flag, list] of RESETS) {
     if (load(flag)) continue;
     for (const c of list) {
@@ -1383,6 +1383,94 @@
     for (const l of legs) hips.add(l.hip);
     vScene.add(hips);
 
+    // The runner model takes over once it loads. The block rig above keeps
+    // posing, hidden, and the model's arm and leg bones copy the directions
+    // of its limbs, so every move keeps its pose. The head is shrunk away so
+    // the camera can sit inside it; look down and you see your own body.
+    let fp = null;
+    models.runner.then(g => {
+      if (!g) return;
+      const root = THREE.SkeletonUtils.clone(g.scene);
+      const mats = { surface: M(0xf2f2ee, 0.6), joints: M(0xdb2f2a, 0.45) };
+      mats.surface.skinning = mats.joints.skinning = true;
+      const bone = {};
+      root.traverse(o => {
+        if (o.isMesh) { o.material = /joint/i.test(o.material.name) ? mats.joints : mats.surface; o.frustumCulled = false; }
+        if (o.isBone) bone[o.name.replace(/^mixamorig:?/, '')] = o;
+      });
+      const holder = new THREE.Group();
+      holder.add(root); root.rotation.y = Math.PI;
+      holder.updateMatrixWorld(true);
+      const v = new THREE.Vector3();
+      let lo = Infinity, hi = -Infinity;
+      for (const b of Object.values(bone)) { b.getWorldPosition(v); lo = Math.min(lo, v.y); hi = Math.max(hi, v.y); }
+      const sc = 72 / ((hi - lo) / 0.9);
+      root.scale.multiplyScalar(sc); root.position.y = -lo * sc;
+      bone.Head.scale.setScalar(0.001);
+      holder.updateMatrixWorld(true);
+      const hipH = bone.Hips.getWorldPosition(v).y;
+      const bind = new Map(Object.values(bone).map(b => [b, b.quaternion.clone()]));
+      const L = (n) => bone['Left' + n], R = (n) => bone['Right' + n];
+      // [model bone, its child, rig piece from, rig piece to]
+      const chains = [];
+      for (const [a, side] of [[arms[0], L], [arms[1], R]]) {
+        chains.push([side('Arm'), side('ForeArm'), a.shoulder, a.elbow], [side('ForeArm'), side('Hand'), a.elbow, a.wrist], [side('Hand'), side('HandMiddle1'), a.wrist, a.knuckles]);
+      }
+      for (const [l, side] of [[legs[0], L], [legs[1], R]]) {
+        chains.push([side('UpLeg'), side('Leg'), l.hip, l.knee], [side('Leg'), side('Foot'), l.knee, l.foot]);
+      }
+      // lift the body so its shoulders sit where the rig's shoulders are when
+      // standing and looking level, so the hands come into view the same way
+      holder.position.set(0, -30 - hipH, 6); holder.updateMatrixWorld(true);
+      const sh = L('Arm').getWorldPosition(new THREE.Vector3()).add(R('Arm').getWorldPosition(new THREE.Vector3())).multiplyScalar(0.5);
+      const lift = new THREE.Vector3(0, -6.5, 3).sub(sh);
+      vScene.add(holder);
+      armsRoot.visible = hips.visible = false;
+      // finger joints curl with the rig's knuckles
+      const fingers = [];
+      for (const [a, side, sgn] of [[arms[0], 'Left', 1], [arms[1], 'Right', -1]]) {
+        for (const f of ['Index', 'Middle', 'Ring', 'Pinky']) for (const j of [1, 2, 3]) { const b = bone[side + 'Hand' + f + j]; if (b) fingers.push([b, a, sgn]); }
+      }
+      fp = { holder, mats, bind, chains, hipH, lift, fingers, spine: [bone.Spine1, bone.Spine2].filter(Boolean) };
+      cosmetics.apply();
+    });
+    const _a = new THREE.Vector3(), _b = new THREE.Vector3(), _c = new THREE.Vector3(), _d = new THREE.Vector3();
+    const _q = new THREE.Quaternion(), _w = new THREE.Quaternion(), _p = new THREE.Quaternion();
+    function poseModel() {
+      const h = fp.holder;
+      // hips where the rig's hips are, feet below them
+      h.position.set(hips.position.x, hips.position.y - fp.hipH, hips.position.z).add(fp.lift);
+      h.rotation.x = hips.rotation.x;
+      for (const [b, q] of fp.bind) b.quaternion.copy(q);
+      vScene.updateMatrixWorld(true);
+      // looking up, the upper body leans back with the view so the arms
+      // follow; looking down, the body stays put and slips back a little so
+      // you see your chest and legs rather than the inside of your collar
+      const look = vCam.rotation.x;
+      h.position.z += Math.max(0, -look) * 9;
+      h.updateMatrixWorld(true);
+      _q.setFromAxisAngle(_a.set(1, 0, 0), Math.max(0, look) * 0.35);
+      for (const b of fp.spine) {
+        b.getWorldQuaternion(_w).premultiply(_q);
+        b.parent.getWorldQuaternion(_p);
+        b.quaternion.copy(_p.invert().multiply(_w));
+        b.updateMatrixWorld(true);
+      }
+      for (const [b, child, from, to] of fp.chains) {
+        if (!b || !child) continue;
+        from.getWorldPosition(_a); to.getWorldPosition(_b); _b.sub(_a).normalize();
+        b.getWorldPosition(_c); child.getWorldPosition(_d); _d.sub(_c).normalize();
+        _q.setFromUnitVectors(_d, _b);
+        b.getWorldQuaternion(_w).premultiply(_q);
+        b.parent.getWorldQuaternion(_p);
+        b.quaternion.copy(_p.invert().multiply(_w));
+        b.updateMatrixWorld(true);
+      }
+      for (const [b, a, sgn] of fp.fingers) b.quaternion.multiply(_q.setFromAxisAngle(_a.set(0, 0, 1), sgn * FCURL * a.cur.k));
+      if (fp.fingers.length) fp.holder.updateMatrixWorld(true);
+    }
+    const FCURL = 1.3;
+
     const st = { phase: 0, act: null, actT: 0, actDur: 0, roll: 0 };
     const lerp = (a, b, k) => a + (b - a) * k;
     function act(name, dur) { st.act = name; st.actT = 0; st.actDur = dur; }
@@ -1454,6 +1542,7 @@
       const slideBack = mode === 'slide' ? 10 : 0;
       hips.position.set(0, -Math.min(eye, 64) + 34 + (p.ducked ? 6 : 0), 6 + slideBack);
       hips.rotation.x = mode === 'slide' ? -0.35 : 0;
+      if (fp) poseModel();
     }
     function render() {
       renderer.autoClear = false;
@@ -1466,9 +1555,10 @@
     const lin = (c) => new THREE.Color(c).convertSRGBToLinear();
     function setSkin(k) {
       sleeve.color.copy(lin(k.sleeve)); glove.color.copy(lin(k.glove)); pants.color.copy(lin(k.pants)); shirt.color.copy(lin(k.shirt));
+      if (fp) fp.mats.surface.color.copy(lin(k.shirt));
       setAccent(k.accent);
     }
-    function setAccent(c) { red.color.copy(lin(c)); shoe.color.copy(lin(c)); }
+    function setAccent(c) { red.color.copy(lin(c)); shoe.color.copy(lin(c)); if (fp) fp.mats.joints.color.copy(lin(c)); }
     return { update, render, resize, act, st, armsRoot, hips, setSkin, setAccent };
   })();
   cosmetics.apply();

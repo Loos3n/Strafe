@@ -26,23 +26,26 @@ function clone(p) {
 }
 const cascadeR = courses.cascade.ramps;
 const cascadeFloor = world.triggers.find(t => t.course === 'cascade' && t.type === 'kill').max[1];
-const rampAt = (p) => cascadeR.findIndex(r => p.pos[2] <= r.z0 && p.pos[2] >= r.z1 && Math.abs(p.pos[0] - r.cx) <= r.W + 40);
+// ramp-local coordinates: distance along the ramp from its start, and sideways from its ridge
+const along = (r, p) => (p.pos[0] - r.x) * r.fx + (p.pos[2] - r.z) * r.fz;
+const lateral = (r, p) => (p.pos[0] - r.x) * r.rx + (p.pos[2] - r.z) * r.rz;
+const rampAt = (p) => cascadeR.findIndex(r => { const a = along(r, p); return a >= 0 && a <= r.len && Math.abs(lateral(r, p)) <= r.W + 40; });
+const progress = (p) => { let k = cascadeR.findIndex(r => along(r, p) < r.len); if (k < 0) k = cascadeR.length - 1; return k + along(cascadeR[k], p) / cascadeR[k].len; };
 function cascadePolicy(p, i, o) {
   const R = cascadeR, n = face(p);
-  let k = R.findIndex(r => p.pos[2] <= r.z0 + 300 && p.pos[2] >= r.z1);
-  if (k < 0) k = R.findIndex(r => p.pos[2] > r.z0);
+  let k = R.findIndex(r => along(r, p) < r.len);
   if (k < 0) k = R.length - 1;
   const r = R[k];
   if (n) {
-    // ride a line below the apex on whichever face we are on
-    const into = n[0] < 0 ? 1 : -1;
-    const off = (p.pos[0] - r.cx) * into;
-    return { side: off < -o.ride * r.W ? into : 0, yaw: 0 };
+    // ride a line below the apex on whichever face we are on, facing down the ramp
+    const into = n[0] * r.rx + n[2] * r.rz < 0 ? 1 : -1;
+    const off = lateral(r, p) * into;
+    return { side: off < -o.ride * r.W ? into : 0, yaw: r.hd };
   }
   // in the air: steer to a point on the target ramp's near face
-  const t = p.pos[2] > r.z1 + 900 ? r : (R[k + 1] || r);
-  const nx = t.cx + (p.pos[0] < t.cx ? -1 : 1) * o.aim * t.W;
-  return strafeTo(p, i, nx, Math.min(t.z0 - 300, p.pos[2] - 600));
+  const t = along(r, p) < r.len - 900 ? r : (R[k + 1] || r);
+  const a = Math.max(300, along(t, p) + (o.lead || 600)), l = (lateral(t, p) < 0 ? -1 : 1) * o.aim * t.W;
+  return strafeTo(p, i, t.x + t.fx * a + t.rx * l, t.z + t.fz * a + t.rz * l);
 }
 const brains = {
   // Cascade: a simple ride-and-aim policy, steered by a planner that tries a
@@ -50,11 +53,11 @@ const brains = {
   // furthest down the ramps. Fine aim is what the narrow ramps ask of a player.
   cascade(p, i) {
     if (!p.started) p.started = !!face(p);
-    if (!p.started) return { forward: 1, yaw: -1.05 };
+    if (!p.started) return { forward: 1, yaw: p.startYaw ?? (p.startYaw = p.yaw) };
     if (!p.plan || (i % 25 === 0 && !face(p))) {
       let best = -Infinity;
-      for (const aim of [-0.4, 0, 0.3, 0.6, 0.9, 1.2]) for (const ride of [0.3, 0.6]) {
-        const q = clone(p), o = { aim, ride };
+      for (const aim of [-0.4, 0, 0.3, 0.6, 0.9, 1.2]) for (const ride of [0.3, 0.6]) for (const lead of [600]) {
+        const q = clone(p), o = { aim, ride, lead };
         let j = 0, top = -1;
         for (; j < 320; j++) {
           q.tick(Object.assign({ forward: 0, side: 0, jump: false, duck: false, yaw: 0, pitch: 0 }, cascadePolicy(q, i + j, o)), 0.01);
@@ -63,7 +66,7 @@ const brains = {
           if (n) top = Math.max(top, rampAt(q));
           if (q.pos[1] < cascadeFloor) break;
         }
-        const score = top * 1e6 + (q.pos[1] < cascadeFloor ? j : 1e4) - q.pos[2] * 0.01;
+        const score = top * 1e6 + (q.pos[1] < cascadeFloor ? j : 1e4) + progress(q) * 100;
         if (score > best) { best = score; p.plan = o; }
       }
     }
