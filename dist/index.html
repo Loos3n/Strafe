@@ -8132,7 +8132,7 @@ window.STRAFE_ASSETS = {"city":"Z2xURgIAAABU+ggAYFIAAEpTT057ImFzc2V0Ijp7ImdlbmVy
       const knuckles = new THREE.Group(); knuckles.position.y = -3.5; wrist.add(knuckles);
       knuckles.add(boxm(2.9, 2.6, 1.15, glove, 0, -1.3, 0));
       wrist.add(boxm(0.95, 2.4, 0.95, glove, -side * 1.7, -1.6, -0.6));
-      return { shoulder, elbow, wrist, knuckles, side, cur: { x: 0.6, z: 0, y: 0, e: 1.4, w: 0, k: 0.4, p: 2 } };
+      return { shoulder, elbow, wrist, knuckles, side, cur: { x: 0.6, z: 0, y: 0, e: 1.4, w: 0, k: 0.4, p: -1.2 } };
     }
     function makeLeg(side) {
       const hip = new THREE.Group();
@@ -8212,7 +8212,7 @@ window.STRAFE_ASSETS = {"city":"Z2xURgIAAABU+ggAYFIAAEpTT057ImFzc2V0Ijp7ImdlbmVy
         if (t1 && t3) {
           const d = t3.position.clone().add(bone[side + 'HandThumb2'].position).normalize();
           const tax = d.clone().cross(new THREE.Vector3(0, -1, 0)).normalize();
-          fingers.push([t1, a, new THREE.Vector3(1, 0, 0), 0.45], [bone[side + 'HandThumb2'], a, tax, 0.35], [t3, a, tax, 0.45]);
+          fingers.push([t1, a, new THREE.Vector3(1, 0, 0), 0.8], [bone[side + 'HandThumb2'], a, tax, 0.6], [t3, a, tax, 0.7]);
         }
       }
       bone.LeftHand.scale.setScalar(HAND); bone.RightHand.scale.setScalar(HAND);
@@ -8287,10 +8287,10 @@ window.STRAFE_ASSETS = {"city":"Z2xURgIAAABU+ggAYFIAAEpTT057ImFzc2V0Ijp7ImdlbmVy
     // targets in radians: x swings the arm forward, z lifts it out sideways,
     // e bends the elbow, w tips the wrist, k curls the fingers
     function armTarget(a, mode, t, hs) {
-      // p turns the palm in around the forearm: 2 shows the back of a fist,
-      // 1 keeps an open hand flat to whatever it is reaching for
+      // p turns the palm around the forearm: -1.2 makes fists with the palms
+      // facing each other and the thumbs on top, 1 keeps an open hand flat to whatever it is reaching for
       const g = armPose(a, mode, t, hs);
-      g.p = OPEN[mode] ? 1 : 2;
+      g.p = OPEN[mode] ? 1 : -1.2;
       return g;
     }
     const OPEN = { climb: 1, wallhand: 1, vault: 1, surf: 1 };
