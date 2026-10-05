@@ -957,6 +957,7 @@
   let wheelJumps = 0, wheelPhase = false;
   let locked = false;
   let muted = false;
+  const ed = { on: false, testing: false }; // level editor state, filled in by the editor section
 
   const KEYMAP = {
     forward: ['KeyW', 'ArrowUp'], back: ['KeyS', 'ArrowDown'], left: ['KeyA', 'ArrowLeft'], right: ['KeyD', 'ArrowRight'],
@@ -969,6 +970,7 @@
     if (['Space', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Tab'].includes(e.code)) e.preventDefault();
     if (e.repeat) return;
     keys.add(e.code);
+    if (ed.on) return;
     if (e.code === 'KeyR') restartCourse();
     else if (e.code === 'KeyF') respawn();
     else if (e.code === 'KeyQ') { if (turnLeft <= 0) turnLeft = Math.PI; } // Mirror's Edge 180° quick turn
@@ -1057,7 +1059,7 @@
     } else {
       keys.clear();
       touch.duck = false;
-      showMenuState();
+      menuOnUnlock();
     }
     touchUI && touchUI.sync();
   }
@@ -1480,6 +1482,7 @@ body.touch #menu button, body.touch #drawer button { min-height: 40px; }
         rec = null;
       },
       has: (course) => !!get(course),
+      forget(course) { delete runs[course]; try { localStorage.removeItem(GHOST_KEY + course); } catch (e) { /* storage blocked */ } },
       root,
       tint(c) {
         const col = new THREE.Color(c).convertSRGBToLinear();
@@ -2259,8 +2262,8 @@ body.touch #menu button, body.touch #drawer button { min-height: 40px; }
     $('c-jumps').textContent = r.jumps;
     $('c-dist').textContent = (r.dist * 0.0254).toFixed(0);
     const nx = nextLevel(game.course);
-    $('c-next').textContent = nx ? 'Next: ' + map.courses[nx].name : 'Back to levels';
-    $('c-next').dataset.target = nx || 'levels';
+    $('c-next').textContent = game.course === 'custom' ? 'Back to editor' : nx ? 'Next: ' + map.courses[nx].name : 'Back to levels';
+    $('c-next').dataset.target = game.course === 'custom' ? 'editor' : nx || 'levels';
     const job = game.mission !== null ? STORY[game.mission] : null;
     $('c-label').textContent = job ? (game.mission ? 'Job ' + game.mission : 'Prologue') + ' complete' : 'Level complete';
     $('c-story').hidden = !job;
@@ -2298,12 +2301,14 @@ body.touch #menu button, body.touch #drawer button { min-height: 40px; }
     if (what === 'next') {
       const t = $('c-next').dataset.target;
       if (t === 'story') { goIdle(); showMenuState(); openDrawer('story'); return; }
+      if (t === 'editor') { edBack(); return; }
       if (t === 'levels') { goIdle(); game.started = false; showMenuState(); showScreen('levels'); return; }
       if (t.startsWith('job:')) { startJob(+t.slice(4)); return; }
       goCourse(t);
       startPlay();
     }
     else if (what === 'retry') { restartCourse(); startPlay(); }
+    else if (ed.testing) edBack();
     else { showMenuState(); showScreen('levels'); } // levels: back to level select
   }
   for (const b of completeEl.querySelectorAll('[data-act]')) b.addEventListener('click', () => completeAction(b.dataset.act));
@@ -2497,7 +2502,7 @@ body.touch #menu button, body.touch #drawer button { min-height: 40px; }
       yaw += s; turnLeft -= s; turnStep += s;
     }
 
-    if ((locked || game.demo) && !game.freeze) {
+    if ((locked || game.demo) && !game.freeze && !ed.on) {
       acc += dt;
       let n = 0;
       while (acc >= TICK && n < 12) { step(); acc -= TICK; n++; }
@@ -2542,7 +2547,9 @@ body.touch #menu button, body.touch #drawer button { min-height: 40px; }
     const vf = baseVFov() + cam.fovKick;
     if (Math.abs(camera.fov - vf) > 0.01) { camera.fov = vf; camera.updateProjectionMatrix(); }
 
-    if (!locked && !game.demo && attract.active) {
+    if (ed.on) {
+      edUpdate(dt);
+    } else if (!locked && !game.demo && attract.active) {
       updateAttract(dt, now / 1000);
     } else {
       // landing roll: one forward somersault of the view
@@ -2556,8 +2563,8 @@ body.touch #menu button, body.touch #drawer button { min-height: 40px; }
       camera.rotation.set(pitch + flipPitch - cam.kick * DEG, yaw, cam.roll + cam.kickRoll);
       if (settings.body) body.update(dt, hs, pitch + flipPitch, cam.roll, cam.bob, cam.dip);
     }
-    cosmetics.update(now, ix, iy, iz, hs, (locked || !!game.demo) && !attract.active);
-    speedLines.update(dt, hs, settings.speedLines && (locked || !!game.demo) && !attract.active);
+    cosmetics.update(now, ix, iy, iz, hs, (locked || !!game.demo) && !attract.active && !ed.on);
+    speedLines.update(dt, hs, settings.speedLines && (locked || !!game.demo) && !attract.active && !ed.on);
     updateFps(dt);
     A.update({
       speed: hs, playing: locked || !!game.demo, airborne: !player.onGround,
@@ -2589,7 +2596,7 @@ body.touch #menu button, body.touch #drawer button { min-height: 40px; }
     camera.updateMatrixWorld();
     updateModelChunks();
     renderer.render(scene, camera);
-    if (settings.body && (locked || game.demo) && !attract.active) body.render();
+    if (settings.body && (locked || game.demo) && !attract.active && !ed.on) body.render();
   }
 
   // ------------------------------------------------------------ online leaderboard
@@ -2612,6 +2619,7 @@ body.touch #menu button, body.touch #drawer button { min-height: 40px; }
     });
   }
   function lbSubmit(course, ticks) {
+    if (course === 'custom') return;
     if (!lb.db || settings.airaccelerate !== LB_AA) return;
     const cur = lbMine()[lbKey(course)];
     if (!(typeof cur === 'number' && cur <= ticks)) lbWrite({ [lbKey(course)]: ticks });
@@ -2665,7 +2673,7 @@ body.touch #menu button, body.touch #drawer button { min-height: 40px; }
   }
   function lbRenderComplete() {
     const el = $('c-online');
-    const all = game.course ? lbStandings(game.course) : [];
+    const all = game.course && game.course !== 'custom' ? lbStandings(game.course) : [];
     const k = all.findIndex(r => r.id === lb.me);
     el.hidden = !lb.db || k < 0;
     if (k >= 0) el.textContent = 'Online rank #' + (k + 1) + ' of ' + all.length;
@@ -3054,12 +3062,17 @@ body.touch #menu button, body.touch #drawer button { min-height: 40px; }
   $('resume').addEventListener('click', () => { A.init(); A.play('click'); startPlay(); });
   $('restart').addEventListener('click', () => { A.init(); restartCourse(); startPlay(); });
   canvas.addEventListener('click', () => { if (!locked && game.started) startPlay(); });
-  document.addEventListener('pointerlockchange', () => { if (!locked) showMenuState(); });
+  document.addEventListener('pointerlockchange', () => { if (!locked) menuOnUnlock(); });
+  // the editor and its test runs pause into the editor's own panel
+  function menuOnUnlock() {
+    if (ed.on || ed.testing) { if (completeEl.hidden) edShowPanel(); }
+    else showMenuState();
+  }
   // the first click anywhere wakes the audio so the menu has music
   window.addEventListener('pointerdown', () => A.init(), { once: true });
   // menu keys: arrows browse levels, Enter plays, Esc closes the drawer
   window.addEventListener('keydown', (e) => {
-    if (locked || !completeEl.hidden || document.body.classList.contains('playing')) return;
+    if (locked || !completeEl.hidden || document.body.classList.contains('playing') || document.body.classList.contains('edmode')) return;
     if (e.code === 'Escape') { if (!drawer.hidden) closeDrawer(); else if (screen === 'levels') { A.play('click'); showScreen('title'); } return; }
     if (!drawer.hidden) return;
     const tag = document.activeElement && document.activeElement.tagName;
@@ -3082,11 +3095,392 @@ body.touch #menu button, body.touch #drawer button { min-height: 40px; }
     else if (/^Digit[0-9]$/.test(e.code) && map.order[(+e.code.slice(5) + 9) % 10]) select(map.order[(+e.code.slice(5) + 9) % 10], true);
   });
 
+  // ------------------------------------------------------------ level editor
+  // Build your own level out of blocks, floors, surf ramps, walls and
+  // start, checkpoint and finish pads, fly around it, test it, save it and
+  // share it as a code. Custom levels live far off the main map (EDO) and
+  // never post to the online board. Keyboard and mouse only.
+  const EDO = [600000, 0, 0];
+  const ED_TYPES = ['block', 'floor', 'ramp', 'wall', 'start', 'checkpoint', 'finish'];
+  const ED_NAMES = { block: 'Block', floor: 'Floor', ramp: 'Surf ramp', wall: 'Wall', start: 'Start', checkpoint: 'Checkpoint', finish: 'Finish' };
+  const ED_DEF = {
+    block: { w: 160, l: 160, h: 64 }, floor: { w: 512, l: 512, h: 64 }, ramp: { w: 448, l: 2400, a: 60, d: 400 },
+    wall: { w: 32, l: 800, h: 384 }, start: { w: 384, l: 384, h: 48 }, checkpoint: { w: 384, l: 384, h: 48 }, finish: { w: 384, l: 384, h: 48 },
+  };
+  const ED_COLOR = { block: 0x4f74ee, floor: 0xb9c0c6, ramp: 0x2bd1a8, wall: 0xe4e2db, start: 0x43e07f, checkpoint: 0xffb340, finish: 0xe5533d };
+  const ED_LEVEL_KEY = 'strafe.editor.v1', ED_SAVES_KEY = 'strafe.levels.v1';
+  const edBlank = () => ({ name: 'My level', pieces: [
+    { t: 'start', x: 0, y: 0, z: 0, r: 0, w: 384, l: 384, h: 48 },
+    { t: 'floor', x: 0, y: 0, z: -640, r: 0, w: 384, l: 640, h: 64 },
+    { t: 'finish', x: 0, y: 0, z: -1280, r: 0, w: 384, l: 384, h: 48 },
+  ] });
+  Object.assign(ed, { level: load(ED_LEVEL_KEY) || edBlank(), type: 'block', params: JSON.parse(JSON.stringify(ED_DEF)), rot: 0, plane: 0,
+    cam: [0, 400, 900], undo: [], aim: null, preview: null, previewKey: '', meshes: [], grid: null, course: null });
+
+  // piece -> faces (vertex loops) in world space
+  function edFaces(pc) {
+    const c = Math.cos(pc.r * DEG), s = Math.sin(pc.r * DEG);
+    const P = (lx, y, lz) => [EDO[0] + pc.x + lx * c + lz * s, EDO[1] + y, EDO[2] + pc.z - lx * s + lz * c];
+    if (pc.t === 'ramp') {
+      const hw = pc.w / 2, H = hw * Math.tan(pc.a * DEG), hl = pc.l / 2, top = pc.y, d = pc.d || 0;
+      const nL = P(-hw, top - H, hl), nR = P(hw, top - H, hl), nA = P(0, top, hl);
+      const fL = P(-hw, top - H - d, -hl), fR = P(hw, top - H - d, -hl), fA = P(0, top - d, -hl);
+      return [[nL, nR, nA], [fL, fA, fR], [nL, fL, fR, nR], [nL, nA, fA, fL], [nR, fR, fA, nA]];
+    }
+    const hw = pc.w / 2, hl = pc.l / 2;
+    const y1 = pc.t === 'wall' ? pc.y + pc.h : pc.y, y0 = y1 - pc.h;
+    const q = [[-hw, -hl], [hw, -hl], [hw, hl], [-hw, hl]];
+    const lo = q.map(([x, z]) => P(x, y0, z)), hi = q.map(([x, z]) => P(x, y1, z));
+    return [lo, hi.slice().reverse(), [lo[0], lo[1], hi[1], hi[0]], [lo[1], lo[2], hi[2], hi[1]], [lo[2], lo[3], hi[3], hi[2]], [lo[3], lo[0], hi[0], hi[3]]];
+  }
+  const edKind = (t) => t === 'ramp' ? 'ramp' : t === 'block' ? 'block' : t === 'wall' ? 'wall' : 'pad';
+  function edClear() {
+    for (let i = world.brushes.length - 1; i >= 0; i--) if (world.brushes[i].props.custom) world.brushes.splice(i, 1);
+    for (let i = world.triggers.length - 1; i >= 0; i--) if (world.triggers[i].custom) world.triggers.splice(i, 1);
+    for (const m of ed.meshes) { scene.remove(m); m.geometry.dispose(); }
+    ed.meshes = [];
+  }
+  // put the level into the world: brushes, triggers, a course and its meshes
+  function edBuild() {
+    edClear();
+    const L = ed.level, id = 'custom';
+    let lowY = Infinity, box = [Infinity, Infinity, -Infinity, -Infinity], cps = 0, start = null;
+    L.pieces.forEach((pc, i) => {
+      const b = world.addHull(edFaces(pc), { custom: true, piece: i, kind: edKind(pc.t), color: ED_COLOR[pc.t] });
+      lowY = Math.min(lowY, b.min[1]);
+      box = [Math.min(box[0], b.min[0]), Math.min(box[1], b.min[2]), Math.max(box[2], b.max[0]), Math.max(box[3], b.max[2])];
+      if (pc.t === 'start' || pc.t === 'checkpoint' || pc.t === 'finish') {
+        const spawn = { pos: [EDO[0] + pc.x, EDO[1] + pc.y + 1, EDO[2] + pc.z], yaw: pc.r * DEG };
+        const tmin = [b.min[0], b.max[1], b.min[2]], tmax = [b.max[0], b.max[1] + 160, b.max[2]];
+        if (pc.t === 'start') { if (!start) { start = spawn; world.addTrigger(tmin, tmax, { type: 'start', course: id, custom: true }); } }
+        else if (pc.t === 'checkpoint') world.addTrigger(tmin, tmax, { type: 'checkpoint', course: id, idx: ++cps, spawn, custom: true });
+        else world.addTrigger(tmin, tmax, { type: 'end', course: id, custom: true });
+      }
+    });
+    if (L.pieces.length) world.addTrigger([box[0] - 20000, lowY - 4000, box[1] - 20000], [box[2] + 20000, lowY - 1500, box[3] + 20000], { type: 'kill', custom: true });
+    // a changed level is a new level: its best time and ghost no longer apply
+    const sig = JSON.stringify(L.pieces);
+    if (sig !== load('strafe.editor.sig')) { delete best[id]; save(BEST_KEY, best); delete bestSplits[id]; save(SPLITS_KEY, bestSplits); ghost.forget(id); save('strafe.editor.sig', sig); }
+    map.courses[id] = { name: L.name || 'Custom level', spawn: start || { pos: [EDO[0], EDO[1] + 200, EDO[2]], yaw: 0 }, stages: cps + 1, color: 0xe5533d, custom: true, hasStart: !!start,
+      hasEnd: L.pieces.some(p => p.t === 'finish') };
+    const parts = buildGeometry(b => b.props.custom, bucketFor);
+    for (const [name, part] of Object.entries(parts)) {
+      const mesh = new THREE.Mesh(part.g, MATS[name]);
+      mesh.castShadow = mesh.receiveShadow = true;
+      scene.add(mesh); ed.meshes.push(mesh);
+      const lines = new THREE.LineSegments(part.lg, new THREE.LineBasicMaterial({ color: 0x1b2530, transparent: true, opacity: 0.18 }));
+      scene.add(lines); ed.meshes.push(lines);
+    }
+    save(ED_LEVEL_KEY, L);
+  }
+  function edChange(fn) {
+    ed.undo.push(JSON.stringify(ed.level));
+    if (ed.undo.length > 100) ed.undo.shift();
+    fn();
+    edBuild();
+  }
+
+  // ---- the editor's own HUD, panel and preview
+  const edCss = document.createElement('style');
+  edCss.textContent = `
+body.editing .hud, body.editing #touch { display: none !important; }
+#edhud { position: fixed; left: 16px; top: 16px; z-index: 30; display: none; pointer-events: none; font-family: var(--display); color: #fff; text-shadow: 0 1px 3px rgba(0,0,0,.7); }
+body.editing.playing #edhud { display: block; }
+#edhud ol { list-style: none; margin: 0; padding: 0; display: grid; gap: 3px; }
+#edhud li { font-weight: 700; font-size: 15px; letter-spacing: .08em; text-transform: uppercase; padding: 3px 10px; background: rgba(10,14,18,.45); }
+#edhud li.on { background: #fff; color: #15191d; text-shadow: none; }
+#edhud li b { display: inline-block; width: 1.4em; opacity: .7; }
+#edinfo { margin-top: 10px; font-size: 14px; letter-spacing: .06em; background: rgba(10,14,18,.45); padding: 6px 10px; max-width: 280px; }
+#edhelp { position: fixed; left: 0; right: 0; bottom: 14px; text-align: center; z-index: 30; display: none; pointer-events: none; font: 600 13px/1.5 var(--display); letter-spacing: .08em; color: #fff; text-shadow: 0 1px 3px rgba(0,0,0,.8); }
+body.editing.playing #edhelp { display: block; }
+#edpanel { position: fixed; inset: 0; z-index: 50; display: grid; place-items: center; padding: 16px; background: rgba(21,25,29,.45); }
+#edpanel[hidden] { display: none; }
+#edpanel .csheet { width: min(640px, 100%); max-height: calc(100vh - 32px); overflow: auto; }
+#edpanel h2 { margin: 4px 0 12px; font-family: var(--display); font-weight: 800; font-style: italic; font-size: 40px; line-height: 1; }
+#edpanel input[type=text], #edpanel textarea { width: 100%; box-sizing: border-box; font: 500 15px/1.4 var(--body, sans-serif); padding: 8px 10px; border: 2px solid #15191d; background: #fff; color: #15191d; }
+#edpanel textarea { height: 76px; font-family: ui-monospace, monospace; font-size: 12px; word-break: break-all; }
+#edpanel .row { margin-top: 14px; }
+#edpanel .lbl { display: block; font-family: var(--display); font-weight: 600; font-size: 12px; letter-spacing: .2em; text-transform: uppercase; color: #5d666e; margin-bottom: 6px; }
+#edpanel .ebtn { all: unset; cursor: pointer; font-family: var(--display); font-weight: 700; font-size: 15px; letter-spacing: .12em; text-transform: uppercase; padding: 8px 14px; border: 2px solid #15191d; color: #15191d; }
+#edpanel .ebtn:hover, #edpanel .ebtn:focus-visible { background: #15191d; color: #fff; }
+#edpanel .ebtn.red { border-color: #c22420; color: #c22420; }
+#edpanel .saves { display: grid; gap: 6px; }
+#edpanel .saves div { display: flex; gap: 8px; align-items: center; }
+#edpanel .saves span { flex: 1; font-weight: 600; }
+#edpanel .note { font-size: 14px; color: #5d666e; margin: 8px 0 0; }
+`;
+  document.head.appendChild(edCss);
+  const edHud = document.createElement('div');
+  edHud.id = 'edhud';
+  edHud.innerHTML = '<ol>' + ED_TYPES.map((t, i) => '<li data-t="' + t + '"><b>' + (i + 1) + '</b>' + ED_NAMES[t] + '</li>').join('') + '</ol><div id="edinfo"></div>';
+  document.body.appendChild(edHud);
+  const edHelp = document.createElement('div');
+  edHelp.id = 'edhelp';
+  edHelp.innerHTML = 'WASD fly · Space up · C down · Shift fast · Click place · Right click delete · Middle click copy · Q/E rotate · Wheel length · Shift+wheel width<br>R/F height or angle · [ ] ramp drop · T/G build height · Z undo · Enter test · Esc menu';
+  document.body.appendChild(edHelp);
+  const edPanel = document.createElement('div');
+  edPanel.id = 'edpanel'; edPanel.hidden = true;
+  edPanel.innerHTML = `<div class="csheet" role="dialog" aria-labelledby="ed-title">
+  <p class="clabel">Level editor</p><h2 id="ed-title">Editor</h2>
+  <div class="cbtns" id="ed-main"></div>
+  <div class="row"><label class="lbl" for="ed-name">Level name</label><input type="text" id="ed-name" maxlength="40"></div>
+  <div class="row"><span class="lbl">Share</span><textarea id="ed-code" readonly aria-label="Share code"></textarea>
+    <div class="cbtns" style="margin-top:8px"><button class="ebtn" id="ed-copy">Copy share code</button><button class="ebtn" id="ed-paste">Load a code</button></div>
+    <p class="note" id="ed-msg">Anyone with the code can load and play your level.</p></div>
+  <div class="row"><span class="lbl">My levels</span><div class="saves" id="ed-saves"></div></div>
+</div>`;
+  document.body.appendChild(edPanel);
+  const gridHelper = new THREE.GridHelper(40000, 160, 0x6a7f90, 0x9fb3c2);
+  gridHelper.material.transparent = true; gridHelper.material.opacity = 0.35; gridHelper.visible = false;
+  scene.add(gridHelper);
+  const previewMat = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.35, depthWrite: false });
+  const previewDel = new THREE.MeshBasicMaterial({ color: 0xff3b3b, transparent: true, opacity: 0.35, depthWrite: false });
+  function facesToGeo(faces) {
+    const pos = [];
+    for (const f of faces) for (let i = 1; i < f.length - 1; i++) for (const p of [f[0], f[i], f[i + 1]]) pos.push(p[0], p[1], p[2]);
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+    return g;
+  }
+
+  // ---- entering, leaving, testing
+  function enterEditor() {
+    A.init(); A.play('click');
+    closeDrawer(); closeComplete();
+    ed.on = true; ed.testing = false;
+    game.course = null; game.running = false; game.started = true;
+    attract.active = false;
+    document.body.classList.add('editing', 'edmode');
+    edBuild();
+    edPanel.hidden = true;
+    gridHelper.visible = true;
+    requestLock();
+  }
+  function exitEditor() {
+    ed.on = false; ed.testing = false;
+    edPanel.hidden = true;
+    document.body.classList.remove('editing', 'edmode');
+    gridHelper.visible = false;
+    if (ed.preview) ed.preview.visible = false;
+    edClear();
+    delete map.courses.custom;
+    goIdle(); game.started = false;
+    showMenuState();
+  }
+  function edTest() {
+    const c = map.courses.custom;
+    if (!c || !c.hasStart) { edMsg('Place a Start pad first (key 5).'); toast('Place a Start pad first'); return false; }
+    ed.on = false; ed.testing = true;
+    edPanel.hidden = true;
+    gridHelper.visible = false;
+    if (ed.preview) ed.preview.visible = false;
+    document.body.classList.remove('editing');
+    goCourse('custom');
+    if (!c.hasEnd) toast('No Finish pad yet: the clock never stops', 2600);
+    startPlay();
+    return true;
+  }
+  function edBack() {
+    closeComplete();
+    ed.on = true; ed.testing = false;
+    game.course = null; game.running = false;
+    document.body.classList.add('editing');
+    gridHelper.visible = true;
+    edPanel.hidden = true;
+    requestLock();
+  }
+  const edMsg = (t) => { $('ed-msg').textContent = t; };
+  function edShowPanel() {
+    edPanel.hidden = false;
+    $('ed-title').textContent = ed.testing ? 'Testing' : 'Editor';
+    $('ed-name').value = ed.level.name || '';
+    const main = $('ed-main');
+    main.innerHTML = '';
+    const btn = (label, fn, cls) => { const b = document.createElement('button'); b.className = cls || 'ebtn'; b.textContent = label; b.addEventListener('click', () => { A.play('click'); fn(); }); main.appendChild(b); return b; };
+    if (ed.testing) {
+      btn('Resume test', () => { edPanel.hidden = true; startPlay(); }, 'cprimary').focus();
+      btn('Restart', () => { edPanel.hidden = true; restartCourse(); startPlay(); });
+      btn('Back to editor', edBack);
+    } else {
+      btn('Keep building', () => { edPanel.hidden = true; requestLock(); }, 'cprimary').focus();
+      btn('Test play', edTest);
+      btn('Save', () => { const all = load(ED_SAVES_KEY) || {}; all[ed.level.name || 'My level'] = ed.level; save(ED_SAVES_KEY, all); edMsg('Saved as "' + (ed.level.name || 'My level') + '".'); edSaves(); });
+      btn('New level', () => { if (confirm('Start a new level? Unsaved changes are lost.')) { edChange(() => { ed.level = edBlank(); }); edShowPanel(); } });
+    }
+    btn('Exit editor', exitEditor, 'ebtn red');
+    edCode().then(c => { $('ed-code').value = c; });
+    edSaves();
+  }
+  function edSaves() {
+    const all = load(ED_SAVES_KEY) || {}, el = $('ed-saves');
+    el.innerHTML = '';
+    const names = Object.keys(all);
+    if (!names.length) { el.innerHTML = '<p class="note">Nothing saved yet.</p>'; return; }
+    for (const n of names) {
+      const row = document.createElement('div');
+      row.innerHTML = '<span></span><button class="ebtn">Load</button><button class="ebtn">Play</button><button class="ebtn red">Delete</button>';
+      row.querySelector('span').textContent = n + ' (' + all[n].pieces.length + ' pieces)';
+      const [lb2, pb, db] = row.querySelectorAll('button');
+      lb2.addEventListener('click', () => { edChange(() => { ed.level = JSON.parse(JSON.stringify(all[n])); }); edShowPanel(); edMsg('Loaded "' + n + '".'); });
+      pb.addEventListener('click', () => { edChange(() => { ed.level = JSON.parse(JSON.stringify(all[n])); }); edTest(); });
+      db.addEventListener('click', () => { if (!confirm('Delete "' + n + '"?')) return; delete all[n]; save(ED_SAVES_KEY, all); edSaves(); });
+      el.appendChild(row);
+    }
+  }
+  $('ed-name').addEventListener('input', (e) => { ed.level.name = e.target.value.slice(0, 40); if (map.courses.custom) map.courses.custom.name = ed.level.name; save(ED_LEVEL_KEY, ed.level); edCode().then(c => { $('ed-code').value = c; }); });
+  $('ed-copy').addEventListener('click', async () => {
+    const c = await edCode();
+    $('ed-code').value = c; $('ed-code').select();
+    try { await navigator.clipboard.writeText(c); edMsg('Copied. Send it to a friend; they paste it with Load a code.'); }
+    catch (e) { try { document.execCommand('copy'); edMsg('Copied.'); } catch (e2) { edMsg('Select the code above and copy it.'); } }
+  });
+  $('ed-paste').addEventListener('click', async () => {
+    const txt = prompt('Paste a Strafe level code');
+    if (!txt) return;
+    try { const L = await edDecode(txt.trim()); edChange(() => { ed.level = L; }); edShowPanel(); edMsg('Loaded "' + L.name + '" with ' + L.pieces.length + ' pieces.'); }
+    catch (e) { edMsg('That code did not load. Check it was copied whole.'); }
+  });
+
+  // ---- share codes: compact JSON, deflated where the browser can, base64url
+  const ED_KEYS = ['t', 'x', 'y', 'z', 'r', 'w', 'l', 'h', 'a', 'd'];
+  const b64 = (u8) => { let s = ''; for (const c of u8) s += String.fromCharCode(c); return btoa(s).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, ''); };
+  const unb64 = (s) => { const b = atob(s.replace(/-/g, '+').replace(/_/g, '/')); return Uint8Array.from(b, c => c.charCodeAt(0)); };
+  async function pipe(u8, stream) { return new Uint8Array(await new Response(new Blob([u8]).stream().pipeThrough(stream)).arrayBuffer()); }
+  async function edCode() {
+    const L = ed.level;
+    const data = [1, L.name || '', L.pieces.map(p => ED_KEYS.map(k => k === 't' ? ED_TYPES.indexOf(p.t) : Math.round(p[k] || 0)))];
+    const raw = new TextEncoder().encode(JSON.stringify(data));
+    if (window.CompressionStream) { try { return 'S1' + b64(await pipe(raw, new CompressionStream('deflate-raw'))); } catch (e) { /* fall back */ } }
+    return 'S0' + b64(raw);
+  }
+  async function edDecode(code) {
+    let raw = unb64(code.slice(2));
+    if (code.startsWith('S1')) raw = await pipe(raw, new DecompressionStream('deflate-raw'));
+    else if (!code.startsWith('S0')) throw new Error('not a level code');
+    const [v, name, rows] = JSON.parse(new TextDecoder().decode(raw));
+    if (v !== 1 || !Array.isArray(rows) || rows.length > 2000) throw new Error('bad code');
+    const num = (x, lo, hi) => Math.max(lo, Math.min(hi, +x || 0));
+    const pieces = rows.map(r => {
+      const t = ED_TYPES[r[0]];
+      if (!t) throw new Error('bad piece');
+      const p = { t };
+      ED_KEYS.slice(1).forEach((k, i) => { p[k] = num(r[i + 1], -200000, 200000); });
+      p.w = num(p.w, 16, 8000); p.l = num(p.l, 16, 20000); p.h = num(p.h, 0, 8000); p.a = num(p.a || 60, 30, 80); p.d = num(p.d, -6000, 6000);
+      return p;
+    });
+    return { name: String(name || 'Shared level').slice(0, 40), pieces };
+  }
+
+  // ---- aiming, placing, flying
+  const POINT = { min: [0, 0, 0], max: [0, 0, 0] };
+  const snap = (v, g) => Math.round(v / g) * g;
+  function edAim() {
+    const f = new THREE.Vector3(0, 0, -1).applyEuler(camera.rotation);
+    const o = camera.position;
+    const far = 30000, end = [o.x + f.x * far, o.y + f.y * far, o.z + f.z * far];
+    const tr = world.trace([o.x, o.y, o.z], end, POINT);
+    let hit = null;
+    if (tr.fraction < 1 && tr.brush && tr.brush.props.custom) hit = { p: tr.endpos, n: tr.normal, piece: tr.brush.props.piece };
+    // the build plane
+    const py = EDO[1] + ed.plane;
+    let plane = null;
+    if (Math.abs(f.y) > 1e-4) { const t = (py - o.y) / f.y; if (t > 0 && t < far) plane = [o.x + f.x * t, py, o.z + f.z * t]; }
+    if (hit && plane) { const dh = Math.hypot(hit.p[0] - o.x, hit.p[1] - o.y, hit.p[2] - o.z), dp = Math.hypot(plane[0] - o.x, plane[1] - o.y, plane[2] - o.z); if (dp < dh) hit = null; }
+    let at = hit ? hit.p : plane;
+    if (!at) return { hit: null, at: null };
+    // stack on top of what you aim at
+    let y = at[1];
+    if (hit && hit.n && hit.n[1] < 0.7) y = at[1];
+    return { hit, at: [snap(at[0] - EDO[0], 16), snap(y - EDO[1], 8), snap(at[2] - EDO[2], 16)] };
+  }
+  // at[1] is where the piece stands: its base. Pieces store their top (a ramp its ridge, a wall its foot).
+  function edNewPiece(at) {
+    const pr = ed.params[ed.type];
+    if (pr.a) return { t: ed.type, x: at[0], y: Math.round(at[1] + pr.w / 2 * Math.tan(pr.a * DEG)), z: at[2], r: ed.rot, w: pr.w, l: pr.l, a: pr.a, d: pr.d, h: 0 };
+    return { t: ed.type, x: at[0], y: ed.type === 'wall' ? at[1] : at[1] + pr.h, z: at[2], r: ed.rot, w: pr.w, l: pr.l, h: pr.h };
+  }
+  function edUpdate(dt) {
+    // fly
+    const sp = (keys.has('ShiftLeft') || keys.has('ShiftRight') ? 4000 : 1300) * dt;
+    const fw = (keys.has('KeyW') ? 1 : 0) - (keys.has('KeyS') ? 1 : 0), sd = (keys.has('KeyD') ? 1 : 0) - (keys.has('KeyA') ? 1 : 0);
+    const up = (keys.has('Space') ? 1 : 0) - (keys.has('KeyC') || keys.has('ControlLeft') ? 1 : 0);
+    const fx = -Math.sin(yaw) * Math.cos(pitch), fy = Math.sin(pitch), fz = -Math.cos(yaw) * Math.cos(pitch);
+    const rx = Math.cos(yaw), rz = -Math.sin(yaw);
+    ed.cam[0] += (fx * fw + rx * sd) * sp; ed.cam[1] += (fy * fw + up) * sp; ed.cam[2] += (fz * fw + rz * sd) * sp;
+    camera.position.set(EDO[0] + ed.cam[0], EDO[1] + ed.cam[1], EDO[2] + ed.cam[2]);
+    camera.rotation.set(pitch, yaw, 0);
+    gridHelper.position.set(EDO[0] + snap(ed.cam[0], 250), EDO[1] + ed.plane, EDO[2] + snap(ed.cam[2], 250));
+    camera.updateMatrixWorld();
+    ed.aim = edAim();
+    // preview what a click would place
+    const pc = ed.aim.at ? edNewPiece(ed.aim.at) : null;
+    const key = pc ? JSON.stringify(pc) : '';
+    if (key !== ed.previewKey) {
+      ed.previewKey = key;
+      if (ed.preview) { scene.remove(ed.preview); ed.preview.geometry.dispose(); ed.preview = null; }
+      if (pc) { ed.preview = new THREE.Mesh(facesToGeo(edFaces(pc)), previewMat); scene.add(ed.preview); }
+    }
+    if (ed.preview) ed.preview.visible = locked;
+    for (const li of edHud.querySelectorAll('li')) li.classList.toggle('on', li.dataset.t === ed.type);
+    const pr = ed.params[ed.type];
+    $('edinfo').textContent = ED_NAMES[ed.type] + ': ' + (pr.a ? pr.w + ' wide, ' + pr.l + ' long, ' + pr.a + '° faces, drops ' + pr.d : pr.w + ' × ' + pr.l + ', ' + pr.h + ' tall') +
+      ' · turned ' + ed.rot + '° · build height ' + ed.plane + ' · ' + ed.level.pieces.length + ' pieces';
+  }
+  function edKey(e) {
+    const pr = ed.params[ed.type];
+    const i = /^Digit[1-7]$/.test(e.code) ? +e.code.slice(5) - 1 : -1;
+    if (i >= 0) { ed.type = ED_TYPES[i]; return; }
+    if (e.code === 'KeyQ') ed.rot = (ed.rot + 15) % 360;
+    else if (e.code === 'KeyE') ed.rot = (ed.rot + 345) % 360;
+    else if (e.code === 'KeyR') { if (pr.a) pr.a = Math.min(80, pr.a + 5); else pr.h = Math.min(4096, pr.h + 16); }
+    else if (e.code === 'KeyF') { if (pr.a) pr.a = Math.max(35, pr.a - 5); else pr.h = Math.max(16, pr.h - 16); }
+    else if (e.code === 'BracketRight' && pr.a) pr.d = Math.min(4000, pr.d + 100);
+    else if (e.code === 'BracketLeft' && pr.a) pr.d = Math.max(-1000, pr.d - 100);
+    else if (e.code === 'KeyT') ed.plane += 64;
+    else if (e.code === 'KeyG') ed.plane -= 64;
+    else if (e.code === 'KeyZ') { const u = ed.undo.pop(); if (u) { ed.level = JSON.parse(u); edBuild(); toast('Undone'); } }
+    else if (e.code === 'KeyX') edDelete();
+    else if (e.code === 'Enter') edTest();
+  }
+  function edDelete() {
+    const h = ed.aim && ed.aim.hit;
+    if (!h) return;
+    edChange(() => { ed.level.pieces.splice(h.piece, 1); });
+    A.play('click');
+  }
+  window.addEventListener('keydown', (e) => {
+    if (!ed.on || !locked) return;
+    if (e.code === 'Tab') { e.preventDefault(); if (document.pointerLockElement) document.exitPointerLock(); return; }
+    if (!e.repeat || /^(KeyR|KeyF|BracketLeft|BracketRight|KeyT|KeyG)$/.test(e.code)) edKey(e);
+  });
+  window.addEventListener('mousedown', (e) => {
+    if (!ed.on || !locked) return;
+    e.preventDefault();
+    const a = ed.aim;
+    if (e.button === 0 && a && a.at) { const pc = edNewPiece(a.at); edChange(() => { ed.level.pieces.push(pc); }); A.play('land'); }
+    else if (e.button === 2) edDelete();
+    else if (e.button === 1 && a && a.hit) { const p = ed.level.pieces[a.hit.piece]; ed.type = p.t; ed.rot = p.r; Object.assign(ed.params[p.t], p.a ? { w: p.w, l: p.l, a: p.a, d: p.d } : { w: p.w, l: p.l, h: p.h }); toast('Copied ' + ED_NAMES[p.t]); }
+  });
+  window.addEventListener('contextmenu', (e) => { if (ed.on) e.preventDefault(); });
+  // Esc on the panel goes straight back to building (or to the test run)
+  window.addEventListener('keydown', (e) => {
+    if (e.code !== 'Escape' || edPanel.hidden || document.activeElement === $('ed-name')) return;
+    edPanel.hidden = true;
+    if (ed.on) requestLock(); else if (ed.testing) startPlay();
+  });
+  window.addEventListener('wheel', (e) => {
+    if (!ed.on || !locked) return;
+    const pr = ed.params[ed.type], d = e.deltaY < 0 ? 1 : -1;
+    if (e.shiftKey) pr.w = Math.max(16, Math.min(4096, pr.w + d * (pr.a ? 32 : 16)));
+    else pr.l = Math.max(16, Math.min(12000, pr.l + d * (pr.a ? 200 : 32)));
+  }, { passive: true });
+  $('m-editor').addEventListener('click', enterEditor);
+
   // ------------------------------------------------------------ boot
   goIdle();
   previewCourse(map.order[0]);
   showMenuState();
   if (location.hash === '#demo') game.demo = true; // headless screenshot mode
-  window.__strafe = { courses: map.courses, mats: MATS, lights: { hemi, sun }, setNight, player, game, keys, eff, faceInsets, practice: { set: setPractice, save: practiceSave, load: practiceLoad }, goCourse, place, attract, previewCourse, body, ghost, cosmetics, preview, step, modelChunks, renderer, setView: (y, p) => { yaw = y; pitch = p; } };
+  window.__strafe = { courses: map.courses, mats: MATS, lights: { hemi, sun }, setNight, player, game, keys, eff, faceInsets, practice: { set: setPractice, save: practiceSave, load: practiceLoad }, goCourse, place, attract, previewCourse, body, ghost, cosmetics, preview, step, modelChunks, renderer, setView: (y, p) => { yaw = y; pitch = p; }, editor: { ed, enter: enterEditor, test: edTest, back: edBack, code: edCode, decode: edDecode } };
   requestAnimationFrame((t) => { last = t; frame(t); });
 })();

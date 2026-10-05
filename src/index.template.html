@@ -169,6 +169,8 @@ body.complete #menu { display: none; }
               linear-gradient(to bottom, rgba(8,10,13,.55) 0%, rgba(8,10,13,0) 16%); }
 body.playing #menu { display: none; }
 body.padplay { cursor: none; }
+body.edmode #menu { display: none; }
+body.touch #m-editor { display: none; }
 .top { display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap; pointer-events: auto; }
 .mark { font-family: var(--display); font-weight: 800; font-style: italic; font-size: clamp(34px, 4.4vw, 52px); line-height: 1; letter-spacing: .02em; color: #fff; margin: 0; display: flex; align-items: center; gap: 12px; }
 .mark i { display: block; width: 12px; height: .8em; background: var(--red); transform: skewX(-14deg); }
@@ -362,6 +364,7 @@ table.controls { width: 100%; border-collapse: collapse; font-size: 14px; margin
       <button class="mbtn" id="m-play"><span>Play</span><small id="m-play-sub"></small></button>
       <button class="mbtn" id="m-tutorial"><span>Tutorial</span><small id="m-tut-sub"></small></button>
       <button class="mbtn" data-open="cosmetics" aria-expanded="false" aria-controls="drawer"><span>Cosmetics</span><small id="m-cos-sub"></small></button>
+      <button class="mbtn" id="m-editor"><span>Level editor</span><small>Build and share</small></button>
       <button class="mbtn" data-open="settings" aria-expanded="false" aria-controls="drawer"><span>Settings</span></button>
       <button class="mbtn" data-open="controls" aria-expanded="false" aria-controls="drawer"><span>Controls</span></button>
       <button class="mbtn" id="m-quit" hidden><span>Quit to title</span></button>
