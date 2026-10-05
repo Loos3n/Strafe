@@ -581,18 +581,21 @@
           plan.push({ t: 'pad', x, y, z0: z, z1: z - len, w, end: !!sg.end });
           z -= len;
         } else if (sg.t === 'bhop') {
-          const size = sg.size, h = size / 2;
+          // deep (or gap, the space between blocks): how long each block runs
+          // along the line. Small gaps forgive carrying a little too much speed
+          // (you skip a block instead of falling); width sets the aim
+          const size = sg.size, h = size / 2, hd = (sg.deep || (sg.gap ? sg.step - sg.gap : size)) / 2;
           for (let k = 0; k < sg.n; k++) {
             if (k) y += sg.dy || 0;
             x += sg.drift || 0;
             const lat = sg.zig ? (k % 2 ? sg.zig : -sg.zig) : sg.lat ? sg.lat[k % sg.lat.length] : 0;
-            const cz = z - (k === 0 ? (sg.first || sg.step) - h : sg.step) - (k === 0 ? 0 : 0);
+            const cz = z - (k === 0 ? (sg.first || sg.step) - hd : sg.step);
             z = cz;
-            box([x + lat - h, y - 60, cz - h], [x + lat + h, y, cz + h], col, { kind: 'block' });
-            plan.push({ t: 'block', x: x + lat, y, z0: cz + h, z1: cz - h, cz, w: size });
+            box([x + lat - h, y - 60, cz - hd], [x + lat + h, y, cz + hd], col, { kind: 'block' });
+            plan.push({ t: 'block', x: x + lat, y, z0: cz + hd, z1: cz - hd, cz, w: size, d: hd * 2 });
             lo = Math.min(lo, y);
           }
-          z -= h;
+          z -= hd;
         } else if (sg.t === 'surf') {
           const face = FACES[sg.face || 60], [W, H] = face;
           // from a ramp: the next one starts lower and further on; from ground: hop down onto it
@@ -626,10 +629,10 @@
       desc: 'Gauntlet 1. Hop a short line of wide blocks, drop onto a gentle ramp, land and hop to the finish.',
       segs: [
         { t: 'pad', len: 600 },
-        { t: 'bhop', n: 7, size: 176, step: 250 },
+        { t: 'bhop', gap: 44, n: 7, size: 176, step: 250 },
         { t: 'surf', face: 55, len: 3000, drop: 400 },
         { t: 'pad', len: 3000, w: 1400, cp: true },
-        { t: 'bhop', n: 7, size: 176, step: 250, lat: [0, 40, -40] },
+        { t: 'bhop', gap: 44, n: 7, size: 176, step: 250, lat: [0, 40, -40] },
         { t: 'pad', gap: 120, len: 600, end: true },
       ] });
     gauntlet('g2', 107000, 6500, {
@@ -637,11 +640,11 @@
       desc: 'Gauntlet 2. Weaving blocks into a surf ramp, a sideways transfer to a second ramp, then a climbing block line.',
       segs: [
         { t: 'pad', len: 600 },
-        { t: 'bhop', n: 9, size: 150, step: 260, lat: [0, 70, -70, 0, 60, -60] },
+        { t: 'bhop', gap: 60, n: 9, size: 150, step: 260, lat: [0, 70, -70, 0, 60, -60] },
         { t: 'surf', face: 60, len: 3400, drop: 400 },
         { t: 'surf', face: 60, len: 3200, drop: 400, dx: 300 },
         { t: 'pad', len: 3000, w: 1400, cp: true },
-        { t: 'bhop', n: 9, size: 136, step: 265, dy: 20, lat: [0, 60, -60] },
+        { t: 'bhop', gap: 56, n: 9, size: 136, step: 265, lat: [0, 60, -60] },
         { t: 'pad', gap: 120, len: 600, end: true },
       ] });
     gauntlet('g3', 118000, 7000, {
@@ -651,11 +654,11 @@
         { t: 'pad', len: 600 },
         { t: 'surf', face: 60, len: 3400, drop: 450, fall: 200 },
         { t: 'pad', len: 3000, w: 1400, cp: true },
-        { t: 'bhop', n: 11, size: 128, step: 275, zig: 55, drift: 30 },
+        { t: 'bhop', gap: 56, n: 11, size: 128, step: 275, zig: 55, drift: 30 },
         { t: 'surf', face: 60, len: 3200, drop: 450 },
         { t: 'surf', face: 65, len: 3200, drop: 400, dx: -380 },
         { t: 'pad', len: 3000, w: 1400, cp: true },
-        { t: 'bhop', n: 10, size: 120, step: 290, dy: -30, lat: [0, 70, -70, 0] },
+        { t: 'bhop', gap: 62, n: 10, size: 108, step: 290, dy: -30, zig: 80 },
         { t: 'pad', gap: 120, len: 600, end: true },
       ] });
     gauntlet('g4', 129000, 8000, {
@@ -663,11 +666,11 @@
       desc: 'Gauntlet 4. Small blocks straight into a steep ramp, a climbing transfer, then hop off the blocks into two more ramps.',
       segs: [
         { t: 'pad', len: 600 },
-        { t: 'bhop', n: 10, size: 120, step: 285, lat: [0, 80, -80, 40, -40] },
+        { t: 'bhop', gap: 62, n: 10, size: 120, step: 285, lat: [0, 80, -80, 40, -40] },
         { t: 'surf', face: 65, len: 3400, drop: 500 },
         { t: 'surf', face: 60, len: 3000, drop: -150, dx: 420 },
         { t: 'pad', len: 3000, w: 1400, cp: true },
-        { t: 'bhop', n: 12, size: 112, step: 290, zig: 95 },
+        { t: 'bhop', gap: 68, n: 12, size: 112, step: 290, zig: 95 },
         { t: 'surf', face: 55, len: 3200, drop: 450 },
         { t: 'surf', face: 65, len: 3200, drop: 450, dx: -420 },
         { t: 'pad', len: 3000, w: 1400, end: true },
@@ -680,10 +683,10 @@
         { t: 'surf', face: 65, len: 2600, drop: 900, fall: 200 },
         { t: 'surf', face: 60, len: 3400, drop: 450, dx: 460 },
         { t: 'pad', len: 3000, w: 1400 },
-        { t: 'bhop', n: 12, size: 104, step: 295, zig: 90, drift: -35 },
+        { t: 'bhop', gap: 68, n: 12, size: 104, step: 295, zig: 90, drift: -35 },
         { t: 'surf', face: 65, len: 3200, drop: 500 },
         { t: 'pad', len: 3000, w: 1400, cp: true },
-        { t: 'bhop', n: 13, size: 104, step: 290, dy: 22, zig: 100 },
+        { t: 'bhop', gap: 68, n: 11, size: 104, step: 290, dy: 22, zig: 85 },
         { t: 'surf', face: 60, len: 3200, drop: 450 },
         { t: 'surf', face: 65, len: 3000, drop: -180, dx: -460 },
         { t: 'pad', len: 3000, w: 1400, end: true },
@@ -693,16 +696,16 @@
       desc: 'Gauntlet 6. The longest and hardest: the smallest blocks, steep ramps, transfers both ways, and one checkpoint at the halfway mark.',
       segs: [
         { t: 'pad', len: 600 },
-        { t: 'bhop', n: 12, size: 104, step: 295, lat: [0, 100, -100, 50, -50] },
+        { t: 'bhop', gap: 74, n: 12, size: 104, step: 295, lat: [0, 80, -80, 40, -40] },
         { t: 'surf', face: 65, len: 3200, drop: 600 },
         { t: 'surf', face: 65, len: 3000, drop: 450, dx: 500 },
         { t: 'surf', face: 60, len: 3000, drop: -200, dx: -500 },
         { t: 'pad', len: 3000, w: 1400 },
-        { t: 'bhop', n: 14, size: 96, step: 300, zig: 105, drift: 30 },
+        { t: 'bhop', gap: 74, n: 14, size: 96, step: 300, zig: 85, drift: 30 },
         { t: 'surf', face: 65, len: 3000, drop: 500 },
         { t: 'surf', face: 65, len: 3000, drop: 500, dx: 480 },
         { t: 'pad', len: 3000, w: 1400, cp: true },
-        { t: 'bhop', n: 14, size: 96, step: 310, dy: -30, zig: 110 },
+        { t: 'bhop', gap: 74, n: 12, size: 96, step: 310, dy: 15, zig: 95 },
         { t: 'surf', face: 65, len: 2600, drop: 900 },
         { t: 'pad', len: 3000, w: 1400, end: true },
       ] });
@@ -801,18 +804,18 @@
           L.items.push({ t: 'wall', x, y, side: s, wx, z0: z, z1: z - sg.gap });
           z -= sg.gap;
         } else if (sg.t === 'bhop') {
-          const size = sg.size, h = size / 2;
+          const size = sg.size, h = size / 2, hd = (sg.deep || (sg.gap ? sg.step - sg.gap : size)) / 2;
           for (let k = 0; k < sg.n; k++) {
             if (k) y += sg.dy || 0;
             x += sg.drift || 0;
             const lat = sg.zig ? (k % 2 ? sg.zig : -sg.zig) : sg.lat ? sg.lat[k % sg.lat.length] : 0;
-            const cz = z - (k === 0 ? (sg.first || sg.step) - h : sg.step);
+            const cz = z - (k === 0 ? (sg.first || sg.step) - hd : sg.step);
             z = cz;
-            lbox(x + lat - h, x + lat + h, y - 60, y, cz - h, cz + h, solidProps({ color: col, kind: 'block' }));
-            L.items.push({ t: 'block', x: x + lat, y, z0: cz + h, z1: cz - h, cz, w: size });
+            lbox(x + lat - h, x + lat + h, y - 60, y, cz - hd, cz + hd, solidProps({ color: col, kind: 'block' }));
+            L.items.push({ t: 'block', x: x + lat, y, z0: cz + hd, z1: cz - hd, cz, w: size, d: hd * 2 });
             lo = Math.min(lo, y);
           }
-          z -= h;
+          z -= hd;
         } else if (sg.t === 'curve') {
           // a ramp that bends a quarter turn (dir 1 right, -1 left) on radius R.
           // Built from short straight pieces sharing their ends, so the surface
@@ -973,14 +976,14 @@
       desc: 'Four block lines over a lava street with widening gaps, turning on islands, then speed lanes and a long jump.',
       segs: [
         { t: 'pad', len: 500, w: 500 },
-        { t: 'bhop', n: 10, size: 160, step: 240 },
+        { t: 'bhop', gap: 44, n: 10, size: 160, step: 240 },
         { t: 'pad', gap: 130, len: 400, w: 400, cp: true }, { t: 'turn', dir: 1 },
-        { t: 'bhop', n: 10, size: 150, step: 256, lat: [0, 70, -70, 0, 100, -60] },
+        { t: 'bhop', gap: 44, n: 10, size: 150, step: 256, lat: [0, 70, -70, 0, 100, -60] },
         { t: 'pad', gap: 130, len: 400, w: 400, cp: true }, { t: 'turn', dir: -1 },
-        { t: 'bhop', n: 10, size: 144, step: 272, lat: [0, 60, -60, 40, -110, 120] },
+        { t: 'bhop', gap: 44, n: 10, size: 144, step: 272, lat: [0, 60, -60, 40, -110, 120] },
         { t: 'lane', gap: 120, len: 2400, w: 256 },
         { t: 'pad', gap: 400, rise: -300, len: 700, w: 600, cp: true }, { t: 'turn', dir: 1 },
-        { t: 'bhop', n: 10, size: 136, step: 288, lat: [0, 90, -90, 60, -60, 0] },
+        { t: 'bhop', gap: 44, n: 10, size: 136, step: 288, lat: [0, 90, -90, 60, -60, 0] },
         { t: 'lane', gap: 120, len: 3000, w: 256 },
         { t: 'pad', gap: 380, rise: -400, len: 860, w: 768, end: true },
       ] });
@@ -1018,15 +1021,15 @@
       desc: 'Five block lines that climb and fall over the lava street, turning on corner islands. Steer the corners in the air.',
       segs: [
         { t: 'pad', len: 500, w: 500 },
-        { t: 'bhop', n: 10, size: 128, step: 265, dy: 24 },
+        { t: 'bhop', gap: 50, n: 7, size: 136, step: 265, dy: 14 },
         { t: 'pad', gap: 130, len: 360, w: 360, cp: true }, { t: 'turn', dir: 1 },
-        { t: 'bhop', n: 10, size: 128, step: 280, dy: -30, zig: 60 },
+        { t: 'bhop', gap: 74, n: 10, size: 112, step: 280, dy: -10, zig: 100 },
         { t: 'pad', gap: 130, len: 360, w: 360 }, { t: 'turn', dir: -1 },
-        { t: 'bhop', n: 12, size: 120, step: 270, dy: 20, lat: [0, 70, -70, 0] },
+        { t: 'bhop', gap: 62, n: 8, size: 120, step: 270, dy: 14, lat: [0, 70, -70, 0] },
         { t: 'pad', gap: 130, len: 360, w: 360, cp: true }, { t: 'turn', dir: -1 },
-        { t: 'bhop', n: 10, size: 120, step: 300, dy: -45, lat: [0, 60, -60] },
+        { t: 'bhop', gap: 74, n: 10, size: 112, step: 300, dy: -15, lat: [0, 90, -90] },
         { t: 'pad', gap: 130, len: 360, w: 360 }, { t: 'turn', dir: 1 },
-        { t: 'bhop', n: 12, size: 112, step: 280, zig: 75 },
+        { t: 'bhop', gap: 70, n: 12, size: 112, step: 280, zig: 75 },
         { t: 'pad', gap: 130, len: 500, w: 500, end: true },
       ] });
 
@@ -1043,7 +1046,7 @@
         { t: 'surf', face: 60, len: 3200, drop: 400 },
         { t: 'surf', face: 65, len: 3200, drop: 400, dx: 550, gap: 1200 },
         { t: 'pad', len: 3000, w: 1400, cp: true }, { t: 'turn', dir: 1 },
-        { t: 'bhop', n: 8, size: 150, step: 275, lat: [0, 80, -80, 0] },
+        { t: 'bhop', gap: 80, n: 8, size: 128, step: 275, lat: [0, 110, -110, 50, -50] },
         { t: 'pad', gap: 130, len: 800, w: 900 },
         { t: 'wall', side: 1, len: 700, gap: 550 },
         { t: 'pad', rise: 120, len: 1100, w: 1100, lip: true, cp: true }, { t: 'turn', dir: -1 },
@@ -1051,7 +1054,7 @@
         { t: 'surf', face: 60, len: 3400, drop: 450 },
         { t: 'surf', face: 65, len: 3200, drop: 400, dx: -450, gap: 1000 },
         { t: 'pad', len: 3000, w: 1400, cp: true },
-        { t: 'bhop', n: 8, size: 136, step: 285, zig: 70 },
+        { t: 'bhop', gap: 80, n: 8, size: 120, step: 285, zig: 100 },
         { t: 'pad', gap: 130, len: 800, w: 900 },
         { t: 'wall', side: -1, len: 700, gap: 550 },
         { t: 'pad', rise: 120, len: 900, w: 900, lip: true, end: true },
@@ -1070,12 +1073,12 @@
       desc: 'Night City 1. Hop a block line, drop onto a ramp, then ride a ramp that bends right round a tower to a lit roof.',
       segs: [
         { t: 'pad', len: 600 },
-        { t: 'bhop', n: 7, size: 176, step: 250 },
+        { t: 'bhop', gap: 50, n: 7, size: 176, step: 250 },
         { t: 'pad', gap: 120, len: 600, w: 700 },
         { t: 'surf', face: 55, len: 3000, drop: 400 },
         { t: 'curve', dir: 1, face: 55, R: 4200, drop: 700, fall: 700, gap: 900 },
         { t: 'pad', len: 3000, w: 1400, cp: true },
-        { t: 'bhop', n: 7, size: 160, step: 255, lat: [0, 50, -50] },
+        { t: 'bhop', gap: 60, n: 7, size: 160, step: 255, lat: [0, 50, -50] },
         { t: 'pad', gap: 120, len: 600, end: true },
       ] });
 
@@ -1089,7 +1092,7 @@
         { t: 'curve', dir: -1, face: 60, R: 3800, drop: 600 },
         { t: 'surf', face: 60, len: 3200, drop: 400, dx: -350, gap: 900, fall: 600 },
         { t: 'pad', len: 3000, w: 1400, cp: true }, { t: 'turn', dir: 1 },
-        { t: 'bhop', n: 9, size: 144, step: 265, lat: [0, 70, -70, 0] },
+        { t: 'bhop', gap: 56, n: 9, size: 144, step: 265, lat: [0, 70, -70, 0] },
         { t: 'pad', gap: 130, len: 800, w: 900 },
         { t: 'wall', side: 1, len: 700, gap: 550 },
         { t: 'pad', rise: 120, len: 900, w: 900, lip: true, end: true },
@@ -1100,12 +1103,12 @@
       desc: 'Night City 3. Two bends that turn opposite ways, with a jump across between them, then zigzag blocks and a wallrun.',
       segs: [
         { t: 'pad', len: 600 },
-        { t: 'bhop', n: 8, size: 150, step: 260, lat: [0, 60, -60] },
+        { t: 'bhop', gap: 64, n: 8, size: 150, step: 260, zig: 60 },
         { t: 'pad', gap: 120, len: 600, w: 700 },
         { t: 'curve', dir: 1, face: 60, R: 3600, drop: 600 },
         { t: 'curve', dir: -1, face: 60, R: 3600, drop: 600, gap: 900, fall: 700, dx: 400 },
         { t: 'pad', len: 3000, w: 1400, cp: true },
-        { t: 'bhop', n: 9, size: 136, step: 270, zig: 60 },
+        { t: 'bhop', gap: 62, n: 9, size: 136, step: 270, zig: 60 },
         { t: 'pad', gap: 130, len: 800, w: 900 },
         { t: 'wall', side: -1, len: 700, gap: 550 },
         { t: 'pad', rise: 120, len: 900, w: 900, lip: true, end: true },
@@ -1121,7 +1124,7 @@
         { t: 'curve', dir: -1, face: 60, R: 3000, drop: 450, join: true },
         { t: 'surf', face: 65, len: 3000, drop: 400, dx: -400, gap: 900, fall: 600 },
         { t: 'pad', len: 3000, w: 1400, cp: true },
-        { t: 'bhop', n: 10, size: 128, step: 280, dy: 20, lat: [0, 70, -70] },
+        { t: 'bhop', gap: 70, n: 10, size: 120, step: 280, dy: 6, zig: 90 },
         { t: 'pad', gap: 130, len: 700, w: 800 },
         { t: 'slide', len: 1500, drop: 400, base: -4000 },
         { t: 'curve', dir: 1, face: 65, R: 3600, drop: 700 },
@@ -1133,13 +1136,13 @@
       desc: 'Night City 5. Small zigzag blocks straight into a hairpin, falling blocks, a wallrun, then a slide into two bends that turn opposite ways.',
       segs: [
         { t: 'pad', len: 600 },
-        { t: 'bhop', n: 11, size: 120, step: 285, zig: 80 },
+        { t: 'bhop', gap: 80, n: 11, size: 112, step: 285, zig: 100 },
         { t: 'pad', gap: 120, len: 500, w: 600 },
         { t: 'curve', dir: 1, face: 65, R: 3200, drop: 500 },
         { t: 'curve', dir: 1, face: 65, R: 3200, drop: 500, join: true },
         { t: 'surf', face: 65, len: 3000, drop: 450, dx: 420, gap: 900, fall: 600 },
         { t: 'pad', len: 3000, w: 1400, cp: true },
-        { t: 'bhop', n: 12, size: 112, step: 290, dy: -25, lat: [0, 80, -80, 40, -40] },
+        { t: 'bhop', gap: 68, n: 9, size: 112, step: 290, dy: 15, lat: [0, 80, -80, 40, -40] },
         { t: 'pad', gap: 130, len: 800, w: 900 },
         { t: 'wall', side: 1, len: 700, gap: 550 },
         { t: 'pad', rise: 120, len: 1100, w: 1100, lip: true },
@@ -1154,14 +1157,14 @@
       desc: 'Night City 6. The longest: the smallest blocks, a hairpin into an opposite bend, a wallrun, then a second hairpin into a climbing ramp. One checkpoint.',
       segs: [
         { t: 'pad', len: 600 },
-        { t: 'bhop', n: 12, size: 104, step: 295, lat: [0, 100, -100, 50, -50] },
+        { t: 'bhop', gap: 74, n: 12, size: 104, step: 295, lat: [0, 100, -100, 50, -50] },
         { t: 'pad', gap: 120, len: 500, w: 600 },
         { t: 'slide', len: 1500, drop: 400, base: -4000 },
         { t: 'curve', dir: -1, face: 65, R: 3000, drop: 500 },
         { t: 'curve', dir: -1, face: 65, R: 3000, drop: 500, join: true },
         { t: 'curve', dir: 1, face: 65, R: 3000, drop: 500, gap: 900, fall: 700, dx: -400 },
         { t: 'pad', len: 3000, w: 1400, cp: true },
-        { t: 'bhop', n: 14, size: 96, step: 300, zig: 105 },
+        { t: 'bhop', gap: 74, n: 14, size: 96, step: 300, zig: 105 },
         { t: 'pad', gap: 130, len: 800, w: 900 },
         { t: 'wall', side: -1, len: 700, gap: 550 },
         { t: 'pad', rise: 120, len: 1100, w: 1100, lip: true },

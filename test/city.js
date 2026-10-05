@@ -2,6 +2,7 @@
 // corners. Each plan works in the current leg's frame: u across (right +),
 // v forward. Usage: node test/city.js [level] [checkpoint]   (V=50 to trace)
 require('../src/physics.js'); require('../src/map.js');
+const noisy = require('./noise.js')();
 const P = globalThis.StrafePhysics; const { world, courses } = globalThis.StrafeMap.buildMap(P);
 const DIRS = [[0, -1], [1, 0], [0, 1], [-1, 0]];
 const frame = ({ ox, oz, h }) => {
@@ -108,6 +109,7 @@ function run(name, cp) {
     }
     const cmd = { forward: 1, side: c.side || 0, jump: !!c.jump, duck: !!c.duck, yaw, pitch: 0 };
     if (process.env.OUT) (run.cmds || (run.cmds = [])).push(cmd);
+    noisy(cmd);
     p.tick(cmd, 0.01);
     p.prevJump = cmd.jump;
     for (const e of p.events) if (e.type === 'wallrun') p.wallSide = e.side;

@@ -42,7 +42,7 @@
     { course: 'canyon', title: 'The Cut', stars: [55, 80],
       brief: 'Mercer: "The Blues locked down downtown. We go around, down the storm cut on the east side. Carve the banks and don\'t stop until you hit the bottom."',
       debrief: 'Juno takes the drive and gives you a name for the first time: Director Vale, head of the Water Authority. "He sold the reservoir and faked the audits. These drives prove it."' },
-    { course: 'stairway', title: 'Stairwell', stars: [54, 78],
+    { course: 'stairway', title: 'Stairwell', stars: [48, 70],
       brief: 'Mercer: "Juno\'s safe house is compromised. Her backup copy is at the top of the old stair blocks. Climb, turn, and don\'t miss a step."',
       debrief: 'The backup is still there. So is a note, in neat handwriting: "We know who you are, runner." Mercer: "Then we finish this fast."' },
     { course: 'freerun', title: 'Heat', stars: [56, 80],
@@ -64,9 +64,10 @@
   // Levels whose layout changed enough that old times no longer compare. Each
   // reset drops their times and ghosts once; stars already earned stay. The
   // suffix is the leaderboard field they post under now.
-  const REBUILT = { surf: '_v3', bhop: '_v2', canyon: '_v3', stairway: '_v2', crossover: '_v3', cascade: '_v6' };
+  const REBUILT = { surf: '_v3', bhop: '_v3', canyon: '_v3', stairway: '_v3', crossover: '_v4', cascade: '_v6', g1: '_v2', g2: '_v2', g3: '_v2', g4: '_v2', g5: '_v2', g6: '_v2', n1: '_v2', n2: '_v2', n3: '_v2', n4: '_v2', n5: '_v2', n6: '_v2' };
   const RESETS = [['strafe.rebuild.v2', ['surf', 'bhop', 'canyon', 'stairway', 'crossover']],
-    ['strafe.rebuild.v3', ['surf', 'canyon', 'crossover', 'cascade']], ['strafe.rebuild.v4', ['cascade']], ['strafe.rebuild.v5', ['cascade']], ['strafe.rebuild.v6', ['cascade']]];
+    ['strafe.rebuild.v3', ['surf', 'canyon', 'crossover', 'cascade']], ['strafe.rebuild.v4', ['cascade']], ['strafe.rebuild.v5', ['cascade']], ['strafe.rebuild.v6', ['cascade']],
+    ['strafe.rebuild.v7', ['bhop', 'stairway', 'crossover', 'g1', 'g2', 'g3', 'g4', 'g5', 'g6', 'n1', 'n2', 'n3', 'n4', 'n5', 'n6']]];
   for (const [flag, list] of RESETS) {
     if (load(flag)) continue;
     for (const c of list) {

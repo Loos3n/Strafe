@@ -1,6 +1,7 @@
 // Bot runs over the three advanced levels (Cascade, Spire, Freerun).
 // Usage: node test/advanced.js [level] [checkpoint]
 require('../src/physics.js'); require('../src/map.js');
+const noisy = require('./noise.js')();
 const P = globalThis.StrafePhysics; const { world, courses } = globalThis.StrafeMap.buildMap(P);
 const wrap = a => Math.atan2(Math.sin(a), Math.cos(a));
 const face = (p) => {
@@ -144,6 +145,7 @@ for (const name of Object.keys(brains)) {
   let i = 0;
   for (; i < 20000; i++) {
     const cmd = Object.assign({ forward: 0, side: 0, jump: false, duck: false, yaw: 0, pitch: 0 }, brain(p, i));
+    noisy(cmd);
     p.tick(cmd, 0.01);
     p.prevJump = cmd.jump;
     if (process.env.V && i % (+process.env.V || 50) === 0) console.log(i, p.pos.map(v => v | 0).join(','), 'hs', p.hspeed() | 0, p.onGround ? 'G' : '', p.wallrun ? 'WR' : '', p.climb ? 'CL' : '', p.slide ? 'SL' : '', p.events.map(e => e.type).join(' '));

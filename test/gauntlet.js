@@ -2,6 +2,7 @@
 // bhop blocks and ramps in order along -Z) and rides or hops each piece.
 // Usage: node test/gauntlet.js [level] [checkpoint]   V=50 for a trace
 require('../src/physics.js'); require('../src/map.js');
+const noisy = require('./noise.js')();
 const P = globalThis.StrafePhysics; const { world, courses, gauntlet } = globalThis.StrafeMap.buildMap(P);
 const wrap = a => Math.atan2(Math.sin(a), Math.cos(a));
 const face = (p) => {
@@ -96,6 +97,7 @@ for (const name of gauntlet) {
   const seen = []; let res = 'timeout';
   for (let i = 0; i < 30000; i++) {
     const cmd = Object.assign({ forward: 0, side: 0, jump: false, duck: false, yaw: 0, pitch: 0 }, b(p, i));
+    noisy(cmd);
     p.tick(cmd, 0.01);
     if (process.env.V && i % +process.env.V === 0) console.log(i, p.pos.map(v => v | 0).join(','), 'hs', p.hspeed() | 0, p.onGround ? 'G' : '', JSON.stringify(cmd));
     p.events.length = 0;

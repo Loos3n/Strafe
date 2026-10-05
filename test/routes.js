@@ -4,6 +4,7 @@
 // piece is ahead: pads, block lines, speed lanes, ramps, banks, slides and
 // wallrun gaps, and the Night City's curved ramps. Usage: node test/routes.js [level] [checkpoint]   V=50 traces
 require('../src/physics.js'); require('../src/map.js');
+const noisy = require('./noise.js')();
 const P = globalThis.StrafePhysics; const { world, courses } = globalThis.StrafeMap.buildMap(P);
 const DIRS = [[0, -1], [1, 0], [0, 1], [-1, 0]];
 const wrap = a => Math.atan2(Math.sin(a), Math.cos(a));
@@ -90,7 +91,7 @@ function brain(F, st) {
       const ln = here && here.t === 'lane' ? here : over || t;
       const nxt = plan[plan.indexOf(ln) + 1];
       const hop = true;
-      if (!p.onGround && z > ln.z1 + 150 && q.hspeed < 560) return Object.assign(strafeTo(q, i, ln.x, Math.max(ln.z1 - 200, z - 700)), { jump: hop });
+      if (!p.onGround && z > ln.z1 + 150 && (q.hspeed < 560 || Math.abs(q.pos[0] - ln.x) > 40)) return Object.assign(strafeTo(q, i, ln.x, Math.max(ln.z1 - 200, z - 700)), { jump: hop });
       if (!p.onGround) return { forward: 1, yaw: Math.atan2(-(ln.x - q.pos[0]), -(ln.z1 - 400 - z)), jump: hop };
       return { forward: 1, yaw: Math.atan2(-(ln.x - q.pos[0]), 400), jump: hop };
     }
@@ -169,6 +170,7 @@ function run(name, cpArg) {
       }
     } else c0 = brains[k](p, q, n, i);
     const cmd = { forward: c0.forward || 0, side: c0.side || 0, jump: !!c0.jump, duck: !!c0.duck, yaw: (c0.yaw === undefined ? 0 : c0.yaw) + F.yaw, pitch: 0 };
+    noisy(cmd);
     p.tick(cmd, 0.01);
     p.prevJump = cmd.jump;
     if (process.env.V && i % +process.env.V === 0) console.log(i, 'leg', k, 'x', lx | 0, 'y', p.pos[1] | 0, 'z', lz | 0, 'hs', p.hspeed() | 0, p.onGround ? 'G' : '', p.wallrun ? 'WR' : '', p.slide ? 'SL' : '', p.mantle ? 'MA' : '', p.climb ? 'CL' : '', p.events.map(e => e.type).join(' '));
