@@ -7018,12 +7018,14 @@ window.STRAFE_ASSETS = {"city":"Z2xURgIAAABU+ggAYFIAAEpTT057ImFzc2V0Ijp7ImdlbmVy
   // ------------------------------------------------------------ settings
   const SETTINGS_KEY = 'strafe.settings.v1';
   const BEST_KEY = 'strafe.best.v1';
+  // phones and tablets get touch controls; the desktop app and mouse play never do (?touch=1 forces it for testing)
+  const TOUCH = /[?&]touch=1/.test(location.search) || (!/Electron/.test(navigator.userAgent) && navigator.maxTouchPoints > 0 && matchMedia('(pointer: coarse)').matches);
   const settings = Object.assign({
     sens: 2.0, fov: 90, airaccelerate: 150, autohop: true,
     fovKick: true, shadows: true, bob: true, keys: true, body: true, ghost: true,
     speedLines: true, landKick: true, scale: 100, fps: false, strafeMeter: true,
     master: 80, music: 50, sfx: 80,
-  }, load(SETTINGS_KEY) || {});
+  }, TOUCH ? { lookSens: 1, autoStrafe: true, scale: 70, shadows: false } : {}, load(SETTINGS_KEY) || {});
   const best = load(BEST_KEY) || {};
   // ------------------------------------------------------------ story
   // A short courier campaign over the existing levels. Each job has a
@@ -8001,6 +8003,7 @@ window.STRAFE_ASSETS = {"city":"Z2xURgIAAABU+ggAYFIAAEpTT057ImFzc2V0Ijp7ImdlbmVy
   });
 
   function requestLock() {
+    if (TOUCH) { touchLock(true); return; }
     try {
       const r = canvas.requestPointerLock({ unadjustedMovement: true });
       if (r && r.catch) r.catch(() => { try { canvas.requestPointerLock(); } catch (e) { /* unsupported */ } });
@@ -8024,11 +8027,155 @@ window.STRAFE_ASSETS = {"city":"Z2xURgIAAABU+ggAYFIAAEpTT057ImFzc2V0Ijp7ImdlbmVy
       if (!wheelPhase) { jump = true; wheelPhase = true; }
       else { wheelPhase = false; wheelJumps--; }
     }
+    if (TOUCH) return touchCmd(jump);
     return {
       forward: (down('forward') ? 1 : 0) - (down('back') ? 1 : 0),
       side: (down('right') ? 1 : 0) - (down('left') ? 1 : 0),
       jump, duck: down('duck'), yaw, pitch,
     };
+  }
+
+  // ------------------------------------------------------------ touch
+  // Only built when TOUCH is set. Left thumb: a stick that appears where you
+  // press. Right thumb: drag anywhere to look, or hold Jump and drag to look
+  // while hopping. Crouch toggles. Auto strafe presses A or D in the air to
+  // match the way you swipe, the way strafing works with a mouse.
+  const touch = { fwd: 0, side: 0, jump: false, duck: false, lastYaw: 0, turn: 0 };
+  function touchCmd(jump) {
+    const dy = Math.atan2(Math.sin(yaw - touch.lastYaw), Math.cos(yaw - touch.lastYaw));
+    touch.lastYaw = yaw;
+    touch.turn = touch.turn * 0.6 + dy * 0.4;
+    let forward = touch.fwd + (down('forward') ? 1 : 0) - (down('back') ? 1 : 0);
+    let side = touch.side + (down('right') ? 1 : 0) - (down('left') ? 1 : 0);
+    if (settings.autoStrafe && !player.onGround && Math.abs(touch.turn) > 0.0015 && touch.side === 0) { side = touch.turn > 0 ? -1 : 1; forward = 0; }
+    return {
+      forward: Math.max(-1, Math.min(1, forward)), side: Math.max(-1, Math.min(1, side)),
+      jump: jump || touch.jump, duck: down('duck') || touch.duck, yaw, pitch,
+    };
+  }
+  function touchLock(on) {
+    locked = on;
+    document.body.classList.toggle('playing', on);
+    touch.fwd = touch.side = 0; touch.jump = false; touch.lastYaw = yaw; touch.turn = 0;
+    if (on) {
+      const el = document.documentElement, fs = el.requestFullscreen || el.webkitRequestFullscreen;
+      if (fs && !document.fullscreenElement) {
+        try { const r = fs.call(el, { navigationUI: 'hide' }); r && r.then(() => screen.orientation && screen.orientation.lock && screen.orientation.lock('landscape').catch(() => {})).catch(() => {}); } catch (e) { /* not allowed here */ }
+      }
+    } else {
+      keys.clear();
+      touch.duck = false;
+      showMenuState();
+    }
+    touchUI && touchUI.sync();
+  }
+  const touchUI = TOUCH ? buildTouch() : null;
+  function buildTouch() {
+    const meta = document.createElement('meta');
+    meta.name = 'viewport'; meta.content = 'width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover';
+    document.head.appendChild(meta);
+    document.body.classList.add('touch');
+    const css = document.createElement('style');
+    css.textContent = `
+body.touch { touch-action: none; -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; overscroll-behavior: none; }
+#touch { position: fixed; inset: 0; z-index: 40; display: none; }
+body.touch.playing:not(.complete) #touch { display: block; }
+#t-pad { position: absolute; inset: 0; touch-action: none; }
+#t-stick { position: absolute; width: 130px; height: 130px; margin: -65px 0 0 -65px; border-radius: 50%; border: 2px solid rgba(255,255,255,.35); background: rgba(0,0,0,.18); pointer-events: none; opacity: .0; transition: opacity .15s; }
+#t-stick.on { opacity: 1; }
+#t-knob { position: absolute; left: 50%; top: 50%; width: 56px; height: 56px; margin: -28px 0 0 -28px; border-radius: 50%; background: rgba(255,255,255,.55); }
+#t-hint { position: absolute; left: max(18px, env(safe-area-inset-left)); bottom: 22px; font: 600 12px/1.3 Barlow, sans-serif; color: rgba(255,255,255,.55); pointer-events: none; }
+.t-btn { position: absolute; border-radius: 50%; border: 2px solid rgba(255,255,255,.45); background: rgba(10,14,18,.38); color: #fff;
+  font: 700 14px/1 'Barlow Condensed', sans-serif; letter-spacing: .06em; text-transform: uppercase; touch-action: none; display: grid; place-items: center; padding: 0; }
+.t-btn.on { background: rgba(255,255,255,.75); color: #15191d; }
+#t-jump { width: 104px; height: 104px; right: max(28px, env(safe-area-inset-right)); bottom: 34px; }
+#t-duck { width: 70px; height: 70px; font-size: 12px; right: calc(max(28px, env(safe-area-inset-right)) + 118px); bottom: 26px; }
+#t-bar { position: absolute; top: max(10px, env(safe-area-inset-top)); right: max(12px, env(safe-area-inset-right)); display: flex; gap: 8px; }
+#t-bar .t-btn { position: static; width: 46px; height: 46px; border-radius: 12px; font-size: 12px; }
+#t-rotate { position: fixed; inset: 0; z-index: 60; display: none; place-items: center; background: #0d1114; color: #f6f6f3; font: 700 22px/1.3 'Barlow Condensed', sans-serif; text-align: center; padding: 24px; }
+@media (orientation: portrait) { body.touch.playing #t-rotate { display: grid; } }
+body.touch #help, body.touch #keys, #t-hint { display: none; }
+body.touch #tut { zoom: .72; }
+@media (max-height: 560px) { body.touch #menu, body.touch #drawer, body.touch #complete { zoom: .62; } }
+body.touch #menu button, body.touch #drawer button { min-height: 40px; }
+`;
+    document.head.appendChild(css);
+    const root = document.createElement('div');
+    root.id = 'touch';
+    root.innerHTML = '<div id="t-pad"></div><div id="t-stick"><div id="t-knob"></div></div>' +
+      '<div id="t-hint">Left: move · Right: look · Hold Jump and drag to steer</div>' +
+      '<button class="t-btn" id="t-duck" aria-label="Crouch">Crouch</button><button class="t-btn" id="t-jump" aria-label="Jump">Jump</button>' +
+      '<div id="t-bar"><button class="t-btn" data-k="turn" aria-label="Quick turn">180</button><button class="t-btn" data-k="cp" aria-label="Back to checkpoint">CP</button>' +
+      '<button class="t-btn" data-k="restart" aria-label="Restart">Reset</button><button class="t-btn" data-k="pause" aria-label="Pause">II</button></div>';
+    document.body.appendChild(root);
+    const rot = document.createElement('div');
+    rot.id = 't-rotate'; rot.textContent = 'Turn your phone sideways to play';
+    document.body.appendChild(rot);
+
+    const pad = root.querySelector('#t-pad'), stick = root.querySelector('#t-stick'), knob = root.querySelector('#t-knob');
+    const R = 52, ptrs = new Map();
+    const look = (dx, dy) => {
+      const k = settings.lookSens * 0.0045;
+      yaw -= dx * k; pitch -= dy * k;
+      if (pitch > 89 * DEG) pitch = 89 * DEG;
+      if (pitch < -89 * DEG) pitch = -89 * DEG;
+    };
+    const setStick = (p, x, y) => {
+      let dx = x - p.ox, dy = y - p.oy;
+      const d = Math.hypot(dx, dy);
+      if (d > R) { dx *= R / d; dy *= R / d; }
+      knob.style.transform = 'translate(' + dx + 'px,' + dy + 'px)';
+      touch.side = dx > R * 0.38 ? 1 : dx < -R * 0.38 ? -1 : 0;
+      touch.fwd = dy < -R * 0.38 ? 1 : dy > R * 0.38 ? -1 : 0;
+    };
+    pad.addEventListener('pointerdown', (e) => {
+      e.preventDefault();
+      try { pad.setPointerCapture(e.pointerId); } catch (err) { /* synthetic pointer */ }
+      const isStick = e.clientX < window.innerWidth * 0.42 && ![...ptrs.values()].some(p => p.stick);
+      const p = { stick: isStick, x: e.clientX, y: e.clientY, ox: e.clientX, oy: e.clientY };
+      ptrs.set(e.pointerId, p);
+      if (isStick) { stick.style.left = e.clientX + 'px'; stick.style.top = e.clientY + 'px'; stick.classList.add('on'); setStick(p, e.clientX, e.clientY); }
+    });
+    pad.addEventListener('pointermove', (e) => {
+      const p = ptrs.get(e.pointerId);
+      if (!p) return;
+      if (p.stick) setStick(p, e.clientX, e.clientY);
+      else look(e.clientX - p.x, e.clientY - p.y);
+      p.x = e.clientX; p.y = e.clientY;
+    });
+    const lift = (e) => {
+      const p = ptrs.get(e.pointerId);
+      if (!p) return;
+      ptrs.delete(e.pointerId);
+      if (p.stick) { touch.fwd = touch.side = 0; stick.classList.remove('on'); knob.style.transform = ''; }
+    };
+    pad.addEventListener('pointerup', lift);
+    pad.addEventListener('pointercancel', lift);
+
+    // Jump: hold to hop (auto bunnyhop), drag while holding to look
+    const jumpB = root.querySelector('#t-jump');
+    let jp = null;
+    jumpB.addEventListener('pointerdown', (e) => { e.preventDefault(); try { jumpB.setPointerCapture(e.pointerId); } catch (err) { /* synthetic pointer */ } jp = { id: e.pointerId, x: e.clientX, y: e.clientY }; touch.jump = true; jumpB.classList.add('on'); });
+    jumpB.addEventListener('pointermove', (e) => { if (!jp || jp.id !== e.pointerId) return; look(e.clientX - jp.x, e.clientY - jp.y); jp.x = e.clientX; jp.y = e.clientY; });
+    const jumpUp = (e) => { if (!jp || jp.id !== e.pointerId) return; jp = null; touch.jump = false; jumpB.classList.remove('on'); };
+    jumpB.addEventListener('pointerup', jumpUp);
+    jumpB.addEventListener('pointercancel', jumpUp);
+
+    const duckB = root.querySelector('#t-duck');
+    duckB.addEventListener('pointerdown', (e) => { e.preventDefault(); touch.duck = !touch.duck; duckB.classList.toggle('on', touch.duck); });
+
+    for (const b of root.querySelectorAll('#t-bar [data-k]')) b.addEventListener('pointerdown', (e) => {
+      e.preventDefault();
+      const k = b.dataset.k;
+      if (k === 'pause') touchLock(false);
+      else if (k === 'restart') restartCourse();
+      else if (k === 'cp') respawn();
+      else if (k === 'turn') { if (turnLeft <= 0) turnLeft = Math.PI; }
+    });
+    // the page never scrolls or zooms under the thumbs
+    document.addEventListener('touchmove', (e) => { if (locked) e.preventDefault(); }, { passive: false });
+    document.addEventListener('gesturestart', (e) => e.preventDefault());
+    return { sync: () => duckB.classList.toggle('on', touch.duck) };
   }
 
   // ------------------------------------------------------------ game state
@@ -9023,6 +9170,7 @@ window.STRAFE_ASSETS = {"city":"Z2xURgIAAABU+ggAYFIAAEpTT057ImFzc2V0Ijp7ImdlbmVy
       document.body.classList.add('complete');
       completeEl.hidden = false;
       if (document.pointerLockElement) document.exitPointerLock();
+      else if (TOUCH && locked) touchLock(false);
       $('c-next').focus({ preventScroll: true });
     }, 900);
   }
@@ -9056,6 +9204,18 @@ window.STRAFE_ASSETS = {"city":"Z2xURgIAAABU+ggAYFIAAEpTT057ImFzc2V0Ijp7ImdlbmVy
   // ------------------------------------------------------------ tutorial
   const tut = { step: -1, done: false, hops: 0, surfTicks: 0 };
   const tutEl = $('tut');
+  // the same steps told with the on-screen controls
+  const TOUCH_TUT = {
+    Move: ['Push the left stick to move, drag on the right to look. Head down the corridor.', ['Stick', 'Drag']],
+    Jump: ['Tap Jump to clear the gap. Fall in and you go back to the last step.', ['Jump']],
+    Bunnyhop: ['Hold Jump through the landings. You jump again the moment you touch down, so you never lose speed to ground friction.', ['Hold Jump']],
+    'Air strafe': ['Hold Jump and drag your thumb left and right on it. Auto strafe presses A and D for you as you turn, so smooth swipes add speed. Reach 350 u/s to open the gate.', ['Hold Jump + swipe']],
+    Slide: ['Run, then tap Crouch to slide under the pipe. Tap it again to stand.', ['Crouch']],
+    Vault: ['Run at the low wall and tap Jump just before it. You hop over without losing speed.', ['Stick up', 'Jump']],
+    Climb: ['Run straight at the wall and tap Jump to run up it. Keep the stick pushed up to pull yourself onto the ledge.', ['Stick up', 'Jump']],
+    Wallrun: ['Run along a wall at a slight angle and jump toward it with the stick pushed up to run on it. Tap Jump again to kick off.', ['Stick up', 'Jump']],
+    Surf: ['Jump onto the ramp. Push the stick sideways toward it to ride the slope, not up. Aim a little down the ramp to go faster.', ['Stick toward ramp']],
+  };
   function resetTutorial() {
     tut.step = -1; tut.done = false;
     setDoor('strafe', false);
@@ -9075,7 +9235,7 @@ window.STRAFE_ASSETS = {"city":"Z2xURgIAAABU+ggAYFIAAEpTT057ImFzc2V0Ijp7ImdlbmVy
     if (final) {
       $('tut-step').textContent = 'Tutorial complete';
       $('tut-title').textContent = 'You know the moves';
-      $('tut-body').textContent = 'Press Esc and pick a level. Surf and Bhop are the gentlest starts; Crossover uses everything you just did.';
+      $('tut-body').textContent = (TOUCH ? 'Tap II' : 'Press Esc') + ' and pick a level. Surf and Bhop are the gentlest starts; Crossover uses everything you just did.';
       $('tut-keys').textContent = '';
       tutEl.classList.add('done');
       return;
@@ -9084,10 +9244,11 @@ window.STRAFE_ASSETS = {"city":"Z2xURgIAAABU+ggAYFIAAEpTT057ImFzc2V0Ijp7ImdlbmVy
     const n = map.courses.tutorial.steps.length;
     $('tut-step').textContent = 'Step ' + (tut.step + 1) + ' of ' + n;
     $('tut-title').textContent = s.title;
-    $('tut-body').textContent = s.body;
+    const tt = TOUCH && TOUCH_TUT[s.title];
+    $('tut-body').textContent = tt ? tt[0] : s.body;
     const keysEl = $('tut-keys');
     keysEl.textContent = '';
-    for (const k of s.keys) { const kc = document.createElement('span'); kc.className = 'kc'; kc.textContent = k; keysEl.appendChild(kc); }
+    for (const k of tt ? tt[1] : s.keys) { const kc = document.createElement('span'); kc.className = 'kc'; kc.textContent = k; keysEl.appendChild(kc); }
   }
   function completeStep() {
     if (tut.done) return;
@@ -9750,6 +9911,15 @@ window.STRAFE_ASSETS = {"city":"Z2xURgIAAABU+ggAYFIAAEpTT057ImFzc2V0Ijp7ImdlbmVy
     renderer.shadowMap.enabled = settings.shadows;
     scene.traverse(o => { if (o.material) o.material.needsUpdate = true; });
   });
+  if (TOUCH) {
+    // touch rows go at the top of Mouse and view; the mouse rows stay for a paired mouse
+    const g = $('s-sens').closest('.settings');
+    g.insertAdjacentHTML('afterbegin', '<label for="s-look">Touch look speed</label><output id="s-look-v"></output>' +
+      '<input type="range" id="s-look" min="0.3" max="3" step="0.05">');
+    g.closest('.group').insertAdjacentHTML('beforeend', '<div class="checks" style="margin-top:10px"><label><input type="checkbox" id="s-autostrafe"> Auto strafe (presses A or D in the air as you swipe)</label></div>');
+    bindRange('s-look', 'lookSens', v => v.toFixed(2));
+    bindCheck('s-autostrafe', 'autoStrafe');
+  }
   hud.keys.hidden = !settings.keys;
   applyAudio();
 
