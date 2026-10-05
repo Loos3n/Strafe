@@ -98,7 +98,7 @@
   const HORIZON = new THREE.Color(0xcfe3ef);
   scene.fog = new THREE.Fog(HORIZON, 4000, 26000);
 
-  const camera = new THREE.PerspectiveCamera(74, 1, 2, 80000);
+  const camera = new THREE.PerspectiveCamera(74, 1, 4, 80000); // near 4: the eye never gets closer to a wall than the hull's 16
   camera.rotation.order = 'YXZ';
 
   // sky dome
@@ -351,7 +351,54 @@
     }
   }
 
+  // Boxes that overlap with a face in the same plane facing the same way
+  // flicker (z-fighting): skyline towers built off one street line, deco
+  // under a level, neighbours sharing a wall. Visual only: one box of each
+  // such pair pulls that face in a little, picking the one you can't touch
+  // (deco or skyline) when there is one, so collision still matches.
+  let insets = null;
+  function faceInsets() {
+    if (insets) return insets;
+    insets = new Map();
+    const decoSet = new Set(deco.brushes);
+    const loose = (b) => decoSet.has(b) || !!b.props.far;
+    const vol = (q) => (q.max[0] - q.min[0]) * (q.max[1] - q.min[1]) * (q.max[2] - q.min[2]);
+    const faces = [], buckets = new Map();
+    for (const b of world.brushes.concat(deco.brushes)) {
+      if (b.props.nonsolid) continue;
+      for (const f of b.faces) {
+        const n = f.n, d = n[0] * f.verts[0][0] + n[1] * f.verts[0][1] + n[2] * f.verts[0][2];
+        const lo = [1e9, 1e9, 1e9], hi = [-1e9, -1e9, -1e9];
+        for (const p of f.verts) for (let k = 0; k < 3; k++) { lo[k] = Math.min(lo[k], p[k]); hi[k] = Math.max(hi[k], p[k]); }
+        const rec = { b, n, d, lo, hi }, nk = n.map(x => Math.round(x * 500)).join(',');
+        const key = nk + ':' + Math.floor(d / 2);
+        (buckets.get(key) || buckets.set(key, []).get(key)).push(rec);
+        rec.nk = nk; rec.seq = faces.length; faces.push(rec);
+      }
+    }
+    for (const fa of faces) {
+      const near = buckets.get(fa.nk + ':' + (Math.floor(fa.d / 2) + 1));
+      for (const list of [buckets.get(fa.nk + ':' + Math.floor(fa.d / 2)), near]) {
+        if (!list) continue;
+        for (const fb of list) {
+          if (fb === fa || fb.b === fa.b || (list !== near && fb.seq <= fa.seq) || Math.abs(fa.d - fb.d) > 1.5) continue;
+          let wide = 0, ok = true;
+          for (let k = 0; k < 3; k++) { const ov = Math.min(fa.hi[k], fb.hi[k]) - Math.max(fa.lo[k], fb.lo[k]); if (ov < -1) ok = false; if (ov > 1) wide++; }
+          if (!ok || wide < 2) continue;
+          // pull in the face of the one you can't touch, else the smaller one
+          const pick = loose(fa.b) !== loose(fb.b) ? (loose(fa.b) ? fa : fb) : vol(fa.b) < vol(fb.b) ? fa : fb;
+          const amt = loose(pick.b) ? 14 : 2;
+          const list2 = insets.get(pick.b) || insets.set(pick.b, []).get(pick.b);
+          const prev = list2.find(q => q.f === pick);
+          const lim = Math.min(...[0, 1, 2].map(k => pick.b.max[k] - pick.b.min[k]).filter(x => x > 1)) * 0.1;
+          if (prev) prev.amt = Math.min(lim, Math.max(prev.amt, amt)); else list2.push({ f: pick, n: pick.n, d: pick.d, amt: Math.min(lim, amt) });
+        }
+      }
+    }
+    return insets;
+  }
   function buildGeometry(filter, bucketOf) {
+    const ins = faceInsets();
     const out = {};
     const color = new THREE.Color();
     const get = (name) => out[name] || (out[name] = { pos: [], nor: [], uv: [], col: [], lines: [] });
@@ -359,8 +406,15 @@
       if (!filter(b)) continue;
       color.setHex(b.props.color || 0xffffff).convertSRGBToLinear();
       const y0 = b.min[1], hgt = Math.max(1, b.max[1] - b.min[1]);
+      const inset = ins.get(b);
       for (const f of b.faces) {
-        const n = f.n, v = f.verts;
+        const n = f.n;
+        let v = f.verts;
+        if (inset) v = v.map(p => {
+          let q = p;
+          for (const { n: m, d, amt } of inset) if (Math.abs(m[0] * p[0] + m[1] * p[1] + m[2] * p[2] - d) < 0.5) q = [q[0] - m[0] * amt, q[1] - m[1] * amt, q[2] - m[2] * amt];
+          return q;
+        });
         const name = bucketOf ? bucketOf(b, n) : 'all';
         const o = get(name);
         const ax = Math.abs(n[0]), ay = Math.abs(n[1]), az = Math.abs(n[2]);
@@ -2651,6 +2705,6 @@
   previewCourse(map.order[0]);
   showMenuState();
   if (location.hash === '#demo') game.demo = true; // headless screenshot mode
-  window.__strafe = { player, game, keys, eff, practice: { set: setPractice, save: practiceSave, load: practiceLoad }, goCourse, place, attract, previewCourse, body, ghost, cosmetics, preview, step, modelChunks, renderer, setView: (y, p) => { yaw = y; pitch = p; } };
+  window.__strafe = { player, game, keys, eff, faceInsets, practice: { set: setPractice, save: practiceSave, load: practiceLoad }, goCourse, place, attract, previewCourse, body, ghost, cosmetics, preview, step, modelChunks, renderer, setView: (y, p) => { yaw = y; pitch = p; } };
   requestAnimationFrame((t) => { last = t; frame(t); });
 })();
