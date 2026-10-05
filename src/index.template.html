@@ -61,6 +61,17 @@ body:not(.playing) #fps { display: none; }
 #keys span.on { background: #fff; color: var(--ink); border-color: #fff; }
 #keys .wide { grid-column: span 3; height: 26px; font-size: 12px; letter-spacing: .2em; }
 #keys .half { grid-column: span 3; }
+#keys .mouse { height: 22px; font-size: 11px; }
+#keys .mouse.lab { border-color: transparent; background: none; font-size: 8px; letter-spacing: .04em; opacity: .8; }
+#practice { margin-top: 6px; display: inline-block; padding: 2px 10px; background: #f2b33d; color: #15181d; text-shadow: none; font-size: 13px; font-weight: 700; letter-spacing: .16em; text-transform: uppercase; }
+#practice b { margin-left: 8px; padding: 0 5px; border: 1.5px solid #15181d; }
+#practice[hidden] { display: none; }
+#strafe { display: flex; align-items: center; gap: 8px; font-size: 12px; letter-spacing: .18em; text-transform: uppercase; font-weight: 600; opacity: 0; transition: opacity .25s; }
+#strafe.on { opacity: .95; }
+#strafe-bar { width: 140px; height: 8px; background: rgba(10,14,18,.45); border: 1px solid rgba(255,255,255,.6); position: relative; }
+#strafe-fill { position: absolute; left: 0; top: 0; bottom: 0; width: 0; background: #fff; }
+#strafe-fill.good { background: var(--up); } #strafe-fill.bad { background: var(--down); }
+#strafe-pct { min-width: 3.2em; font-variant-numeric: tabular-nums; text-align: left; }
 
 #toast { top: 28vh; left: 0; right: 0; text-align: center; font-size: 26px; font-weight: 700; font-style: italic; letter-spacing: .02em; opacity: 0; transition: opacity .25s; }
 #toast.show { opacity: 1; }
@@ -305,6 +316,7 @@ table.controls { width: 100%; border-collapse: collapse; font-size: 14px; margin
 <div class="hud" id="top">
   <div id="timer"></div>
   <div id="courseline"><span id="course"></span><span id="stage"></span><span id="best"></span></div>
+  <div id="practice" hidden>Practice <b>Z</b> save <b>X</b> load <b>P</b> off</div>
   <div id="ghostgap"></div>
   <div id="split" aria-live="polite"><span id="split-label"></span><span id="split-time"></span><span id="split-delta"></span></div>
 </div>
@@ -321,6 +333,7 @@ table.controls { width: 100%; border-collapse: collapse; font-size: 14px; margin
   <div id="speed">0</div>
   <div id="speedunit">units / sec</div>
   <div id="jumpstat"></div>
+  <div id="strafe" aria-hidden="true"><span id="strafe-label">Strafe</span><span id="strafe-bar"><i id="strafe-fill"></i></span><span id="strafe-pct"></span></div>
   <canvas id="graph" width="480" height="88"></canvas>
 </div>
 <div class="hud" id="keys">
@@ -328,8 +341,9 @@ table.controls { width: 100%; border-collapse: collapse; font-size: 14px; margin
   <span id="k-a">A</span><span id="k-s">S</span><span id="k-d">D</span>
   <span class="wide" id="k-j">JUMP</span>
   <span class="wide" id="k-c">CROUCH</span>
+  <span class="mouse" id="k-ml">&#9664;</span><span class="mouse lab">MOUSE</span><span class="mouse" id="k-mr">&#9654;</span>
 </div>
-<div class="hud" id="help">R restart · F checkpoint · M mute · Esc menu</div>
+<div class="hud" id="help">R restart · F checkpoint · P practice · M mute · Esc menu</div>
 
 <div id="menu" data-screen="title">
   <section class="ts" aria-label="Main menu">
@@ -446,6 +460,7 @@ table.controls { width: 100%; border-collapse: collapse; font-size: 14px; margin
             <label><input type="checkbox" id="s-kick"> Speed FOV kick</label>
             <label><input type="checkbox" id="s-bob"> View bob</label>
             <label><input type="checkbox" id="s-keys"> Key display</label>
+            <label><input type="checkbox" id="s-strafe"> Strafe meter</label>
             <label><input type="checkbox" id="s-shadows"> Shadows</label>
             <label><input type="checkbox" id="s-lines"> Speed lines</label>
             <label><input type="checkbox" id="s-landkick"> Landing camera kick</label>
@@ -476,6 +491,7 @@ table.controls { width: 100%; border-collapse: collapse; font-size: 14px; margin
           <tr><td>Q</td><td>Quick turn 180°. Great for climbing a wall and kicking off backwards.</td></tr>
           <tr><td>Crouch on landing</td><td>Roll out of a big drop.</td></tr>
           <tr><td>R / F</td><td>Restart level, last checkpoint.</td></tr>
+          <tr><td>P</td><td>Practice mode. Z saves your exact spot and speed, X (or F, or falling) puts you back. Practice runs are not recorded.</td></tr>
           <tr><td>M / Esc</td><td>Mute sound. Open this menu. In the menu, arrow keys pick a level and Enter plays it.</td></tr>
         </table>
       </div>

@@ -11,7 +11,7 @@
   const settings = Object.assign({
     sens: 2.0, fov: 90, airaccelerate: 150, autohop: true,
     fovKick: true, shadows: true, bob: true, keys: true, body: true, ghost: true,
-    speedLines: true, landKick: true, scale: 100, fps: false,
+    speedLines: true, landKick: true, scale: 100, fps: false, strafeMeter: true,
     master: 80, music: 50, sfx: 80,
   }, load(SETTINGS_KEY) || {});
   const best = load(BEST_KEY) || {};
@@ -840,6 +840,9 @@
     else if (e.code === 'KeyQ') { if (turnLeft <= 0) turnLeft = Math.PI; } // Mirror's Edge 180° quick turn
     else if (/^Digit[0-9]$/.test(e.code) && map.order[(+e.code.slice(5) + 9) % 10]) goCourse(map.order[(+e.code.slice(5) + 9) % 10]);
     else if (e.code === 'KeyT') goCourse('tutorial');
+    else if (e.code === 'KeyP') setPractice(!game.practice);
+    else if (e.code === 'KeyZ') practiceSave();
+    else if (e.code === 'KeyX') practiceLoad();
     else if (e.code === 'KeyM') { muted = !muted; A.setVolumes({ muted }); toast(muted ? 'Sound off' : 'Sound on'); }
   });
   window.addEventListener('keyup', (e) => keys.delete(e.code));
@@ -889,7 +892,7 @@
   // ------------------------------------------------------------ game state
   const game = {
     course: null, cp: 0, cpSpawn: null, running: false, inStart: false,
-    startTick: 0, tick: 0, finished: null, mission: null,
+    startTick: 0, tick: 0, finished: null, mission: null, practice: false, save: null,
   };
   const prev = { pos: player.pos.slice(), eye: player.viewOffset };
 
@@ -908,6 +911,7 @@
   }
   function goCourse(name, mission = null) {
     const c = map.courses[name];
+    if (name !== game.course) game.save = null; // R keeps practice saves
     game.course = name; game.cp = 0; game.cpSpawn = c.spawn; game.running = false; game.finished = null;
     game.mission = mission;
     ghost.stop();
@@ -922,7 +926,50 @@
   function restartCourse() { if (game.course) goCourse(game.course, game.mission); }
   function respawn() {
     if (!game.course) return;
+    if (game.practice && game.save) { practiceLoad(); return; }
     place(game.cpSpawn);
+    A.play('respawn');
+  }
+
+  // ------------------------------------------------------------ practice
+  // Save points: Z stores the whole movement state (position, velocity,
+  // wallrun, slide and the rest) plus the run clock, X puts you back. Falling
+  // or F also go back to the save. Practice runs never count: no best times,
+  // splits, ghosts, leaderboard entries or stars, and leaving practice
+  // restarts the level so a saved line can't sneak into a real run.
+  const copyState = (v) => Array.isArray(v) ? v.map(copyState) : v && typeof v === 'object' && Object.getPrototypeOf(v) === Object.prototype
+    ? Object.fromEntries(Object.entries(v).map(([k, x]) => [k, copyState(x)])) : v;
+  const SAVED = ['pos', 'vel', 'approach', 'ducked', 'onGround', 'groundNormal', 'groundBrush', 'viewOffset', 'prevJump', 'prevDuck', 'jumpPressed',
+    'slide', 'slideCooldown', 'wallrun', 'wallrunCooldown', 'lastWall', 'climb', 'climbAvailable', 'mantle', 'airTime'];
+  function setPractice(on) {
+    if (on === game.practice) return;
+    game.practice = on; game.save = null;
+    $('practice').hidden = !on;
+    if (on) toast('Practice on: Z saves, X loads. Runs are not recorded.', 2600);
+    else { toast('Practice off'); restartCourse(); }
+  }
+  function practiceSave() {
+    if (!game.practice) { toast('Press P for practice mode to use save points'); return; }
+    const st = {};
+    for (const k of SAVED) st[k] = copyState(player[k]);
+    game.save = { st, yaw, pitch, cp: game.cp, cpSpawn: game.cpSpawn, running: game.running,
+      elapsed: game.running ? game.tick - game.startTick : 0, splits: game.run ? copyState(game.run.splits) : {} };
+    toast('Saved');
+    A.play('checkpoint');
+  }
+  function practiceLoad() {
+    const sv = game.save;
+    if (!game.practice || !sv) { toast(game.practice ? 'No save yet, press Z' : 'Press P for practice mode to use save points'); return; }
+    for (const k of SAVED) player[k] = copyState(sv.st[k]);
+    yaw = sv.yaw; pitch = sv.pitch; turnLeft = 0;
+    player.yaw = yaw; player.pitch = pitch;
+    prev.pos = player.pos.slice(); prev.eye = player.viewOffset;
+    cam.dip = 0; cam.dipVel = 0; cam.roll = 0;
+    game.cp = sv.cp; game.cpSpawn = sv.cpSpawn; game.finished = null;
+    game.running = sv.running; game.inStart = false;
+    if (sv.running) { game.startTick = game.tick - sv.elapsed; game.run = { top: 0, dist: 0, jumps: 0, splits: copyState(sv.splits) }; }
+    ghost.stop();
+    closeComplete();
     A.play('respawn');
   }
 
@@ -944,6 +991,13 @@
           const pb = bestSplits[game.course] && bestSplits[game.course][t.idx];
           showSplit('Checkpoint ' + (t.idx + 1), ticks, pb);
         } else toast('Checkpoint ' + (t.idx + 1) + ' / ' + c.stages);
+      } else if (t.type === 'end' && game.running && game.practice) {
+        game.running = false;
+        const ticks = game.tick - game.startTick;
+        showSplit('Practice finish', ticks, best[game.course]);
+        game.finished = ticks;
+        ghost.stop();
+        A.play('finish');
       } else if (t.type === 'end' && game.running) {
         game.running = false;
         const ticks = game.tick - game.startTick;
@@ -1282,6 +1336,37 @@
   const speedHist = new Float32Array(360);
   let histIdx = 0;
 
+  // Strafe efficiency: each air tick, the speed your keys and mouse added,
+  // as a share of the most one tick of air strafing can add at that speed
+  // (wish exactly sideways to your velocity, which gives sqrt(v^2 + 30^2)).
+  // Measured on the input alone, so walls and ramps don't skew it.
+  const eff = { live: 0, sum: 0, n: 0, last: null, show: 0 };
+  const _wv = [0, 0, 0];
+  function trackStrafe(cmd) {
+    const p = player;
+    if (p.onGround || p.wallrun || p.climb || p.mantle || p.slide || p.groundNormal) return;
+    const v = p.hspeed();
+    if (v < 100) return;
+    const y0 = p.yaw, p0 = p.pitch; p.yaw = cmd.yaw; p.pitch = cmd.pitch;
+    const w = p.wish(cmd);
+    p.yaw = y0; p.pitch = p0;
+    let gain = 0;
+    if (w.speed > 0) {
+      const cap = Math.min(w.speed, p.cfg.airCap);
+      const add = cap - (p.vel[0] * w.dir[0] + p.vel[2] * w.dir[2]);
+      if (add > 0) {
+        const as = Math.min(add, p.cfg.airaccelerate * w.speed * TICK);
+        _wv[0] = p.vel[0] + as * w.dir[0]; _wv[2] = p.vel[2] + as * w.dir[2];
+        gain = Math.hypot(_wv[0], _wv[2]) - v;
+      }
+    }
+    const best = Math.hypot(v, p.cfg.airCap) - v;
+    const e = Math.max(-1, Math.min(1, gain / best));
+    eff.live += (e - eff.live) * 0.12;
+    eff.sum += e; eff.n++;
+    eff.show = 0.6;
+  }
+
   function trackSync(cmd) {
     const dy = cmd.yaw - stats.lastYaw;
     stats.lastYaw = cmd.yaw;
@@ -1302,6 +1387,8 @@
       if (e.type === 'land' && e.speed > 120) A.play('land', { speed: e.speed, surface: surfaceOf(player.groundBrush) });
       if (e.type === 'jump') {
         if (stats.syncAll > 10) stats.lastSync = stats.syncGood / stats.syncAll;
+        if (eff.n > 10) eff.last = eff.sum / eff.n;
+        eff.sum = eff.n = 0;
         stats.syncGood = stats.syncAll = 0;
         stats.jumps++;
         stats.gain = e.speed - stats.jumpSpeed;
@@ -1318,7 +1405,7 @@
             cam.kickRoll = (Math.random() < 0.5 ? -1 : 1) * k * 2.2 * DEG;
           }
         }
-        if (player.hspeed() < 20) stats.jumps = 0;
+        if (player.hspeed() < 20) { stats.jumps = 0; eff.last = null; }
       } else if (e.type === 'climbjump') {
         turnLeft = Math.PI;
       } else if (e.type === 'mantle' || e.type === 'vault') {
@@ -1615,7 +1702,8 @@
   const hud = {
     speed: $('speed'), speedWrap: $('speedwrap'), jump: $('jumpstat'), timer: $('timer'), course: $('course'),
     bestEl: $('best'), stage: $('stage'), toast: $('toast'), graph: $('graph'), keys: $('keys'),
-    k: { w: $('k-w'), a: $('k-a'), s: $('k-s'), d: $('k-d'), j: $('k-j'), c: $('k-c') },
+    k: { w: $('k-w'), a: $('k-a'), s: $('k-s'), d: $('k-d'), j: $('k-j'), c: $('k-c'), ml: $('k-ml'), mr: $('k-mr') },
+    strafe: $('strafe'), strafeFill: $('strafe-fill'), strafePct: $('strafe-pct'),
     state: $('movestate'),
   };
   const gctx = hud.graph.getContext('2d');
@@ -1654,7 +1742,7 @@
   }
   updateCourseHud();
 
-  let smoothSpeed = 0, lastShown = -1, trend = 0;
+  let smoothSpeed = 0, lastShown = -1, trend = 0, hudYaw = 0, mouseTurn = 0, mouseHold = 0, turnStep = 0;
   function drawHud(dt) {
     const hs = player.hspeed();
     const prevSmooth = smoothSpeed;
@@ -1669,6 +1757,7 @@
       jt = 'Jump ' + stats.jumps + '  ·  ' + Math.round(stats.jumpSpeed) + ' u/s';
       if (stats.jumps > 1) jt += '  ·  ' + (stats.gain >= 0 ? '+' : '') + Math.round(stats.gain);
       if (stats.lastSync !== null) jt += '  ·  sync ' + Math.round(stats.lastSync * 100) + '%';
+      if (eff.last !== null) jt += '  ·  strafe ' + Math.round(Math.max(0, eff.last) * 100) + '%';
     }
     hud.jump.textContent = jt;
 
@@ -1694,6 +1783,24 @@
       hud.k.d.classList.toggle('on', down('right'));
       hud.k.j.classList.toggle('on', player.jumpPressed || down('jump'));
       hud.k.c.classList.toggle('on', down('duck'));
+      // mouse turn direction this frame, the other half of a strafe
+      // (held a moment so it doesn't flicker between mouse events)
+      const dy = yaw - hudYaw - turnStep;
+      if (Math.abs(dy) > 1e-4) { mouseTurn = Math.sign(dy); mouseHold = 0.08; } else if ((mouseHold -= dt) <= 0) mouseTurn = 0;
+      hud.k.ml.classList.toggle('on', mouseTurn > 0);
+      hud.k.mr.classList.toggle('on', mouseTurn < 0);
+    }
+    hudYaw = yaw; turnStep = 0;
+
+    // strafe meter: live while you are airborne, fades out after you land
+    eff.show = Math.max(0, eff.show - dt);
+    const showStrafe = settings.strafeMeter && eff.show > 0;
+    hud.strafe.classList.toggle('on', showStrafe);
+    if (showStrafe) {
+      const e = Math.max(0, eff.live);
+      hud.strafeFill.style.width = (e * 100).toFixed(1) + '%';
+      hud.strafeFill.className = e > 0.8 ? 'good' : e < 0.4 ? 'bad' : '';
+      hud.strafePct.textContent = Math.round(e * 100) + '%';
     }
 
     // speed trace, last ~6 seconds
@@ -1943,6 +2050,7 @@
     prev.pos = player.pos.slice();
     prev.eye = player.viewOffset;
     trackSync(cmd);
+    trackStrafe(cmd);
     player.tick(cmd, TICK);
     game.tick++;
     footsteps();
@@ -1966,7 +2074,7 @@
 
     if (turnLeft > 0) {
       const s = Math.min(turnLeft, dt * Math.PI / 0.24);
-      yaw += s; turnLeft -= s;
+      yaw += s; turnLeft -= s; turnStep += s;
     }
 
     if ((locked || game.demo) && !game.freeze) {
@@ -2488,6 +2596,7 @@
   bindRange('s-scale', 'scale', v => v + '%', () => { applyScale(); resize(); });
   bindCheck('s-ghost', 'ghost');
   bindCheck('s-keys', 'keys', () => hud.keys.hidden = !settings.keys);
+  bindCheck('s-strafe', 'strafeMeter');
   bindCheck('s-shadows', 'shadows', () => {
     renderer.shadowMap.enabled = settings.shadows;
     scene.traverse(o => { if (o.material) o.material.needsUpdate = true; });
@@ -2542,6 +2651,6 @@
   previewCourse(map.order[0]);
   showMenuState();
   if (location.hash === '#demo') game.demo = true; // headless screenshot mode
-  window.__strafe = { player, game, goCourse, place, attract, previewCourse, body, ghost, cosmetics, preview, step, modelChunks, renderer, setView: (y, p) => { yaw = y; pitch = p; } };
+  window.__strafe = { player, game, keys, eff, practice: { set: setPractice, save: practiceSave, load: practiceLoad }, goCourse, place, attract, previewCourse, body, ghost, cosmetics, preview, step, modelChunks, renderer, setView: (y, p) => { yaw = y; pitch = p; } };
   requestAnimationFrame((t) => { last = t; frame(t); });
 })();
