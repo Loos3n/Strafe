@@ -2,12 +2,12 @@
 // Crossover). Each level is a list of legs that turn corners; the bot works
 // in the current leg's frame (x right, forward is -z) and rides whatever
 // piece is ahead: pads, block lines, speed lanes, ramps, banks, slides and
-// wallrun gaps. Usage: node test/routes.js [level] [checkpoint]   V=50 traces
+// wallrun gaps, and the Night City's curved ramps. Usage: node test/routes.js [level] [checkpoint]   V=50 traces
 require('../src/physics.js'); require('../src/map.js');
 const P = globalThis.StrafePhysics; const { world, courses } = globalThis.StrafeMap.buildMap(P);
 const DIRS = [[0, -1], [1, 0], [0, 1], [-1, 0]];
 const wrap = a => Math.atan2(Math.sin(a), Math.cos(a));
-const LEVELS = ['surf', 'bhop', 'canyon', 'stairway', 'crossover'];
+const LEVELS = ['surf', 'bhop', 'canyon', 'stairway', 'crossover'].concat(globalThis.StrafeMap.buildMap(P).night);
 
 function frameOf(lg) {
   const f = DIRS[lg.h], r = DIRS[(lg.h + 1) % 4];
@@ -15,7 +15,7 @@ function frameOf(lg) {
   // world -> local: x = along right, z = -(along forward)
   const vec = (wx, wz) => [wx * r[0] + wz * r[1], -(wx * f[0] + wz * f[1])];
   const pt = (wx, wz) => vec(wx - lg.ox, wz - lg.oz);
-  return { yaw, vec, pt, items: lg.items };
+  return { yaw, vec, pt, items: lg.items, curveIn: lg.curveIn };
 }
 function strafeTo(q, i, tx, tz) {
   const vdir = Math.atan2(-q.vel[0], -q.vel[2]);
@@ -24,7 +24,18 @@ function strafeTo(q, i, tx, tz) {
   if (Math.abs(err) < 0.06) side = (i >> 4) & 1 ? 1 : -1;
   return { forward: 0, side, yaw: vdir };
 }
-const rampAim = (q, r) => [r.cx + (q.pos[0] < r.cx ? -200 : 200), Math.min(r.z0 - 300, q.pos[2] - 600)];
+const rampAim = (q, r) => r.t === 'curve' ? [r.cx + r.dir * 200, Math.min(r.z0 - 300, q.pos[2] - 600)]
+  : [r.cx + (q.pos[0] < r.cx ? -200 : 200), Math.min(r.z0 - 300, q.pos[2] - 600)];
+const isRamp = (it) => it.t === 'ramp' || it.t === 'curve';
+// curved ramps are ridden in world coordinates, piece by piece
+function curveAt(curves, p, slack) {
+  for (const c of curves) for (let j = 0; j < c.chords.length; j++) {
+    const r = c.chords[j], dx = p.pos[0] - r.x, dz = p.pos[2] - r.z;
+    const a = dx * r.fx + dz * r.fz, l = dx * r.rx + dz * r.rz;
+    if (a >= -12 && a <= r.len + 12 && Math.abs(l) <= r.W + slack && p.pos[1] > r.apex - r.H - 300 && p.pos[1] < r.apex + 400) return { c, j, r, l };
+  }
+  return null;
+}
 
 function brain(F, st) {
   // q: the player seen in this leg's frame
@@ -42,7 +53,7 @@ function brain(F, st) {
       const r = plan[st.ramp];
       if (z > r.z1 + 900) { const [ax, az] = rampAim(q, r); return strafeTo(q, i, ax, az); }
       const nx = plan[st.ramp + 1];
-      if (nx.t === 'ramp') { const [ax, az] = rampAim(q, nx); return strafeTo(q, i, ax, az); }
+      if (isRamp(nx)) { const [ax, az] = rampAim(q, nx); return strafeTo(q, i, ax, az); }
       return strafeTo(q, i, nx.x, Math.min(nx.z0 - 500, z - 600));
     }
     // a slide roof: crouch down it
@@ -58,7 +69,7 @@ function brain(F, st) {
     const t = plan[Math.min(k, plan.length - 1)];
     const here = plan[cur];
     // after a slide the next thing is a ramp below: fly at it
-    if (t.t === 'ramp') {
+    if (isRamp(t)) {
       const [ax, az] = rampAim(q, t);
       if (!p.onGround) return strafeTo(q, i, ax, az);
       if (here && here.t === 'block') return { forward: 1, yaw: Math.atan2(-(ax - q.pos[0]), -(t.z0 - 200 - z)), jump: z < here.cz - 10 };
@@ -121,11 +132,16 @@ function run(name, cpArg) {
   let k = 0;
   frames.forEach((F, j) => { const [lx, lz] = F.pt(sp.pos[0], sp.pos[2]); if (Math.abs(wrap(F.yaw - sp.yaw)) < 0.01 && F.items.some(it => it.t !== 'ramp' && lz <= it.z0 + 1 && lz >= it.z1 - 1 && Math.abs(lx - it.x) <= it.w / 2 + 1 && Math.abs(sp.pos[1] - it.y) < 2)) k = j; });
   const states = frames.map(() => ({ ramp: -1 }));
+  const curves = [].concat(...c.legs.map(lg => lg.items.filter(it => it.t === 'curve')));
   const brains = frames.map((F, j) => brain(F, states[j]));
   const seen = []; let res = 'timeout';
   for (let i = 0; i < 30000; i++) {
     // step onto the next leg once standing on its corner pad
-    if (k < frames.length - 1 && p.onGround) {
+    if (k < frames.length - 1 && frames[k + 1].curveIn) {
+      // past a bend's exit
+      const [lx, lz] = frames[k + 1].pt(p.pos[0], p.pos[2]);
+      if (lz < 0 && Math.abs(lx) < 1500) k++;
+    } else if (k < frames.length - 1 && p.onGround) {
       const N = frames[k + 1], [lx, lz] = N.pt(p.pos[0], p.pos[2]), c0 = N.items[0];
       if (lz <= c0.z0 && lz >= c0.z1 && Math.abs(lx - c0.x) <= c0.w / 2 && Math.abs(p.pos[1] - c0.y) < 4) k++;
     }
@@ -135,7 +151,23 @@ function run(name, cpArg) {
     const tr = world.trace(p.pos, [p.pos[0], p.pos[1] - 8, p.pos[2]], p.hull);
     let n = tr.normal && tr.normal[1] < 0.7 && tr.normal[1] > 0.05 ? tr.normal : null;
     if (n) { const [nx, nz] = F.vec(n[0], n[2]); n = [nx, n[1], nz]; }
-    const c0 = brains[k](p, q, n, i);
+    let c0;
+    const cv = curves.length && curveAt(curves, p, 80);
+    if (cv && !(k < frames.length - 1 && frames[k + 1].curveIn && frames[k + 1].pt(p.pos[0], p.pos[2])[1] < 0)) {
+      const { c: cu, j, r, l } = cv;
+      const nw = tr.normal && tr.normal[1] < 0.7 && tr.normal[1] > 0.05 ? tr.normal : null;
+      states[k].ramp = -1;
+      if (nw) {
+        // on the face: look down this piece, push toward the ridge when low
+        const into = nw[0] * r.rx + nw[2] * r.rz < 0 ? 1 : -1;
+        c0 = { side: l * into < -(+process.env.RIDE || 0.5) * r.W ? into : 0, yaw: r.hd - F.yaw };
+      } else {
+        // above it: steer back onto the inside face a little way on
+        const t = cu.chords[Math.min(cu.chords.length - 1, j + 3)], u = cu.dir * 0.5 * t.W;
+        const s = strafeTo(p, i, t.x + t.rx * u, t.z + t.rz * u);
+        c0 = { side: s.side, yaw: s.yaw - F.yaw };
+      }
+    } else c0 = brains[k](p, q, n, i);
     const cmd = { forward: c0.forward || 0, side: c0.side || 0, jump: !!c0.jump, duck: !!c0.duck, yaw: (c0.yaw === undefined ? 0 : c0.yaw) + F.yaw, pitch: 0 };
     p.tick(cmd, 0.01);
     p.prevJump = cmd.jump;

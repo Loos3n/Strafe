@@ -1,4 +1,4 @@
-// Strafe map: the tutorial, ten levels and the six-level Gauntlet.
+// Strafe map: the tutorial, ten levels, the six-level Gauntlet and the six-level Night City.
 // All coordinates are Hammer units, Y up, courses run toward -Z.
 (function (root) {
   'use strict';
@@ -20,6 +20,32 @@
     const box = (min, max, color, extra) => world.addBox(min, max, Object.assign({ color }, extra));
     const courses = {};
     const route = (min, max) => box(min, max, COLORS.route, { kind: 'route' });
+    // a convex brush around a handful of points: every plane through three of
+    // them with all the rest behind it is a face (used for curved ramps)
+    const hullPts = (pts, props) => {
+      const sub = (a, b) => [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
+      const cross = (a, b) => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
+      const dot = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+      const faces = [], planes = [];
+      for (let i = 0; i < pts.length; i++) for (let j = i + 1; j < pts.length; j++) for (let k = j + 1; k < pts.length; k++) {
+        let n = cross(sub(pts[j], pts[i]), sub(pts[k], pts[i]));
+        const l = Math.hypot(n[0], n[1], n[2]);
+        if (l < 1e-6) continue;
+        n = n.map(v => v / l);
+        let d = dot(n, pts[i]), pos = 0, neg = 0;
+        for (const q of pts) { const e = dot(n, q) - d; if (e > 0.01) pos++; else if (e < -0.01) neg++; }
+        if (pos && neg) continue;
+        if (pos) { n = n.map(v => -v); d = -d; }
+        if (planes.some(q => dot(q.n, n) > 0.999999 && Math.abs(q.d - d) < 0.05)) continue;
+        planes.push({ n, d });
+        const on = pts.filter(q => Math.abs(dot(n, q) - d) < 0.05);
+        const c = [0, 1, 2].map(a => on.reduce((t, q) => t + q[a], 0) / on.length);
+        const u0 = sub(on[0], c), ul = Math.hypot(...u0), u = u0.map(v => v / ul), v = cross(n, u);
+        on.sort((a, b) => Math.atan2(dot(sub(a, c), v), dot(sub(a, c), u)) - Math.atan2(dot(sub(b, c), v), dot(sub(b, c), u)));
+        faces.push(on);
+      }
+      return world.addHull(faces, props);
+    };
 
     // where the player waits while no level is loaded (only the menu is showing)
     const hubSpawn = { pos: [0, 0, 600], yaw: 0 };
@@ -718,6 +744,12 @@
       };
       let x = 0, y = top, z = 0, cp = 0, lo = top, spawn = null, prev = null, prevPad = null;
       const pal = def.palette;
+      const RAMPS = { surf: 1, bank: 1, curve: 1 };
+      // night levels: neon strips (visual only) along pad edges and ramp feet
+      const NEON = def.neon || [];
+      let ni = 0;
+      const neon = () => ({ color: NEON[ni++ % NEON.length], nonsolid: true, glow: true });
+      const solidProps = (props) => def.night ? Object.assign(props, { neon: true }) : props;
       def.segs.forEach((sg, si) => {
         const col = pal[si % pal.length];
         if (sg.t === 'turn') {
@@ -732,13 +764,19 @@
         }
         if (sg.t === 'pad' || sg.t === 'lane') {
           const w = sg.w || 600, len = sg.len || 600;
-          if (prev && (prev.t === 'surf' || prev.t === 'bank')) {
+          if (prev && RAMPS[prev.t]) {
             y = prev.endApex - prev.H - (sg.fall || 450); z = prev.z1 + (sg.back || 200); x = sg.x !== undefined ? sg.x : prev.cx;
           } else {
             z -= sg.gap || 0; y += sg.rise || 0; if (sg.x !== undefined) x = sg.x;
           }
           const kind = sg.t === 'lane' ? 'lane' : 'pad';
-          lbox(x - w / 2, x + w / 2, y - 60, y, z - len, z, { color: sg.t === 'lane' ? col : COLORS.bhopPad, kind });
+          lbox(x - w / 2, x + w / 2, y - 60, y, z - len, z, solidProps({ color: sg.t === 'lane' ? col : def.padColor || COLORS.bhopPad, kind }));
+          if (def.night) {
+            // a neon trim just outside the top edges
+            const g = neon(), a = x - w / 2, b = x + w / 2;
+            lbox(a - 10, a - 2, y - 22, y - 4, z - len, z, g); lbox(b + 2, b + 10, y - 22, y - 4, z - len, z, g);
+            lbox(a, b, y - 22, y - 4, z + 2, z + 10, g); lbox(a, b, y - 22, y - 4, z - len - 10, z - len - 2, g);
+          }
           if (sg.lip) lbox(x - w / 2 + 160, x + w / 2 - 160, y - 130, y, z - 3, z, { color: COLORS.route, kind: 'route' });
           const here = { pos: (() => { const q = W3(x, y, z - Math.min(300, len / 2)); return q; })(), yaw: L.yaw };
           if (!spawn) { spawn = here; ltrig(x - w / 2, x + w / 2, y, y + 160, z - len, z, { type: 'start' }); }
@@ -770,22 +808,68 @@
             const lat = sg.zig ? (k % 2 ? sg.zig : -sg.zig) : sg.lat ? sg.lat[k % sg.lat.length] : 0;
             const cz = z - (k === 0 ? (sg.first || sg.step) - h : sg.step);
             z = cz;
-            lbox(x + lat - h, x + lat + h, y - 60, y, cz - h, cz + h, { color: col, kind: 'block' });
+            lbox(x + lat - h, x + lat + h, y - 60, y, cz - h, cz + h, solidProps({ color: col, kind: 'block' }));
             L.items.push({ t: 'block', x: x + lat, y, z0: cz + h, z1: cz - h, cz, w: size });
             lo = Math.min(lo, y);
           }
           z -= h;
+        } else if (sg.t === 'curve') {
+          // a ramp that bends a quarter turn (dir 1 right, -1 left) on radius R.
+          // Built from short straight pieces sharing their ends, so the surface
+          // is seamless. You ride the inside face, which banks you round. A new
+          // leg starts at the exit, heading the new way.
+          const [W, H] = FACES[sg.face || 60];
+          const fromRamp = prev && RAMPS[prev.t];
+          const apex = sg.join ? prev.endApex : fromRamp ? prev.endApex - (sg.fall || 500) : y - (sg.fall || 250);
+          const z0 = sg.join ? z : z - (sg.gap || (fromRamp ? 800 : 60));
+          const cx = sg.join ? prev.cx : (fromRamp ? prev.cx : x) + (sg.dx || 0);
+          const d = sg.dir, R = sg.R || 3600, e = apex - sg.drop;
+          const N = Math.ceil(R * Math.PI / 2 / 240);
+          const sect = (j) => {
+            const a = j / N * Math.PI / 2, px = cx + d * R * (1 - Math.cos(a)), pz = z0 - R * Math.sin(a);
+            const rx = Math.cos(a), rz = d * Math.sin(a), ay = apex - sg.drop * j / N;
+            const at = (u, yy) => W3(px + rx * u, yy, pz + rz * u);
+            return { p: at(0, ay), l: at(-W, ay - H), r: at(W, ay - H), gl: [at(-W - 2, ay - H), at(-W - 14, ay - H), at(-W - 14, ay - H + 12), at(-W - 2, ay - H + 12)],
+              gr: [at(W + 2, ay - H), at(W + 14, ay - H), at(W + 14, ay - H + 12), at(W + 2, ay - H + 12)], gp: [at(-7, ay - 12), at(7, ay - 12), at(0, ay + 3)] };
+          };
+          const chords = [], g = def.night ? neon() : null;
+          for (let j = 0; j < N; j++) {
+            const s0 = sect(j), s1 = sect(j + 1);
+            const fx0 = s1.p[0] - s0.p[0], fz0 = s1.p[2] - s0.p[2], len = Math.hypot(fx0, fz0), fx = fx0 / len, fz = fz0 / len;
+            // each piece runs 40 units into its neighbours, so the joins are
+            // buried under the face instead of standing up as edges to catch on
+            const ex = (q, k) => [q[0] + fx * 40 * k, q[1] - sg.drop / N * 40 / len * k, q[2] + fz * 40 * k];
+            const k0 = j || sg.join ? -1 : 0, k1 = j < N - 1 || (def.segs[si + 1] || {}).join ? 1 : 0;
+            hullPts([ex(s0.l, k0), ex(s0.p, k0), ex(s0.r, k0), ex(s1.l, k1), ex(s1.p, k1), ex(s1.r, k1)], solidProps({ color: col, kind: 'ramp', pylons: j % 6 === 3 ? [[s0.p[0], s0.p[2]]] : [] }));
+            if (g) for (const k of ['gl', 'gr', 'gp']) hullPts(s0[k].concat(s1[k]), g);
+            chords.push({ x: s0.p[0], z: s0.p[2], apex: s0.p[1], fx, fz, rx: -fz, rz: fx, hd: Math.atan2(-fx, -fz), len, W, H });
+          }
+          L.items.push({ t: 'curve', cx, apex, z0, z1: z0 - R, drop: sg.drop, W, H, dir: d, R, chords });
+          lo = Math.min(lo, e - H);
+          const E = sect(N).p;
+          frame(E[0], E[2], (L.h + d + 4) % 4);
+          L.curveIn = true;
+          Object.assign(sg, { cx: 0, z1: 0, endApex: e, H });
+          x = 0; z = 0; y = e;
         } else if (sg.t === 'surf' || sg.t === 'bank') {
           let [W, H] = { 55: [380, 543], 60: [320, 554], 65: [280, 600] }[sg.face || 60];
           if (sg.t === 'bank') { W *= 1.6; H *= 1.6; } // gorge banks run deep, nearly to the middle
-          const fromRamp = prev && (prev.t === 'surf' || prev.t === 'bank');
+          const fromRamp = prev && RAMPS[prev.t];
           const apex = fromRamp ? prev.endApex - (sg.fall || 500) : y - (sg.fall || 250);
           const z0 = z - (sg.gap || (fromRamp ? 800 : 60));
           let cx = (fromRamp ? prev.cx : x) + (sg.dx || 0);
           if (sg.t === 'bank') cx = (def.center || 0) + sg.side * (def.gorge || 520);
           const z1 = z0 - sg.len, e = apex - sg.drop;
           if (sg.t === 'surf') {
-            lprism([[cx - W, apex - H], [cx + W, apex - H], [cx, apex]], z0, [[cx - W, e - H], [cx + W, e - H], [cx, e]], z1, { color: col, kind: 'ramp' });
+            lprism([[cx - W, apex - H], [cx + W, apex - H], [cx, apex]], z0, [[cx - W, e - H], [cx + W, e - H], [cx, e]], z1, solidProps({ color: col, kind: 'ramp' }));
+            if (def.night) {
+              const g = neon();
+              for (const s of [-1, 1]) {
+                const fx = cx + s * (W + 2), gx = cx + s * (W + 14);
+                lprism([[fx, apex - H], [gx, apex - H], [gx, apex - H + 12], [fx, apex - H + 12]], z0, [[fx, e - H], [gx, e - H], [gx, e - H + 12], [fx, e - H + 12]], z1, g);
+              }
+              lprism([[cx - 7, apex - 12], [cx + 7, apex - 12], [cx, apex + 3]], z0, [[cx - 7, e - 12], [cx + 7, e - 12], [cx, e + 3]], z1, g);
+            }
           } else {
             // the face drops from the cliff edge toward the middle of the gorge
             const s = sg.side, inX = cx - s * W;
@@ -804,6 +888,7 @@
       // the whole route's footprint, for the kill volume and the skyline gaps
       const pts = [];
       for (const lg of legs) for (const it of lg.items) {
+        if (it.t === 'curve') { for (const c of it.chords) for (const u of [-900, 900]) pts.push([c.x + c.rx * u, c.z + c.rz * u]); continue; }
         const xs = it.t === 'ramp' ? [it.cx - 900, it.cx + 900] : [it.x - 900, it.x + 900];
         for (const xx of xs) for (const zz of [it.z0 + 600, it.z1 - 900]) pts.push(lg.at(xx, zz));
       }
@@ -816,25 +901,41 @@
       if (def.skyline) {
         const corridors = [];
         for (const lg of legs) {
-          const q = [];
-          for (const it of lg.items) { const xs = it.t === 'ramp' ? [it.cx - 700, it.cx + 700] : [it.x - 700, it.x + 700]; for (const xx of xs) for (const zz of [it.z0 + 500, it.z1 - 500]) q.push(lg.at(xx, zz)); }
-          corridors.push([Math.min(...q.map(p => p[0])), Math.min(...q.map(p => p[1])), Math.max(...q.map(p => p[0])), Math.max(...q.map(p => p[1]))]);
+          const q = lg.curveIn ? [lg.at(-700, 500), lg.at(700, 500)] : [];
+          for (const it of lg.items) {
+            if (it.t === 'curve') {
+              // each piece of the bend gets its own clearance, so towers can stand inside the turn
+              for (const c of it.chords) { const xs = [c.x - 760, c.x + 760], zs = [c.z - 760, c.z + 760]; corridors.push([xs[0], zs[0], xs[1], zs[1]]); }
+              q.push(lg.at(it.cx - 700, it.z0 + 500), lg.at(it.cx + 700, it.z0 + 500));
+              continue;
+            }
+            const xs = it.t === 'ramp' ? [it.cx - 700, it.cx + 700] : [it.x - 700, it.x + 700]; for (const xx of xs) for (const zz of [it.z0 + 500, it.z1 - 500]) q.push(lg.at(xx, zz));
+          }
+          if (q.length) corridors.push([Math.min(...q.map(p => p[0])), Math.min(...q.map(p => p[1])), Math.max(...q.map(p => p[0])), Math.max(...q.map(p => p[1]))]);
         }
         let seed = def.skyline.seed;
         const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
         const hits = (a) => corridors.some(q => a[0] < q[2] + 160 && a[2] > q[0] - 160 && a[1] < q[3] + 160 && a[3] > q[1] - 160);
-        for (let gx = bx0 - 2500; gx < bx1 + 2500; gx += 900) for (let gz = bz0 - 2500; gz < bz1 + 2500; gz += 900) {
-          const w = 420 + rnd() * 400, d = 420 + rnd() * 400;
-          const ax = gx + rnd() * (840 - w), az = gz + rnd() * (840 - d), a = [ax, az, ax + w, az + d];
+        // the night city's towers are bigger and further apart
+        const step = def.skyline.step || 900, sz = def.skyline.size || 420, spread = def.skyline.size ? sz * 0.95 : 400;
+        for (let gx = bx0 - 2500; gx < bx1 + 2500; gx += step) for (let gz = bz0 - 2500; gz < bz1 + 2500; gz += step) {
+          const w = sz + rnd() * spread, d = sz + rnd() * spread;
+          const ax = gx + rnd() * (step - 60 - w), az = gz + rnd() * (step - 60 - d), a = [ax, az, ax + w, az + d];
           const t = def.skyline.lo + rnd() * (def.skyline.hi - def.skyline.lo), glass = rnd() < 0.3;
-          if (!hits(a)) world.addBox([a[0], def.base, a[1]], [a[2], t, a[3]], { color: glass ? COLORS.glass : COLORS.roofSide, kind: 'building', far: true });
+          if (!hits(a)) {
+            world.addBox([a[0], def.base, a[1]], [a[2], t, a[3]], { color: glass ? COLORS.glass : COLORS.roofSide, kind: 'building', far: true });
+            // night: some towers carry a neon band or a rooftop sign
+            if (def.night && rnd() < 0.3) {
+              const g = { color: NEON[(rnd() * NEON.length) | 0], nonsolid: true, glow: true }, by = t - 60 - rnd() * 400;
+              world.addBox([a[0] - 6, by, a[1] - 6], [a[2] + 6, by + 18, a[3] + 6], g);
+            }
+          }
         }
         world.addBox([bx0 - 3000, def.base - 20, bz0 - 3000], [bx1 + 3000, def.base, bz1 + 3000], { color: COLORS.street, kind: 'street' });
       }
-      const first = legs[0].items[0];
-      courses[name] = Object.assign({ spawn, stages: cp + 1, legs: legs.map(lg => ({ ox: lg.ox, oz: lg.oz, h: lg.h, items: lg.items })),
+      courses[name] = Object.assign({ spawn, stages: cp + 1, legs: legs.map(lg => ({ ox: lg.ox, oz: lg.oz, h: lg.h, items: lg.items, curveIn: !!lg.curveIn })),
         preview: { pos: (() => { const p = legs[0].at(0, 400); return [p[0], top, p[1]]; })(), yaw: legs[0].yaw } },
-        { name: def.name, type: def.type, difficulty: def.difficulty, color: def.color, desc: def.desc, route: true });
+        { name: def.name, type: def.type, difficulty: def.difficulty, color: def.color, desc: def.desc, route: true, set: def.set });
     }
 
     // ------------------------------------------------------------ surf
@@ -955,6 +1056,121 @@
         { t: 'pad', rise: 120, len: 900, w: 900, lip: true, end: true },
       ] });
 
+    // ------------------------------------------------------------ night city
+    // Six levels across a city at night, each harder than the last: rooftop
+    // pads, block lines, slides and wallruns, and surf ramps that bend round
+    // corners between the towers. Neon trims every edge you can stand on.
+    const NIGHT = { night: true, set: 'night', base: -3990, neon: [0xff2bd6, 0x18e7ff, 0x9b4dff, 0xff8a1f, 0x3dff9e], padColor: 0x353b48 };
+    const NRAMP = [0x7b3cf0, 0x1d9be0, 0xe0329b, 0x22c79a], NBLOCK = [0xff2bd6, 0x18c8ff, 0xffa31f, 0x9b4dff];
+    const night = (name, ox, oz, top, def) => routeKit(name, ox, oz, top, Object.assign({}, NIGHT, def));
+    night('n1', 200000, 30000, 7000, {
+      name: 'Neon Mile', type: 'Mixed', difficulty: 2, color: 0xff2bd6, palette: [NBLOCK[0], NRAMP[1], NRAMP[0], NBLOCK[1]],
+      skyline: { lo: 0, hi: 9000, seed: 101, step: 1400, size: 640 },
+      desc: 'Night City 1. Hop a block line, drop onto a ramp, then ride a ramp that bends right round a tower to a lit roof.',
+      segs: [
+        { t: 'pad', len: 600 },
+        { t: 'bhop', n: 7, size: 176, step: 250 },
+        { t: 'pad', gap: 120, len: 600, w: 700 },
+        { t: 'surf', face: 55, len: 3000, drop: 400 },
+        { t: 'curve', dir: 1, face: 55, R: 4200, drop: 700, fall: 700, gap: 900 },
+        { t: 'pad', len: 3000, w: 1400, cp: true },
+        { t: 'bhop', n: 7, size: 160, step: 255, lat: [0, 50, -50] },
+        { t: 'pad', gap: 120, len: 600, end: true },
+      ] });
+
+    night('n2', 245000, 30000, 7500, {
+      name: 'Afterhours', type: 'Mixed', difficulty: 3, color: 0x18c8ff, palette: [NRAMP[1], NRAMP[0], NBLOCK[1], NRAMP[2]],
+      skyline: { lo: 0, hi: 9500, seed: 113, step: 1400, size: 640 },
+      desc: 'Night City 2. Slide a roof into a ramp that bends left, transfer across, then hop blocks and wallrun a billboard to the finish.',
+      segs: [
+        { t: 'pad', len: 700, w: 900 },
+        { t: 'slide', len: 1500, drop: 400, base: -3990 },
+        { t: 'curve', dir: -1, face: 60, R: 3800, drop: 600 },
+        { t: 'surf', face: 60, len: 3200, drop: 400, dx: -350, gap: 900, fall: 600 },
+        { t: 'pad', len: 3000, w: 1400, cp: true }, { t: 'turn', dir: 1 },
+        { t: 'bhop', n: 9, size: 144, step: 265, lat: [0, 70, -70, 0] },
+        { t: 'pad', gap: 130, len: 800, w: 900 },
+        { t: 'wall', side: 1, len: 700, gap: 550 },
+        { t: 'pad', rise: 120, len: 900, w: 900, lip: true, end: true },
+      ] });
+    night('n3', 290000, 30000, 8000, {
+      name: 'Overpass', type: 'Mixed', difficulty: 3, color: 0x9b4dff, palette: [NBLOCK[3], NRAMP[0], NRAMP[3], NBLOCK[0]],
+      skyline: { lo: 0, hi: 10000, seed: 127, step: 1400, size: 640 },
+      desc: 'Night City 3. Two bends that turn opposite ways, with a jump across between them, then zigzag blocks and a wallrun.',
+      segs: [
+        { t: 'pad', len: 600 },
+        { t: 'bhop', n: 8, size: 150, step: 260, lat: [0, 60, -60] },
+        { t: 'pad', gap: 120, len: 600, w: 700 },
+        { t: 'curve', dir: 1, face: 60, R: 3600, drop: 600 },
+        { t: 'curve', dir: -1, face: 60, R: 3600, drop: 600, gap: 900, fall: 700, dx: 400 },
+        { t: 'pad', len: 3000, w: 1400, cp: true },
+        { t: 'bhop', n: 9, size: 136, step: 270, zig: 60 },
+        { t: 'pad', gap: 130, len: 800, w: 900 },
+        { t: 'wall', side: -1, len: 700, gap: 550 },
+        { t: 'pad', rise: 120, len: 900, w: 900, lip: true, end: true },
+      ] });
+    night('n4', 200000, -30000, 9000, {
+      name: 'Blackout', type: 'Mixed', difficulty: 4, color: 0xffa31f, palette: [NRAMP[2], NRAMP[1], NBLOCK[2], NRAMP[0]],
+      skyline: { lo: 0, hi: 11000, seed: 131, step: 1400, size: 640 },
+      desc: 'Night City 4. A hairpin: two bends joined into one half turn, a transfer off its end, a climbing block line, then slide into a last bend.',
+      segs: [
+        { t: 'pad', len: 600 },
+        { t: 'surf', face: 60, len: 3000, drop: 450 },
+        { t: 'curve', dir: -1, face: 60, R: 3000, drop: 450, gap: 900, fall: 700, dx: 300 },
+        { t: 'curve', dir: -1, face: 60, R: 3000, drop: 450, join: true },
+        { t: 'surf', face: 65, len: 3000, drop: 400, dx: -400, gap: 900, fall: 600 },
+        { t: 'pad', len: 3000, w: 1400, cp: true },
+        { t: 'bhop', n: 10, size: 128, step: 280, dy: 20, lat: [0, 70, -70] },
+        { t: 'pad', gap: 130, len: 700, w: 800 },
+        { t: 'slide', len: 1500, drop: 400, base: -3990 },
+        { t: 'curve', dir: 1, face: 65, R: 3600, drop: 700 },
+        { t: 'pad', len: 3000, w: 1400, end: true },
+      ] });
+    night('n5', 245000, -30000, 10000, {
+      name: 'Signal', type: 'Mixed', difficulty: 5, color: 0x3dff9e, palette: [NRAMP[3], NBLOCK[0], NRAMP[1], NBLOCK[3]],
+      skyline: { lo: 0, hi: 12000, seed: 149, step: 1400, size: 640 },
+      desc: 'Night City 5. Small zigzag blocks straight into a hairpin, falling blocks, a wallrun, then a slide into two bends that turn opposite ways.',
+      segs: [
+        { t: 'pad', len: 600 },
+        { t: 'bhop', n: 11, size: 120, step: 285, zig: 80 },
+        { t: 'pad', gap: 120, len: 500, w: 600 },
+        { t: 'curve', dir: 1, face: 65, R: 3200, drop: 500 },
+        { t: 'curve', dir: 1, face: 65, R: 3200, drop: 500, join: true },
+        { t: 'surf', face: 65, len: 3000, drop: 450, dx: 420, gap: 900, fall: 600 },
+        { t: 'pad', len: 3000, w: 1400, cp: true },
+        { t: 'bhop', n: 12, size: 112, step: 290, dy: -25, lat: [0, 80, -80, 40, -40] },
+        { t: 'pad', gap: 130, len: 800, w: 900 },
+        { t: 'wall', side: 1, len: 700, gap: 550 },
+        { t: 'pad', rise: 120, len: 1100, w: 1100, lip: true },
+        { t: 'slide', len: 1500, drop: 400, base: -3990 },
+        { t: 'curve', dir: -1, face: 60, R: 3400, drop: 600 },
+        { t: 'curve', dir: 1, face: 65, R: 3400, drop: 600, gap: 900, fall: 700, dx: -400 },
+        { t: 'pad', len: 3000, w: 1400, end: true },
+      ] });
+    night('n6', 320000, -30000, 11000, {
+      name: 'Skyline', type: 'Mixed', difficulty: 6, color: 0xff3b5c, palette: [NBLOCK[0], NRAMP[0], NRAMP[2], NBLOCK[1]],
+      skyline: { lo: 0, hi: 13000, seed: 163, step: 1400, size: 640 },
+      desc: 'Night City 6. The longest: the smallest blocks, a hairpin into an opposite bend, a wallrun, then a second hairpin into a climbing ramp. One checkpoint.',
+      segs: [
+        { t: 'pad', len: 600 },
+        { t: 'bhop', n: 12, size: 104, step: 295, lat: [0, 100, -100, 50, -50] },
+        { t: 'pad', gap: 120, len: 500, w: 600 },
+        { t: 'slide', len: 1500, drop: 400, base: -3990 },
+        { t: 'curve', dir: -1, face: 65, R: 3000, drop: 500 },
+        { t: 'curve', dir: -1, face: 65, R: 3000, drop: 500, join: true },
+        { t: 'curve', dir: 1, face: 65, R: 3000, drop: 500, gap: 900, fall: 700, dx: -400 },
+        { t: 'pad', len: 3000, w: 1400, cp: true },
+        { t: 'bhop', n: 14, size: 96, step: 300, zig: 105 },
+        { t: 'pad', gap: 130, len: 800, w: 900 },
+        { t: 'wall', side: -1, len: 700, gap: 550 },
+        { t: 'pad', rise: 120, len: 1100, w: 1100, lip: true },
+        { t: 'surf', face: 65, len: 2600, drop: 800 },
+        { t: 'curve', dir: 1, face: 65, R: 3400, drop: 600, gap: 900, fall: 700, dx: -300 },
+        { t: 'curve', dir: 1, face: 65, R: 3400, drop: 600, join: true },
+        { t: 'surf', face: 65, len: 3000, drop: -200, dx: 450, gap: 900, fall: 500 },
+        { t: 'pad', len: 3000, w: 1400, end: true },
+      ] });
+
     // ------------------------------------------------------------ level order and keys
     const order = ['surf', 'bhop', 'roofs', 'canyon', 'stairway', 'crossover', 'downtown', 'cascade', 'spire', 'freerun'];
     order.forEach((name, i) => { courses[name].key = String((i + 1) % 10); }); // the tenth level is on 0
@@ -964,8 +1180,10 @@
 
     const gauntletOrder = ['g1', 'g2', 'g3', 'g4', 'g5', 'g6'];
     gauntletOrder.forEach((name, i) => { courses[name].key = 'G' + (i + 1); });
+    const nightOrder = ['n1', 'n2', 'n3', 'n4', 'n5', 'n6'];
+    nightOrder.forEach((name, i) => { courses[name].key = 'N' + (i + 1); });
 
-    return { world, courses, order, gauntlet: gauntletOrder, hubSpawn, COLORS };
+    return { world, courses, order, gauntlet: gauntletOrder, night: nightOrder, hubSpawn, COLORS };
   }
 
   root.StrafeMap = { buildMap };

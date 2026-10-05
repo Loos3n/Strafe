@@ -5811,7 +5811,7 @@ window.STRAFE_ASSETS = {"city":"Z2xURgIAAABU+ggAYFIAAEpTT057ImFzc2V0Ijp7ImdlbmVy
 
 </script>
 <script>
-// Strafe map: the tutorial, ten levels and the six-level Gauntlet.
+// Strafe map: the tutorial, ten levels, the six-level Gauntlet and the six-level Night City.
 // All coordinates are Hammer units, Y up, courses run toward -Z.
 (function (root) {
   'use strict';
@@ -5833,6 +5833,32 @@ window.STRAFE_ASSETS = {"city":"Z2xURgIAAABU+ggAYFIAAEpTT057ImFzc2V0Ijp7ImdlbmVy
     const box = (min, max, color, extra) => world.addBox(min, max, Object.assign({ color }, extra));
     const courses = {};
     const route = (min, max) => box(min, max, COLORS.route, { kind: 'route' });
+    // a convex brush around a handful of points: every plane through three of
+    // them with all the rest behind it is a face (used for curved ramps)
+    const hullPts = (pts, props) => {
+      const sub = (a, b) => [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
+      const cross = (a, b) => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
+      const dot = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+      const faces = [], planes = [];
+      for (let i = 0; i < pts.length; i++) for (let j = i + 1; j < pts.length; j++) for (let k = j + 1; k < pts.length; k++) {
+        let n = cross(sub(pts[j], pts[i]), sub(pts[k], pts[i]));
+        const l = Math.hypot(n[0], n[1], n[2]);
+        if (l < 1e-6) continue;
+        n = n.map(v => v / l);
+        let d = dot(n, pts[i]), pos = 0, neg = 0;
+        for (const q of pts) { const e = dot(n, q) - d; if (e > 0.01) pos++; else if (e < -0.01) neg++; }
+        if (pos && neg) continue;
+        if (pos) { n = n.map(v => -v); d = -d; }
+        if (planes.some(q => dot(q.n, n) > 0.999999 && Math.abs(q.d - d) < 0.05)) continue;
+        planes.push({ n, d });
+        const on = pts.filter(q => Math.abs(dot(n, q) - d) < 0.05);
+        const c = [0, 1, 2].map(a => on.reduce((t, q) => t + q[a], 0) / on.length);
+        const u0 = sub(on[0], c), ul = Math.hypot(...u0), u = u0.map(v => v / ul), v = cross(n, u);
+        on.sort((a, b) => Math.atan2(dot(sub(a, c), v), dot(sub(a, c), u)) - Math.atan2(dot(sub(b, c), v), dot(sub(b, c), u)));
+        faces.push(on);
+      }
+      return world.addHull(faces, props);
+    };
 
     // where the player waits while no level is loaded (only the menu is showing)
     const hubSpawn = { pos: [0, 0, 600], yaw: 0 };
@@ -6531,6 +6557,12 @@ window.STRAFE_ASSETS = {"city":"Z2xURgIAAABU+ggAYFIAAEpTT057ImFzc2V0Ijp7ImdlbmVy
       };
       let x = 0, y = top, z = 0, cp = 0, lo = top, spawn = null, prev = null, prevPad = null;
       const pal = def.palette;
+      const RAMPS = { surf: 1, bank: 1, curve: 1 };
+      // night levels: neon strips (visual only) along pad edges and ramp feet
+      const NEON = def.neon || [];
+      let ni = 0;
+      const neon = () => ({ color: NEON[ni++ % NEON.length], nonsolid: true, glow: true });
+      const solidProps = (props) => def.night ? Object.assign(props, { neon: true }) : props;
       def.segs.forEach((sg, si) => {
         const col = pal[si % pal.length];
         if (sg.t === 'turn') {
@@ -6545,13 +6577,19 @@ window.STRAFE_ASSETS = {"city":"Z2xURgIAAABU+ggAYFIAAEpTT057ImFzc2V0Ijp7ImdlbmVy
         }
         if (sg.t === 'pad' || sg.t === 'lane') {
           const w = sg.w || 600, len = sg.len || 600;
-          if (prev && (prev.t === 'surf' || prev.t === 'bank')) {
+          if (prev && RAMPS[prev.t]) {
             y = prev.endApex - prev.H - (sg.fall || 450); z = prev.z1 + (sg.back || 200); x = sg.x !== undefined ? sg.x : prev.cx;
           } else {
             z -= sg.gap || 0; y += sg.rise || 0; if (sg.x !== undefined) x = sg.x;
           }
           const kind = sg.t === 'lane' ? 'lane' : 'pad';
-          lbox(x - w / 2, x + w / 2, y - 60, y, z - len, z, { color: sg.t === 'lane' ? col : COLORS.bhopPad, kind });
+          lbox(x - w / 2, x + w / 2, y - 60, y, z - len, z, solidProps({ color: sg.t === 'lane' ? col : def.padColor || COLORS.bhopPad, kind }));
+          if (def.night) {
+            // a neon trim just outside the top edges
+            const g = neon(), a = x - w / 2, b = x + w / 2;
+            lbox(a - 10, a - 2, y - 22, y - 4, z - len, z, g); lbox(b + 2, b + 10, y - 22, y - 4, z - len, z, g);
+            lbox(a, b, y - 22, y - 4, z + 2, z + 10, g); lbox(a, b, y - 22, y - 4, z - len - 10, z - len - 2, g);
+          }
           if (sg.lip) lbox(x - w / 2 + 160, x + w / 2 - 160, y - 130, y, z - 3, z, { color: COLORS.route, kind: 'route' });
           const here = { pos: (() => { const q = W3(x, y, z - Math.min(300, len / 2)); return q; })(), yaw: L.yaw };
           if (!spawn) { spawn = here; ltrig(x - w / 2, x + w / 2, y, y + 160, z - len, z, { type: 'start' }); }
@@ -6583,22 +6621,68 @@ window.STRAFE_ASSETS = {"city":"Z2xURgIAAABU+ggAYFIAAEpTT057ImFzc2V0Ijp7ImdlbmVy
             const lat = sg.zig ? (k % 2 ? sg.zig : -sg.zig) : sg.lat ? sg.lat[k % sg.lat.length] : 0;
             const cz = z - (k === 0 ? (sg.first || sg.step) - h : sg.step);
             z = cz;
-            lbox(x + lat - h, x + lat + h, y - 60, y, cz - h, cz + h, { color: col, kind: 'block' });
+            lbox(x + lat - h, x + lat + h, y - 60, y, cz - h, cz + h, solidProps({ color: col, kind: 'block' }));
             L.items.push({ t: 'block', x: x + lat, y, z0: cz + h, z1: cz - h, cz, w: size });
             lo = Math.min(lo, y);
           }
           z -= h;
+        } else if (sg.t === 'curve') {
+          // a ramp that bends a quarter turn (dir 1 right, -1 left) on radius R.
+          // Built from short straight pieces sharing their ends, so the surface
+          // is seamless. You ride the inside face, which banks you round. A new
+          // leg starts at the exit, heading the new way.
+          const [W, H] = FACES[sg.face || 60];
+          const fromRamp = prev && RAMPS[prev.t];
+          const apex = sg.join ? prev.endApex : fromRamp ? prev.endApex - (sg.fall || 500) : y - (sg.fall || 250);
+          const z0 = sg.join ? z : z - (sg.gap || (fromRamp ? 800 : 60));
+          const cx = sg.join ? prev.cx : (fromRamp ? prev.cx : x) + (sg.dx || 0);
+          const d = sg.dir, R = sg.R || 3600, e = apex - sg.drop;
+          const N = Math.ceil(R * Math.PI / 2 / 240);
+          const sect = (j) => {
+            const a = j / N * Math.PI / 2, px = cx + d * R * (1 - Math.cos(a)), pz = z0 - R * Math.sin(a);
+            const rx = Math.cos(a), rz = d * Math.sin(a), ay = apex - sg.drop * j / N;
+            const at = (u, yy) => W3(px + rx * u, yy, pz + rz * u);
+            return { p: at(0, ay), l: at(-W, ay - H), r: at(W, ay - H), gl: [at(-W - 2, ay - H), at(-W - 14, ay - H), at(-W - 14, ay - H + 12), at(-W - 2, ay - H + 12)],
+              gr: [at(W + 2, ay - H), at(W + 14, ay - H), at(W + 14, ay - H + 12), at(W + 2, ay - H + 12)], gp: [at(-7, ay - 12), at(7, ay - 12), at(0, ay + 3)] };
+          };
+          const chords = [], g = def.night ? neon() : null;
+          for (let j = 0; j < N; j++) {
+            const s0 = sect(j), s1 = sect(j + 1);
+            const fx0 = s1.p[0] - s0.p[0], fz0 = s1.p[2] - s0.p[2], len = Math.hypot(fx0, fz0), fx = fx0 / len, fz = fz0 / len;
+            // each piece runs 40 units into its neighbours, so the joins are
+            // buried under the face instead of standing up as edges to catch on
+            const ex = (q, k) => [q[0] + fx * 40 * k, q[1] - sg.drop / N * 40 / len * k, q[2] + fz * 40 * k];
+            const k0 = j || sg.join ? -1 : 0, k1 = j < N - 1 || (def.segs[si + 1] || {}).join ? 1 : 0;
+            hullPts([ex(s0.l, k0), ex(s0.p, k0), ex(s0.r, k0), ex(s1.l, k1), ex(s1.p, k1), ex(s1.r, k1)], solidProps({ color: col, kind: 'ramp', pylons: j % 6 === 3 ? [[s0.p[0], s0.p[2]]] : [] }));
+            if (g) for (const k of ['gl', 'gr', 'gp']) hullPts(s0[k].concat(s1[k]), g);
+            chords.push({ x: s0.p[0], z: s0.p[2], apex: s0.p[1], fx, fz, rx: -fz, rz: fx, hd: Math.atan2(-fx, -fz), len, W, H });
+          }
+          L.items.push({ t: 'curve', cx, apex, z0, z1: z0 - R, drop: sg.drop, W, H, dir: d, R, chords });
+          lo = Math.min(lo, e - H);
+          const E = sect(N).p;
+          frame(E[0], E[2], (L.h + d + 4) % 4);
+          L.curveIn = true;
+          Object.assign(sg, { cx: 0, z1: 0, endApex: e, H });
+          x = 0; z = 0; y = e;
         } else if (sg.t === 'surf' || sg.t === 'bank') {
           let [W, H] = { 55: [380, 543], 60: [320, 554], 65: [280, 600] }[sg.face || 60];
           if (sg.t === 'bank') { W *= 1.6; H *= 1.6; } // gorge banks run deep, nearly to the middle
-          const fromRamp = prev && (prev.t === 'surf' || prev.t === 'bank');
+          const fromRamp = prev && RAMPS[prev.t];
           const apex = fromRamp ? prev.endApex - (sg.fall || 500) : y - (sg.fall || 250);
           const z0 = z - (sg.gap || (fromRamp ? 800 : 60));
           let cx = (fromRamp ? prev.cx : x) + (sg.dx || 0);
           if (sg.t === 'bank') cx = (def.center || 0) + sg.side * (def.gorge || 520);
           const z1 = z0 - sg.len, e = apex - sg.drop;
           if (sg.t === 'surf') {
-            lprism([[cx - W, apex - H], [cx + W, apex - H], [cx, apex]], z0, [[cx - W, e - H], [cx + W, e - H], [cx, e]], z1, { color: col, kind: 'ramp' });
+            lprism([[cx - W, apex - H], [cx + W, apex - H], [cx, apex]], z0, [[cx - W, e - H], [cx + W, e - H], [cx, e]], z1, solidProps({ color: col, kind: 'ramp' }));
+            if (def.night) {
+              const g = neon();
+              for (const s of [-1, 1]) {
+                const fx = cx + s * (W + 2), gx = cx + s * (W + 14);
+                lprism([[fx, apex - H], [gx, apex - H], [gx, apex - H + 12], [fx, apex - H + 12]], z0, [[fx, e - H], [gx, e - H], [gx, e - H + 12], [fx, e - H + 12]], z1, g);
+              }
+              lprism([[cx - 7, apex - 12], [cx + 7, apex - 12], [cx, apex + 3]], z0, [[cx - 7, e - 12], [cx + 7, e - 12], [cx, e + 3]], z1, g);
+            }
           } else {
             // the face drops from the cliff edge toward the middle of the gorge
             const s = sg.side, inX = cx - s * W;
@@ -6617,6 +6701,7 @@ window.STRAFE_ASSETS = {"city":"Z2xURgIAAABU+ggAYFIAAEpTT057ImFzc2V0Ijp7ImdlbmVy
       // the whole route's footprint, for the kill volume and the skyline gaps
       const pts = [];
       for (const lg of legs) for (const it of lg.items) {
+        if (it.t === 'curve') { for (const c of it.chords) for (const u of [-900, 900]) pts.push([c.x + c.rx * u, c.z + c.rz * u]); continue; }
         const xs = it.t === 'ramp' ? [it.cx - 900, it.cx + 900] : [it.x - 900, it.x + 900];
         for (const xx of xs) for (const zz of [it.z0 + 600, it.z1 - 900]) pts.push(lg.at(xx, zz));
       }
@@ -6629,25 +6714,41 @@ window.STRAFE_ASSETS = {"city":"Z2xURgIAAABU+ggAYFIAAEpTT057ImFzc2V0Ijp7ImdlbmVy
       if (def.skyline) {
         const corridors = [];
         for (const lg of legs) {
-          const q = [];
-          for (const it of lg.items) { const xs = it.t === 'ramp' ? [it.cx - 700, it.cx + 700] : [it.x - 700, it.x + 700]; for (const xx of xs) for (const zz of [it.z0 + 500, it.z1 - 500]) q.push(lg.at(xx, zz)); }
-          corridors.push([Math.min(...q.map(p => p[0])), Math.min(...q.map(p => p[1])), Math.max(...q.map(p => p[0])), Math.max(...q.map(p => p[1]))]);
+          const q = lg.curveIn ? [lg.at(-700, 500), lg.at(700, 500)] : [];
+          for (const it of lg.items) {
+            if (it.t === 'curve') {
+              // each piece of the bend gets its own clearance, so towers can stand inside the turn
+              for (const c of it.chords) { const xs = [c.x - 760, c.x + 760], zs = [c.z - 760, c.z + 760]; corridors.push([xs[0], zs[0], xs[1], zs[1]]); }
+              q.push(lg.at(it.cx - 700, it.z0 + 500), lg.at(it.cx + 700, it.z0 + 500));
+              continue;
+            }
+            const xs = it.t === 'ramp' ? [it.cx - 700, it.cx + 700] : [it.x - 700, it.x + 700]; for (const xx of xs) for (const zz of [it.z0 + 500, it.z1 - 500]) q.push(lg.at(xx, zz));
+          }
+          if (q.length) corridors.push([Math.min(...q.map(p => p[0])), Math.min(...q.map(p => p[1])), Math.max(...q.map(p => p[0])), Math.max(...q.map(p => p[1]))]);
         }
         let seed = def.skyline.seed;
         const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
         const hits = (a) => corridors.some(q => a[0] < q[2] + 160 && a[2] > q[0] - 160 && a[1] < q[3] + 160 && a[3] > q[1] - 160);
-        for (let gx = bx0 - 2500; gx < bx1 + 2500; gx += 900) for (let gz = bz0 - 2500; gz < bz1 + 2500; gz += 900) {
-          const w = 420 + rnd() * 400, d = 420 + rnd() * 400;
-          const ax = gx + rnd() * (840 - w), az = gz + rnd() * (840 - d), a = [ax, az, ax + w, az + d];
+        // the night city's towers are bigger and further apart
+        const step = def.skyline.step || 900, sz = def.skyline.size || 420, spread = def.skyline.size ? sz * 0.95 : 400;
+        for (let gx = bx0 - 2500; gx < bx1 + 2500; gx += step) for (let gz = bz0 - 2500; gz < bz1 + 2500; gz += step) {
+          const w = sz + rnd() * spread, d = sz + rnd() * spread;
+          const ax = gx + rnd() * (step - 60 - w), az = gz + rnd() * (step - 60 - d), a = [ax, az, ax + w, az + d];
           const t = def.skyline.lo + rnd() * (def.skyline.hi - def.skyline.lo), glass = rnd() < 0.3;
-          if (!hits(a)) world.addBox([a[0], def.base, a[1]], [a[2], t, a[3]], { color: glass ? COLORS.glass : COLORS.roofSide, kind: 'building', far: true });
+          if (!hits(a)) {
+            world.addBox([a[0], def.base, a[1]], [a[2], t, a[3]], { color: glass ? COLORS.glass : COLORS.roofSide, kind: 'building', far: true });
+            // night: some towers carry a neon band or a rooftop sign
+            if (def.night && rnd() < 0.3) {
+              const g = { color: NEON[(rnd() * NEON.length) | 0], nonsolid: true, glow: true }, by = t - 60 - rnd() * 400;
+              world.addBox([a[0] - 6, by, a[1] - 6], [a[2] + 6, by + 18, a[3] + 6], g);
+            }
+          }
         }
         world.addBox([bx0 - 3000, def.base - 20, bz0 - 3000], [bx1 + 3000, def.base, bz1 + 3000], { color: COLORS.street, kind: 'street' });
       }
-      const first = legs[0].items[0];
-      courses[name] = Object.assign({ spawn, stages: cp + 1, legs: legs.map(lg => ({ ox: lg.ox, oz: lg.oz, h: lg.h, items: lg.items })),
+      courses[name] = Object.assign({ spawn, stages: cp + 1, legs: legs.map(lg => ({ ox: lg.ox, oz: lg.oz, h: lg.h, items: lg.items, curveIn: !!lg.curveIn })),
         preview: { pos: (() => { const p = legs[0].at(0, 400); return [p[0], top, p[1]]; })(), yaw: legs[0].yaw } },
-        { name: def.name, type: def.type, difficulty: def.difficulty, color: def.color, desc: def.desc, route: true });
+        { name: def.name, type: def.type, difficulty: def.difficulty, color: def.color, desc: def.desc, route: true, set: def.set });
     }
 
     // ------------------------------------------------------------ surf
@@ -6768,6 +6869,121 @@ window.STRAFE_ASSETS = {"city":"Z2xURgIAAABU+ggAYFIAAEpTT057ImFzc2V0Ijp7ImdlbmVy
         { t: 'pad', rise: 120, len: 900, w: 900, lip: true, end: true },
       ] });
 
+    // ------------------------------------------------------------ night city
+    // Six levels across a city at night, each harder than the last: rooftop
+    // pads, block lines, slides and wallruns, and surf ramps that bend round
+    // corners between the towers. Neon trims every edge you can stand on.
+    const NIGHT = { night: true, set: 'night', base: -3990, neon: [0xff2bd6, 0x18e7ff, 0x9b4dff, 0xff8a1f, 0x3dff9e], padColor: 0x353b48 };
+    const NRAMP = [0x7b3cf0, 0x1d9be0, 0xe0329b, 0x22c79a], NBLOCK = [0xff2bd6, 0x18c8ff, 0xffa31f, 0x9b4dff];
+    const night = (name, ox, oz, top, def) => routeKit(name, ox, oz, top, Object.assign({}, NIGHT, def));
+    night('n1', 200000, 30000, 7000, {
+      name: 'Neon Mile', type: 'Mixed', difficulty: 2, color: 0xff2bd6, palette: [NBLOCK[0], NRAMP[1], NRAMP[0], NBLOCK[1]],
+      skyline: { lo: 0, hi: 9000, seed: 101, step: 1400, size: 640 },
+      desc: 'Night City 1. Hop a block line, drop onto a ramp, then ride a ramp that bends right round a tower to a lit roof.',
+      segs: [
+        { t: 'pad', len: 600 },
+        { t: 'bhop', n: 7, size: 176, step: 250 },
+        { t: 'pad', gap: 120, len: 600, w: 700 },
+        { t: 'surf', face: 55, len: 3000, drop: 400 },
+        { t: 'curve', dir: 1, face: 55, R: 4200, drop: 700, fall: 700, gap: 900 },
+        { t: 'pad', len: 3000, w: 1400, cp: true },
+        { t: 'bhop', n: 7, size: 160, step: 255, lat: [0, 50, -50] },
+        { t: 'pad', gap: 120, len: 600, end: true },
+      ] });
+
+    night('n2', 245000, 30000, 7500, {
+      name: 'Afterhours', type: 'Mixed', difficulty: 3, color: 0x18c8ff, palette: [NRAMP[1], NRAMP[0], NBLOCK[1], NRAMP[2]],
+      skyline: { lo: 0, hi: 9500, seed: 113, step: 1400, size: 640 },
+      desc: 'Night City 2. Slide a roof into a ramp that bends left, transfer across, then hop blocks and wallrun a billboard to the finish.',
+      segs: [
+        { t: 'pad', len: 700, w: 900 },
+        { t: 'slide', len: 1500, drop: 400, base: -3990 },
+        { t: 'curve', dir: -1, face: 60, R: 3800, drop: 600 },
+        { t: 'surf', face: 60, len: 3200, drop: 400, dx: -350, gap: 900, fall: 600 },
+        { t: 'pad', len: 3000, w: 1400, cp: true }, { t: 'turn', dir: 1 },
+        { t: 'bhop', n: 9, size: 144, step: 265, lat: [0, 70, -70, 0] },
+        { t: 'pad', gap: 130, len: 800, w: 900 },
+        { t: 'wall', side: 1, len: 700, gap: 550 },
+        { t: 'pad', rise: 120, len: 900, w: 900, lip: true, end: true },
+      ] });
+    night('n3', 290000, 30000, 8000, {
+      name: 'Overpass', type: 'Mixed', difficulty: 3, color: 0x9b4dff, palette: [NBLOCK[3], NRAMP[0], NRAMP[3], NBLOCK[0]],
+      skyline: { lo: 0, hi: 10000, seed: 127, step: 1400, size: 640 },
+      desc: 'Night City 3. Two bends that turn opposite ways, with a jump across between them, then zigzag blocks and a wallrun.',
+      segs: [
+        { t: 'pad', len: 600 },
+        { t: 'bhop', n: 8, size: 150, step: 260, lat: [0, 60, -60] },
+        { t: 'pad', gap: 120, len: 600, w: 700 },
+        { t: 'curve', dir: 1, face: 60, R: 3600, drop: 600 },
+        { t: 'curve', dir: -1, face: 60, R: 3600, drop: 600, gap: 900, fall: 700, dx: 400 },
+        { t: 'pad', len: 3000, w: 1400, cp: true },
+        { t: 'bhop', n: 9, size: 136, step: 270, zig: 60 },
+        { t: 'pad', gap: 130, len: 800, w: 900 },
+        { t: 'wall', side: -1, len: 700, gap: 550 },
+        { t: 'pad', rise: 120, len: 900, w: 900, lip: true, end: true },
+      ] });
+    night('n4', 200000, -30000, 9000, {
+      name: 'Blackout', type: 'Mixed', difficulty: 4, color: 0xffa31f, palette: [NRAMP[2], NRAMP[1], NBLOCK[2], NRAMP[0]],
+      skyline: { lo: 0, hi: 11000, seed: 131, step: 1400, size: 640 },
+      desc: 'Night City 4. A hairpin: two bends joined into one half turn, a transfer off its end, a climbing block line, then slide into a last bend.',
+      segs: [
+        { t: 'pad', len: 600 },
+        { t: 'surf', face: 60, len: 3000, drop: 450 },
+        { t: 'curve', dir: -1, face: 60, R: 3000, drop: 450, gap: 900, fall: 700, dx: 300 },
+        { t: 'curve', dir: -1, face: 60, R: 3000, drop: 450, join: true },
+        { t: 'surf', face: 65, len: 3000, drop: 400, dx: -400, gap: 900, fall: 600 },
+        { t: 'pad', len: 3000, w: 1400, cp: true },
+        { t: 'bhop', n: 10, size: 128, step: 280, dy: 20, lat: [0, 70, -70] },
+        { t: 'pad', gap: 130, len: 700, w: 800 },
+        { t: 'slide', len: 1500, drop: 400, base: -3990 },
+        { t: 'curve', dir: 1, face: 65, R: 3600, drop: 700 },
+        { t: 'pad', len: 3000, w: 1400, end: true },
+      ] });
+    night('n5', 245000, -30000, 10000, {
+      name: 'Signal', type: 'Mixed', difficulty: 5, color: 0x3dff9e, palette: [NRAMP[3], NBLOCK[0], NRAMP[1], NBLOCK[3]],
+      skyline: { lo: 0, hi: 12000, seed: 149, step: 1400, size: 640 },
+      desc: 'Night City 5. Small zigzag blocks straight into a hairpin, falling blocks, a wallrun, then a slide into two bends that turn opposite ways.',
+      segs: [
+        { t: 'pad', len: 600 },
+        { t: 'bhop', n: 11, size: 120, step: 285, zig: 80 },
+        { t: 'pad', gap: 120, len: 500, w: 600 },
+        { t: 'curve', dir: 1, face: 65, R: 3200, drop: 500 },
+        { t: 'curve', dir: 1, face: 65, R: 3200, drop: 500, join: true },
+        { t: 'surf', face: 65, len: 3000, drop: 450, dx: 420, gap: 900, fall: 600 },
+        { t: 'pad', len: 3000, w: 1400, cp: true },
+        { t: 'bhop', n: 12, size: 112, step: 290, dy: -25, lat: [0, 80, -80, 40, -40] },
+        { t: 'pad', gap: 130, len: 800, w: 900 },
+        { t: 'wall', side: 1, len: 700, gap: 550 },
+        { t: 'pad', rise: 120, len: 1100, w: 1100, lip: true },
+        { t: 'slide', len: 1500, drop: 400, base: -3990 },
+        { t: 'curve', dir: -1, face: 60, R: 3400, drop: 600 },
+        { t: 'curve', dir: 1, face: 65, R: 3400, drop: 600, gap: 900, fall: 700, dx: -400 },
+        { t: 'pad', len: 3000, w: 1400, end: true },
+      ] });
+    night('n6', 320000, -30000, 11000, {
+      name: 'Skyline', type: 'Mixed', difficulty: 6, color: 0xff3b5c, palette: [NBLOCK[0], NRAMP[0], NRAMP[2], NBLOCK[1]],
+      skyline: { lo: 0, hi: 13000, seed: 163, step: 1400, size: 640 },
+      desc: 'Night City 6. The longest: the smallest blocks, a hairpin into an opposite bend, a wallrun, then a second hairpin into a climbing ramp. One checkpoint.',
+      segs: [
+        { t: 'pad', len: 600 },
+        { t: 'bhop', n: 12, size: 104, step: 295, lat: [0, 100, -100, 50, -50] },
+        { t: 'pad', gap: 120, len: 500, w: 600 },
+        { t: 'slide', len: 1500, drop: 400, base: -3990 },
+        { t: 'curve', dir: -1, face: 65, R: 3000, drop: 500 },
+        { t: 'curve', dir: -1, face: 65, R: 3000, drop: 500, join: true },
+        { t: 'curve', dir: 1, face: 65, R: 3000, drop: 500, gap: 900, fall: 700, dx: -400 },
+        { t: 'pad', len: 3000, w: 1400, cp: true },
+        { t: 'bhop', n: 14, size: 96, step: 300, zig: 105 },
+        { t: 'pad', gap: 130, len: 800, w: 900 },
+        { t: 'wall', side: -1, len: 700, gap: 550 },
+        { t: 'pad', rise: 120, len: 1100, w: 1100, lip: true },
+        { t: 'surf', face: 65, len: 2600, drop: 800 },
+        { t: 'curve', dir: 1, face: 65, R: 3400, drop: 600, gap: 900, fall: 700, dx: -300 },
+        { t: 'curve', dir: 1, face: 65, R: 3400, drop: 600, join: true },
+        { t: 'surf', face: 65, len: 3000, drop: -200, dx: 450, gap: 900, fall: 500 },
+        { t: 'pad', len: 3000, w: 1400, end: true },
+      ] });
+
     // ------------------------------------------------------------ level order and keys
     const order = ['surf', 'bhop', 'roofs', 'canyon', 'stairway', 'crossover', 'downtown', 'cascade', 'spire', 'freerun'];
     order.forEach((name, i) => { courses[name].key = String((i + 1) % 10); }); // the tenth level is on 0
@@ -6777,8 +6993,10 @@ window.STRAFE_ASSETS = {"city":"Z2xURgIAAABU+ggAYFIAAEpTT057ImFzc2V0Ijp7ImdlbmVy
 
     const gauntletOrder = ['g1', 'g2', 'g3', 'g4', 'g5', 'g6'];
     gauntletOrder.forEach((name, i) => { courses[name].key = 'G' + (i + 1); });
+    const nightOrder = ['n1', 'n2', 'n3', 'n4', 'n5', 'n6'];
+    nightOrder.forEach((name, i) => { courses[name].key = 'N' + (i + 1); });
 
-    return { world, courses, order, gauntlet: gauntletOrder, hubSpawn, COLORS };
+    return { world, courses, order, gauntlet: gauntletOrder, night: nightOrder, hubSpawn, COLORS };
   }
 
   root.StrafeMap = { buildMap };
@@ -6895,10 +7113,11 @@ window.STRAFE_ASSETS = {"city":"Z2xURgIAAABU+ggAYFIAAEpTT057ImFzc2V0Ijp7ImdlbmVy
     new THREE.SphereGeometry(60000, 32, 16),
     new THREE.ShaderMaterial({
       side: THREE.BackSide, depthWrite: false, fog: false,
-      uniforms: { sun: { value: sunDir }, zenith: { value: new THREE.Color(0x3d8fd6) }, horizon: { value: HORIZON }, ground: { value: new THREE.Color(0xb9c9d3) } },
+      uniforms: { sun: { value: sunDir }, zenith: { value: new THREE.Color(0x3d8fd6) }, horizon: { value: HORIZON }, ground: { value: new THREE.Color(0xb9c9d3) },
+        cloud: { value: new THREE.Color(0xfffdf7) }, night: { value: 0 } },
       vertexShader: 'varying vec3 vDir; void main(){ vDir = normalize(position); gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); }',
       fragmentShader: [
-        'uniform vec3 sun; uniform vec3 zenith; uniform vec3 horizon; uniform vec3 ground; varying vec3 vDir;',
+        'uniform vec3 sun; uniform vec3 zenith; uniform vec3 horizon; uniform vec3 ground; uniform vec3 cloud; uniform float night; varying vec3 vDir;',
         'void main(){ float h = vDir.y;',
         ' vec3 c = h > 0.0 ? mix(horizon, zenith, pow(h, 0.55)) : mix(horizon, ground, pow(-h, 0.4));',
         ' float s = max(dot(vDir, sun), 0.0);',
@@ -6906,15 +7125,19 @@ window.STRAFE_ASSETS = {"city":"Z2xURgIAAABU+ggAYFIAAEpTT057ImFzc2V0Ijp7ImdlbmVy
         ' if (h > 0.0) { vec2 q = vDir.xz / (h + 0.12) * 1.6; float n = 0.0, a = 0.5;',
         '   for (int i = 0; i < 5; i++) { n += a * (sin(q.x * 1.7 + sin(q.y * 1.3)) * cos(q.y * 1.9 + sin(q.x * 0.7)) * 0.5 + 0.5); q = mat2(1.6, 1.2, -1.2, 1.6) * q; a *= 0.5; }',
         '   float cl = smoothstep(0.55, 0.78, n) * smoothstep(0.0, 0.18, h);',
-        '   c = mix(c, vec3(1.0, 0.99, 0.97), cl * 0.85); }',
-        ' c += vec3(1.0,0.95,0.85) * (pow(s, 900.0) * 1.4 + pow(s, 12.0) * 0.18);',
+        // at night: stars on a fine grid, faded out low down and behind the clouds
+        '   if (night > 0.0) { vec3 g = floor(vDir * 420.0); float r = fract(sin(dot(g, vec3(12.9898, 78.233, 37.719))) * 43758.5453);',
+        '     c += vec3(0.9, 0.95, 1.0) * step(0.9965, r) * (r - 0.9965) * 300.0 * smoothstep(0.05, 0.35, h) * (1.0 - cl) * night; }',
+        '   c = mix(c, cloud, cl * 0.85); }',
+        ' c += mix(vec3(1.0,0.95,0.85), vec3(0.85,0.9,1.0), night) * (pow(s, 900.0) * 1.4 + pow(s, 12.0) * 0.18 * (1.0 - night * 0.6));',
         ' gl_FragColor = vec4(c, 1.0); }',
       ].join('\n'),
     }));
   sky.renderOrder = -1;
   scene.add(sky);
 
-  scene.add(new THREE.HemisphereLight(0xe6f2ff, 0x8a8f99, 0.72));
+  const hemi = new THREE.HemisphereLight(0xe6f2ff, 0x8a8f99, 0.72);
+  scene.add(hemi);
   const sun = new THREE.DirectionalLight(0xfff6e8, 0.95);
   sun.castShadow = true;
   sun.shadow.mapSize.set(2048, 2048);
@@ -7067,10 +7290,45 @@ window.STRAFE_ASSETS = {"city":"Z2xURgIAAABU+ggAYFIAAEpTT057ImFzc2V0Ijp7ImdlbmVy
     asphalt: std({ map: TEX.asphalt, roughness: 0.95 }),
     rock: std({ map: TEX.rock, roughness: 0.95 }),
   };
+  // night: lit windows (emissive maps matching the facade and curtain wall
+  // layouts) and neon pieces that glow in their own colour
+  {
+    let sd = 4242;
+    const rn = () => ((sd = (sd * 16807) % 2147483647) / 2147483647);
+    const warm = () => ['#ffd9a0', '#ffe8c4', '#fff4e0', '#bfe4ff', '#ffc98a'][(rn() * 5) | 0];
+    const winF = canvasTex(512, (g, s) => {
+      g.fillStyle = '#000'; g.fillRect(0, 0, s, s);
+      for (let fy = 0; fy < 2; fy++) for (let fx = 0; fx < 2; fx++) {
+        if (rn() < 0.72) continue;
+        const x = fx * 256 + 26, y = fy * 256 + 40, w = 204, h = 172;
+        g.globalAlpha = 0.55 + rn() * 0.45; g.fillStyle = warm(); g.fillRect(x, y, w, h);
+        g.globalAlpha = 1; g.fillStyle = '#000'; g.fillRect(x + w / 2 - 3, y, 6, h); g.fillRect(x, y + h * 0.62, w, 5);
+      }
+    });
+    const winG = canvasTex(512, (g, s) => {
+      g.fillStyle = '#000'; g.fillRect(0, 0, s, s);
+      for (let i = 0; i < 4; i++) for (let j = 0; j < 4; j++) {
+        if (rn() < 0.75) continue;
+        g.globalAlpha = 0.35 + rn() * 0.5; g.fillStyle = warm(); g.fillRect(i * 128 + 5, j * 128 + 4, 123, 124);
+      }
+      g.globalAlpha = 1;
+    });
+    MATS.facade.emissiveMap = winF; MATS.facade.emissive.set(0x000000);
+    MATS.glass.emissiveMap = winG; MATS.glass.emissive.set(0x000000);
+    // neon: the emissive light takes the vertex colour, so each piece glows its own hue
+    const neonMat = (o) => {
+      const m = std(Object.assign({ emissive: 0xffffff, emissiveIntensity: 0.3 }, o));
+      m.onBeforeCompile = (sh) => { sh.fragmentShader = sh.fragmentShader.replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\n totalEmissiveRadiance *= vColor;'); };
+      return m;
+    };
+    MATS.nramp = neonMat({ map: TEX.ramp, roughness: 0.35, metalness: 0.1, envMapIntensity: 0.45, emissiveIntensity: 0.38 });
+    MATS.npanel = neonMat({ map: TEX.panel, roughness: 0.5, envMapIntensity: 0.3, emissiveIntensity: 0.22 });
+  }
   const GLASS_COLOR = map.COLORS.glass;
   // which material a face gets
   function bucketFor(b, n) {
     const k = b.props.kind, up = Math.abs(n[1]) > 0.5;
+    if (b.props.neon) return k === 'ramp' ? 'nramp' : 'npanel';
     if (k === 'ramp') return 'ramp';
     if (k === 'cliff') return 'rock';
     if (k === 'route' || k === 'door') return 'paint';
@@ -7078,6 +7336,27 @@ window.STRAFE_ASSETS = {"city":"Z2xURgIAAABU+ggAYFIAAEpTT057ImFzc2V0Ijp7ImdlbmVy
     if (k === 'street') return 'asphalt';
     if (k === 'building' && !up) return b.props.color === GLASS_COLOR ? 'glass' : 'facade';
     return 'concrete';
+  }
+
+  // ------------------------------------------------------------ night
+  // The Night City levels swap the daylight for a dark sky with stars, a
+  // moon where the sun was, dim blue light, lit windows and neon.
+  const DAY = { fog: 0xcfe3ef, near: 4000, far: 26000, zen: 0x3d8fd6, hor: 0xcfe3ef, gnd: 0xb9c9d3, cloud: 0xfffdf7, hs: 0xe6f2ff, hg: 0x8a8f99, hi: 0.72, sc: 0xfff6e8, si: 0.95, exp: 0.98 };
+  const NIGHT = { fog: 0x0c1124, near: 2500, far: 21000, zen: 0x01030a, hor: 0x1b1f3d, gnd: 0x080a12, cloud: 0x161b30, hs: 0x5b6cab, hg: 0x2a1c34, hi: 0.2, sc: 0x9fb2ff, si: 0.12, exp: 1.0 };
+  let nightOn = false;
+  const envDay = new Map(Object.values(MATS).map(m => [m, m.envMapIntensity]));
+  function setNight(on) {
+    nightOn = on;
+    const L = on ? NIGHT : DAY, u = sky.material.uniforms;
+    scene.fog.color.set(L.fog); scene.fog.near = L.near; scene.fog.far = L.far;
+    u.zenith.value.set(L.zen); u.horizon.value.set(L.hor); u.ground.value.set(L.gnd); u.cloud.value.set(L.cloud); u.night.value = on ? 1 : 0;
+    hemi.color.set(L.hs); hemi.groundColor.set(L.hg); hemi.intensity = L.hi;
+    sun.color.set(L.sc); sun.intensity = L.si;
+    renderer.toneMappingExposure = L.exp;
+    for (const [m, v] of envDay) m.envMapIntensity = v * (on ? 0.12 : 1);
+    MATS.facade.emissive.set(on ? 0xb3b3b3 : 0x000000); MATS.glass.emissive.set(on ? 0x999999 : 0x000000);
+    if (animated.lava) { animated.lava.uniforms.fogColor.value.set(L.fog); animated.lava.uniforms.fogNear.value = L.near; animated.lava.uniforms.fogFar.value = L.far; }
+    if (body.setNight) body.setNight(on);
   }
 
   // ------------------------------------------------------------ grounding
@@ -7105,6 +7384,16 @@ window.STRAFE_ASSETS = {"city":"Z2xURgIAAABU+ggAYFIAAEpTT057ImFzc2V0Ijp7ImdlbmVy
         deco.addBox([b.min[0], GROUND, b.min[2]], [b.max[0], b.min[1], b.max[2]], { color: b.props.lava ? 0x4a4038 : 0xb9c0c6, kind: b.props.lava ? 'cliff' : 'building' });
         continue;
       }
+      if (b.props.kind === 'ramp' && b.props.pylons) {
+        // curved ramp pieces say where their pylon goes
+        for (const [x, z] of b.props.pylons) {
+          const up = world.trace([x, GROUND, z], [x, b.max[1] + 10, z], POINT);
+          if (up.fraction === 1 || up.brush !== b) continue;
+          const top = up.endpos[1], bot = below(x, top - 1, z) ?? GROUND;
+          if (top - bot > 40) deco.addBox([x - 60, bot, z - 60], [x + 60, top, z + 60], { color: 0x3a3f4a, kind: 'wall' });
+        }
+        continue;
+      }
       if (b.props.kind === 'ramp') {
         // pylons along the ridge, down to whatever is below
         const len = b.max[2] - b.min[2], n = Math.max(2, Math.round(len / 1400));
@@ -7125,12 +7414,13 @@ window.STRAFE_ASSETS = {"city":"Z2xURgIAAABU+ggAYFIAAEpTT057ImFzc2V0Ijp7ImdlbmVy
       deco.addBox([b.min[0], GROUND, b.min[2]], [b.max[0], b.min[1], b.max[2]], { color: b.props.color, kind: b.props.kind === 'building' || b.props.kind === 'street' ? 'building' : b.props.kind });
     }
     // the ground, and a low city spread over it
-    deco.addBox([-160000, GROUND - 40, -160000], [230000, GROUND, 160000], { color: 0x5d646b, kind: 'street' });
+    deco.addBox([-160000, GROUND - 40, -160000], [360000, GROUND, 160000], { color: 0x5d646b, kind: 'street' });
     let seed = 99;
     const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
     const clear = (a) => !footprints.some(q => a[0] < q[2] + 500 && a[2] > q[0] - 500 && a[1] < q[3] + 500 && a[3] > q[1] - 500);
-    for (let x = -137200; x < 168000; x += 2200) {
+    for (let x = -137200; x < 330000; x += 2200) {
       for (let z = -70000; z < 101000; z += 2200) {
+        if (x >= 168000 && (z < -52000 || z > 40000)) continue; // the Night City district is narrower
         const w = 700 + rnd() * 1100, d = 700 + rnd() * 1100, h = 250 + rnd() * rnd() * 2600;
         const ax = x + rnd() * (2000 - w), az = z + rnd() * (2000 - d), glass = rnd() < 0.25;
         const a = [ax, az, ax + w, az + d];
@@ -8265,7 +8555,8 @@ window.STRAFE_ASSETS = {"city":"Z2xURgIAAABU+ggAYFIAAEpTT057ImFzc2V0Ijp7ImdlbmVy
     const vScene = new THREE.Scene();
     const vCam = new THREE.PerspectiveCamera(66, 1, 0.5, 600);
     vCam.rotation.order = 'YXZ';
-    vScene.add(new THREE.HemisphereLight(0xeef6ff, 0x6f747d, 0.85));
+    const vHemi = new THREE.HemisphereLight(0xeef6ff, 0x6f747d, 0.85);
+    vScene.add(vHemi);
     const vSun = new THREE.DirectionalLight(0xfff3e2, 0.85);
     vSun.position.set(0.4, 1, 0.5);
     vScene.add(vSun);
@@ -8533,7 +8824,9 @@ window.STRAFE_ASSETS = {"city":"Z2xURgIAAABU+ggAYFIAAEpTT057ImFzc2V0Ijp7ImdlbmVy
       setAccent(k.accent);
     }
     function setAccent(c) { red.color.copy(lin(c)); shoe.color.copy(lin(c)); if (fp) fp.mats.joints.color.copy(lin(c)); }
-    return { update, render, resize, act, st, armsRoot, hips, setSkin, setAccent };
+    // night levels: moonlight with a little city glow
+    const setNight = (on) => { vHemi.color.set(on ? 0x8a9ad0 : 0xeef6ff); vHemi.groundColor.set(on ? 0x4a2a55 : 0x6f747d); vHemi.intensity = on ? 0.38 : 0.85; vSun.color.set(on ? 0xa8b8ff : 0xfff3e2); vSun.intensity = on ? 0.22 : 0.85; };
+    return { update, render, resize, act, st, armsRoot, hips, setSkin, setAccent, setNight };
   })();
   cosmetics.apply();
   onResize = body.resize;
@@ -8675,7 +8968,7 @@ window.STRAFE_ASSETS = {"city":"Z2xURgIAAABU+ggAYFIAAEpTT057ImFzc2V0Ijp7ImdlbmVy
   }
 
   // ------------------------------------------------------------ level complete
-  const LEVEL_ORDER = ['tutorial'].concat(map.order, map.gauntlet);
+  const LEVEL_ORDER = ['tutorial'].concat(map.order, map.gauntlet, map.night);
   const completeEl = $('complete');
   let completeTimer = 0;
   function nextLevel(name) {
@@ -8987,6 +9280,10 @@ window.STRAFE_ASSETS = {"city":"Z2xURgIAAABU+ggAYFIAAEpTT057ImFzc2V0Ijp7ImdlbmVy
       wallrun: !!player.wallrun, wallrunTime: player.wallrun ? player.wallrun.t : 0,
     });
     sky.position.copy(camera.position);
+    // the Night City levels light the world for night
+    const viewing = !locked && !game.demo && attract.active ? attract.course : game.course;
+    const wantNight = !!(viewing && map.courses[viewing] && map.courses[viewing].set === 'night');
+    if (wantNight !== nightOn) setNight(wantNight);
 
     const cp = camera.position;
     sun.position.set(cp.x + sunDir.x * 5000, cp.y + sunDir.y * 5000, cp.z + sunDir.z * 5000);
@@ -9113,8 +9410,8 @@ window.STRAFE_ASSETS = {"city":"Z2xURgIAAABU+ggAYFIAAEpTT057ImFzc2V0Ijp7ImdlbmVy
   const attract = { active: true, course: map.order[0], hover: null, t0: 0, cycle: 0 };
   const flashEl = $('flash');
   const MENU_ROWS = [{ name: 'tutorial', key: 'T' }].concat(map.order.map((name, i) => ({ name, key: String((i + 1) % 10) })),
-    map.gauntlet.map((name, i) => ({ name, key: 'G' + (i + 1) })));
-  const ALL_LEVELS = map.order.concat(map.gauntlet);
+    map.gauntlet.map((name, i) => ({ name, key: 'G' + (i + 1) })), map.night.map((name, i) => ({ name, key: 'N' + (i + 1) })));
+  const ALL_LEVELS = map.order.concat(map.gauntlet, map.night);
   // difficulty pips: five, or more for levels off the scale
   const pipHtml = (d, label) => '<span class="pips" aria-label="' + label + d + ' of ' + Math.max(5, d) + '">' +
     Array.from({ length: Math.max(5, d) }, (_, k) => '<i class="' + (k < d ? 'on' : '') + '"></i>').join('') + '</span>';
@@ -9125,7 +9422,7 @@ window.STRAFE_ASSETS = {"city":"Z2xURgIAAABU+ggAYFIAAEpTT057ImFzc2V0Ijp7ImdlbmVy
     const c = rowCourse(name);
     const tutorial = name === 'tutorial';
     $('h-type').innerHTML = '<span class="chip" style="--c:' + hex(c.color) + '">' + c.type + '</span>' +
-      (tutorial ? 'Start here' : c.set === 'gauntlet' ? 'Gauntlet ' + (map.gauntlet.indexOf(name) + 1) + ' of 6' : map.order.indexOf(name) >= 6 ? 'Advanced' : 'Level ' + (map.order.indexOf(name) + 1));
+      (tutorial ? 'Start here' : c.set === 'gauntlet' ? 'Gauntlet ' + (map.gauntlet.indexOf(name) + 1) + ' of 6' : c.set === 'night' ? 'Night City ' + (map.night.indexOf(name) + 1) + ' of 6' : map.order.indexOf(name) >= 6 ? 'Advanced' : 'Level ' + (map.order.indexOf(name) + 1));
     $('h-name').textContent = c.name;
     $('h-desc').textContent = c.desc;
     $('h-diff').innerHTML = c.difficulty ? pipHtml(c.difficulty, '') : (tutorial ? 'Easy' : 'None');
@@ -9176,14 +9473,14 @@ window.STRAFE_ASSETS = {"city":"Z2xURgIAAABU+ggAYFIAAEpTT057ImFzc2V0Ijp7ImdlbmVy
     ol.textContent = '';
     MENU_ROWS.forEach((r, i) => {
       const c = rowCourse(r.name);
-      if (i === 7 || i === 11) { const sep = document.createElement('li'); sep.className = 'sep'; sep.setAttribute('aria-hidden', 'true'); ol.appendChild(sep); }
+      if (i === 7 || i === 11 || i === 17) { const sep = document.createElement('li'); sep.className = 'sep'; sep.setAttribute('aria-hidden', 'true'); ol.appendChild(sep); }
       const li = document.createElement('li');
       const b = document.createElement('button');
       b.className = 'card'; b.dataset.course = r.name;
       b.style.setProperty('--c', hex(c.color));
       const pips = c.difficulty ? pipHtml(c.difficulty, 'Difficulty ') : '<span>' + c.type + '</span>';
       const bt = best[r.name] ? fmt(best[r.name]) : '';
-      const adv = c.set === 'gauntlet' ? '<span class="adv">GAUNTLET</span>' : map.order.indexOf(r.name) >= 6 ? '<span class="adv">ADV</span>' : '';
+      const adv = c.set === 'gauntlet' ? '<span class="adv">GAUNTLET</span>' : c.set === 'night' ? '<span class="adv">NIGHT</span>' : map.order.indexOf(r.name) >= 6 ? '<span class="adv">ADV</span>' : '';
       b.innerHTML = '<span class="ck"><span>' + r.key + '</span>' + adv + '</span><span class="cn">' + c.name + '</span>' +
         '<span class="cm">' + pips + '<span>' + bt + '</span></span>';
       b.addEventListener('mouseenter', () => { A.play('hover'); showPreview(r.name); });
@@ -9493,7 +9790,7 @@ window.STRAFE_ASSETS = {"city":"Z2xURgIAAABU+ggAYFIAAEpTT057ImFzc2V0Ijp7ImdlbmVy
   previewCourse(map.order[0]);
   showMenuState();
   if (location.hash === '#demo') game.demo = true; // headless screenshot mode
-  window.__strafe = { player, game, keys, eff, faceInsets, practice: { set: setPractice, save: practiceSave, load: practiceLoad }, goCourse, place, attract, previewCourse, body, ghost, cosmetics, preview, step, modelChunks, renderer, setView: (y, p) => { yaw = y; pitch = p; } };
+  window.__strafe = { courses: map.courses, mats: MATS, lights: { hemi, sun }, setNight, player, game, keys, eff, faceInsets, practice: { set: setPractice, save: practiceSave, load: practiceLoad }, goCourse, place, attract, previewCourse, body, ghost, cosmetics, preview, step, modelChunks, renderer, setView: (y, p) => { yaw = y; pitch = p; } };
   requestAnimationFrame((t) => { last = t; frame(t); });
 })();
 

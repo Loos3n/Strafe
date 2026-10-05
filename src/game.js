@@ -107,10 +107,11 @@
     new THREE.SphereGeometry(60000, 32, 16),
     new THREE.ShaderMaterial({
       side: THREE.BackSide, depthWrite: false, fog: false,
-      uniforms: { sun: { value: sunDir }, zenith: { value: new THREE.Color(0x3d8fd6) }, horizon: { value: HORIZON }, ground: { value: new THREE.Color(0xb9c9d3) } },
+      uniforms: { sun: { value: sunDir }, zenith: { value: new THREE.Color(0x3d8fd6) }, horizon: { value: HORIZON }, ground: { value: new THREE.Color(0xb9c9d3) },
+        cloud: { value: new THREE.Color(0xfffdf7) }, night: { value: 0 } },
       vertexShader: 'varying vec3 vDir; void main(){ vDir = normalize(position); gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); }',
       fragmentShader: [
-        'uniform vec3 sun; uniform vec3 zenith; uniform vec3 horizon; uniform vec3 ground; varying vec3 vDir;',
+        'uniform vec3 sun; uniform vec3 zenith; uniform vec3 horizon; uniform vec3 ground; uniform vec3 cloud; uniform float night; varying vec3 vDir;',
         'void main(){ float h = vDir.y;',
         ' vec3 c = h > 0.0 ? mix(horizon, zenith, pow(h, 0.55)) : mix(horizon, ground, pow(-h, 0.4));',
         ' float s = max(dot(vDir, sun), 0.0);',
@@ -118,15 +119,19 @@
         ' if (h > 0.0) { vec2 q = vDir.xz / (h + 0.12) * 1.6; float n = 0.0, a = 0.5;',
         '   for (int i = 0; i < 5; i++) { n += a * (sin(q.x * 1.7 + sin(q.y * 1.3)) * cos(q.y * 1.9 + sin(q.x * 0.7)) * 0.5 + 0.5); q = mat2(1.6, 1.2, -1.2, 1.6) * q; a *= 0.5; }',
         '   float cl = smoothstep(0.55, 0.78, n) * smoothstep(0.0, 0.18, h);',
-        '   c = mix(c, vec3(1.0, 0.99, 0.97), cl * 0.85); }',
-        ' c += vec3(1.0,0.95,0.85) * (pow(s, 900.0) * 1.4 + pow(s, 12.0) * 0.18);',
+        // at night: stars on a fine grid, faded out low down and behind the clouds
+        '   if (night > 0.0) { vec3 g = floor(vDir * 420.0); float r = fract(sin(dot(g, vec3(12.9898, 78.233, 37.719))) * 43758.5453);',
+        '     c += vec3(0.9, 0.95, 1.0) * step(0.9965, r) * (r - 0.9965) * 300.0 * smoothstep(0.05, 0.35, h) * (1.0 - cl) * night; }',
+        '   c = mix(c, cloud, cl * 0.85); }',
+        ' c += mix(vec3(1.0,0.95,0.85), vec3(0.85,0.9,1.0), night) * (pow(s, 900.0) * 1.4 + pow(s, 12.0) * 0.18 * (1.0 - night * 0.6));',
         ' gl_FragColor = vec4(c, 1.0); }',
       ].join('\n'),
     }));
   sky.renderOrder = -1;
   scene.add(sky);
 
-  scene.add(new THREE.HemisphereLight(0xe6f2ff, 0x8a8f99, 0.72));
+  const hemi = new THREE.HemisphereLight(0xe6f2ff, 0x8a8f99, 0.72);
+  scene.add(hemi);
   const sun = new THREE.DirectionalLight(0xfff6e8, 0.95);
   sun.castShadow = true;
   sun.shadow.mapSize.set(2048, 2048);
@@ -279,10 +284,45 @@
     asphalt: std({ map: TEX.asphalt, roughness: 0.95 }),
     rock: std({ map: TEX.rock, roughness: 0.95 }),
   };
+  // night: lit windows (emissive maps matching the facade and curtain wall
+  // layouts) and neon pieces that glow in their own colour
+  {
+    let sd = 4242;
+    const rn = () => ((sd = (sd * 16807) % 2147483647) / 2147483647);
+    const warm = () => ['#ffd9a0', '#ffe8c4', '#fff4e0', '#bfe4ff', '#ffc98a'][(rn() * 5) | 0];
+    const winF = canvasTex(512, (g, s) => {
+      g.fillStyle = '#000'; g.fillRect(0, 0, s, s);
+      for (let fy = 0; fy < 2; fy++) for (let fx = 0; fx < 2; fx++) {
+        if (rn() < 0.72) continue;
+        const x = fx * 256 + 26, y = fy * 256 + 40, w = 204, h = 172;
+        g.globalAlpha = 0.55 + rn() * 0.45; g.fillStyle = warm(); g.fillRect(x, y, w, h);
+        g.globalAlpha = 1; g.fillStyle = '#000'; g.fillRect(x + w / 2 - 3, y, 6, h); g.fillRect(x, y + h * 0.62, w, 5);
+      }
+    });
+    const winG = canvasTex(512, (g, s) => {
+      g.fillStyle = '#000'; g.fillRect(0, 0, s, s);
+      for (let i = 0; i < 4; i++) for (let j = 0; j < 4; j++) {
+        if (rn() < 0.75) continue;
+        g.globalAlpha = 0.35 + rn() * 0.5; g.fillStyle = warm(); g.fillRect(i * 128 + 5, j * 128 + 4, 123, 124);
+      }
+      g.globalAlpha = 1;
+    });
+    MATS.facade.emissiveMap = winF; MATS.facade.emissive.set(0x000000);
+    MATS.glass.emissiveMap = winG; MATS.glass.emissive.set(0x000000);
+    // neon: the emissive light takes the vertex colour, so each piece glows its own hue
+    const neonMat = (o) => {
+      const m = std(Object.assign({ emissive: 0xffffff, emissiveIntensity: 0.3 }, o));
+      m.onBeforeCompile = (sh) => { sh.fragmentShader = sh.fragmentShader.replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\n totalEmissiveRadiance *= vColor;'); };
+      return m;
+    };
+    MATS.nramp = neonMat({ map: TEX.ramp, roughness: 0.35, metalness: 0.1, envMapIntensity: 0.45, emissiveIntensity: 0.38 });
+    MATS.npanel = neonMat({ map: TEX.panel, roughness: 0.5, envMapIntensity: 0.3, emissiveIntensity: 0.22 });
+  }
   const GLASS_COLOR = map.COLORS.glass;
   // which material a face gets
   function bucketFor(b, n) {
     const k = b.props.kind, up = Math.abs(n[1]) > 0.5;
+    if (b.props.neon) return k === 'ramp' ? 'nramp' : 'npanel';
     if (k === 'ramp') return 'ramp';
     if (k === 'cliff') return 'rock';
     if (k === 'route' || k === 'door') return 'paint';
@@ -290,6 +330,27 @@
     if (k === 'street') return 'asphalt';
     if (k === 'building' && !up) return b.props.color === GLASS_COLOR ? 'glass' : 'facade';
     return 'concrete';
+  }
+
+  // ------------------------------------------------------------ night
+  // The Night City levels swap the daylight for a dark sky with stars, a
+  // moon where the sun was, dim blue light, lit windows and neon.
+  const DAY = { fog: 0xcfe3ef, near: 4000, far: 26000, zen: 0x3d8fd6, hor: 0xcfe3ef, gnd: 0xb9c9d3, cloud: 0xfffdf7, hs: 0xe6f2ff, hg: 0x8a8f99, hi: 0.72, sc: 0xfff6e8, si: 0.95, exp: 0.98 };
+  const NIGHT = { fog: 0x0c1124, near: 2500, far: 21000, zen: 0x01030a, hor: 0x1b1f3d, gnd: 0x080a12, cloud: 0x161b30, hs: 0x5b6cab, hg: 0x2a1c34, hi: 0.2, sc: 0x9fb2ff, si: 0.12, exp: 1.0 };
+  let nightOn = false;
+  const envDay = new Map(Object.values(MATS).map(m => [m, m.envMapIntensity]));
+  function setNight(on) {
+    nightOn = on;
+    const L = on ? NIGHT : DAY, u = sky.material.uniforms;
+    scene.fog.color.set(L.fog); scene.fog.near = L.near; scene.fog.far = L.far;
+    u.zenith.value.set(L.zen); u.horizon.value.set(L.hor); u.ground.value.set(L.gnd); u.cloud.value.set(L.cloud); u.night.value = on ? 1 : 0;
+    hemi.color.set(L.hs); hemi.groundColor.set(L.hg); hemi.intensity = L.hi;
+    sun.color.set(L.sc); sun.intensity = L.si;
+    renderer.toneMappingExposure = L.exp;
+    for (const [m, v] of envDay) m.envMapIntensity = v * (on ? 0.12 : 1);
+    MATS.facade.emissive.set(on ? 0xb3b3b3 : 0x000000); MATS.glass.emissive.set(on ? 0x999999 : 0x000000);
+    if (animated.lava) { animated.lava.uniforms.fogColor.value.set(L.fog); animated.lava.uniforms.fogNear.value = L.near; animated.lava.uniforms.fogFar.value = L.far; }
+    if (body.setNight) body.setNight(on);
   }
 
   // ------------------------------------------------------------ grounding
@@ -317,6 +378,16 @@
         deco.addBox([b.min[0], GROUND, b.min[2]], [b.max[0], b.min[1], b.max[2]], { color: b.props.lava ? 0x4a4038 : 0xb9c0c6, kind: b.props.lava ? 'cliff' : 'building' });
         continue;
       }
+      if (b.props.kind === 'ramp' && b.props.pylons) {
+        // curved ramp pieces say where their pylon goes
+        for (const [x, z] of b.props.pylons) {
+          const up = world.trace([x, GROUND, z], [x, b.max[1] + 10, z], POINT);
+          if (up.fraction === 1 || up.brush !== b) continue;
+          const top = up.endpos[1], bot = below(x, top - 1, z) ?? GROUND;
+          if (top - bot > 40) deco.addBox([x - 60, bot, z - 60], [x + 60, top, z + 60], { color: 0x3a3f4a, kind: 'wall' });
+        }
+        continue;
+      }
       if (b.props.kind === 'ramp') {
         // pylons along the ridge, down to whatever is below
         const len = b.max[2] - b.min[2], n = Math.max(2, Math.round(len / 1400));
@@ -337,12 +408,13 @@
       deco.addBox([b.min[0], GROUND, b.min[2]], [b.max[0], b.min[1], b.max[2]], { color: b.props.color, kind: b.props.kind === 'building' || b.props.kind === 'street' ? 'building' : b.props.kind });
     }
     // the ground, and a low city spread over it
-    deco.addBox([-160000, GROUND - 40, -160000], [230000, GROUND, 160000], { color: 0x5d646b, kind: 'street' });
+    deco.addBox([-160000, GROUND - 40, -160000], [360000, GROUND, 160000], { color: 0x5d646b, kind: 'street' });
     let seed = 99;
     const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
     const clear = (a) => !footprints.some(q => a[0] < q[2] + 500 && a[2] > q[0] - 500 && a[1] < q[3] + 500 && a[3] > q[1] - 500);
-    for (let x = -137200; x < 168000; x += 2200) {
+    for (let x = -137200; x < 330000; x += 2200) {
       for (let z = -70000; z < 101000; z += 2200) {
+        if (x >= 168000 && (z < -52000 || z > 40000)) continue; // the Night City district is narrower
         const w = 700 + rnd() * 1100, d = 700 + rnd() * 1100, h = 250 + rnd() * rnd() * 2600;
         const ax = x + rnd() * (2000 - w), az = z + rnd() * (2000 - d), glass = rnd() < 0.25;
         const a = [ax, az, ax + w, az + d];
@@ -1477,7 +1549,8 @@
     const vScene = new THREE.Scene();
     const vCam = new THREE.PerspectiveCamera(66, 1, 0.5, 600);
     vCam.rotation.order = 'YXZ';
-    vScene.add(new THREE.HemisphereLight(0xeef6ff, 0x6f747d, 0.85));
+    const vHemi = new THREE.HemisphereLight(0xeef6ff, 0x6f747d, 0.85);
+    vScene.add(vHemi);
     const vSun = new THREE.DirectionalLight(0xfff3e2, 0.85);
     vSun.position.set(0.4, 1, 0.5);
     vScene.add(vSun);
@@ -1745,7 +1818,9 @@
       setAccent(k.accent);
     }
     function setAccent(c) { red.color.copy(lin(c)); shoe.color.copy(lin(c)); if (fp) fp.mats.joints.color.copy(lin(c)); }
-    return { update, render, resize, act, st, armsRoot, hips, setSkin, setAccent };
+    // night levels: moonlight with a little city glow
+    const setNight = (on) => { vHemi.color.set(on ? 0x8a9ad0 : 0xeef6ff); vHemi.groundColor.set(on ? 0x4a2a55 : 0x6f747d); vHemi.intensity = on ? 0.38 : 0.85; vSun.color.set(on ? 0xa8b8ff : 0xfff3e2); vSun.intensity = on ? 0.22 : 0.85; };
+    return { update, render, resize, act, st, armsRoot, hips, setSkin, setAccent, setNight };
   })();
   cosmetics.apply();
   onResize = body.resize;
@@ -1887,7 +1962,7 @@
   }
 
   // ------------------------------------------------------------ level complete
-  const LEVEL_ORDER = ['tutorial'].concat(map.order, map.gauntlet);
+  const LEVEL_ORDER = ['tutorial'].concat(map.order, map.gauntlet, map.night);
   const completeEl = $('complete');
   let completeTimer = 0;
   function nextLevel(name) {
@@ -2199,6 +2274,10 @@
       wallrun: !!player.wallrun, wallrunTime: player.wallrun ? player.wallrun.t : 0,
     });
     sky.position.copy(camera.position);
+    // the Night City levels light the world for night
+    const viewing = !locked && !game.demo && attract.active ? attract.course : game.course;
+    const wantNight = !!(viewing && map.courses[viewing] && map.courses[viewing].set === 'night');
+    if (wantNight !== nightOn) setNight(wantNight);
 
     const cp = camera.position;
     sun.position.set(cp.x + sunDir.x * 5000, cp.y + sunDir.y * 5000, cp.z + sunDir.z * 5000);
@@ -2325,8 +2404,8 @@
   const attract = { active: true, course: map.order[0], hover: null, t0: 0, cycle: 0 };
   const flashEl = $('flash');
   const MENU_ROWS = [{ name: 'tutorial', key: 'T' }].concat(map.order.map((name, i) => ({ name, key: String((i + 1) % 10) })),
-    map.gauntlet.map((name, i) => ({ name, key: 'G' + (i + 1) })));
-  const ALL_LEVELS = map.order.concat(map.gauntlet);
+    map.gauntlet.map((name, i) => ({ name, key: 'G' + (i + 1) })), map.night.map((name, i) => ({ name, key: 'N' + (i + 1) })));
+  const ALL_LEVELS = map.order.concat(map.gauntlet, map.night);
   // difficulty pips: five, or more for levels off the scale
   const pipHtml = (d, label) => '<span class="pips" aria-label="' + label + d + ' of ' + Math.max(5, d) + '">' +
     Array.from({ length: Math.max(5, d) }, (_, k) => '<i class="' + (k < d ? 'on' : '') + '"></i>').join('') + '</span>';
@@ -2337,7 +2416,7 @@
     const c = rowCourse(name);
     const tutorial = name === 'tutorial';
     $('h-type').innerHTML = '<span class="chip" style="--c:' + hex(c.color) + '">' + c.type + '</span>' +
-      (tutorial ? 'Start here' : c.set === 'gauntlet' ? 'Gauntlet ' + (map.gauntlet.indexOf(name) + 1) + ' of 6' : map.order.indexOf(name) >= 6 ? 'Advanced' : 'Level ' + (map.order.indexOf(name) + 1));
+      (tutorial ? 'Start here' : c.set === 'gauntlet' ? 'Gauntlet ' + (map.gauntlet.indexOf(name) + 1) + ' of 6' : c.set === 'night' ? 'Night City ' + (map.night.indexOf(name) + 1) + ' of 6' : map.order.indexOf(name) >= 6 ? 'Advanced' : 'Level ' + (map.order.indexOf(name) + 1));
     $('h-name').textContent = c.name;
     $('h-desc').textContent = c.desc;
     $('h-diff').innerHTML = c.difficulty ? pipHtml(c.difficulty, '') : (tutorial ? 'Easy' : 'None');
@@ -2388,14 +2467,14 @@
     ol.textContent = '';
     MENU_ROWS.forEach((r, i) => {
       const c = rowCourse(r.name);
-      if (i === 7 || i === 11) { const sep = document.createElement('li'); sep.className = 'sep'; sep.setAttribute('aria-hidden', 'true'); ol.appendChild(sep); }
+      if (i === 7 || i === 11 || i === 17) { const sep = document.createElement('li'); sep.className = 'sep'; sep.setAttribute('aria-hidden', 'true'); ol.appendChild(sep); }
       const li = document.createElement('li');
       const b = document.createElement('button');
       b.className = 'card'; b.dataset.course = r.name;
       b.style.setProperty('--c', hex(c.color));
       const pips = c.difficulty ? pipHtml(c.difficulty, 'Difficulty ') : '<span>' + c.type + '</span>';
       const bt = best[r.name] ? fmt(best[r.name]) : '';
-      const adv = c.set === 'gauntlet' ? '<span class="adv">GAUNTLET</span>' : map.order.indexOf(r.name) >= 6 ? '<span class="adv">ADV</span>' : '';
+      const adv = c.set === 'gauntlet' ? '<span class="adv">GAUNTLET</span>' : c.set === 'night' ? '<span class="adv">NIGHT</span>' : map.order.indexOf(r.name) >= 6 ? '<span class="adv">ADV</span>' : '';
       b.innerHTML = '<span class="ck"><span>' + r.key + '</span>' + adv + '</span><span class="cn">' + c.name + '</span>' +
         '<span class="cm">' + pips + '<span>' + bt + '</span></span>';
       b.addEventListener('mouseenter', () => { A.play('hover'); showPreview(r.name); });
@@ -2705,6 +2784,6 @@
   previewCourse(map.order[0]);
   showMenuState();
   if (location.hash === '#demo') game.demo = true; // headless screenshot mode
-  window.__strafe = { player, game, keys, eff, faceInsets, practice: { set: setPractice, save: practiceSave, load: practiceLoad }, goCourse, place, attract, previewCourse, body, ghost, cosmetics, preview, step, modelChunks, renderer, setView: (y, p) => { yaw = y; pitch = p; } };
+  window.__strafe = { courses: map.courses, mats: MATS, lights: { hemi, sun }, setNight, player, game, keys, eff, faceInsets, practice: { set: setPractice, save: practiceSave, load: practiceLoad }, goCourse, place, attract, previewCourse, body, ghost, cosmetics, preview, step, modelChunks, renderer, setView: (y, p) => { yaw = y; pitch = p; } };
   requestAnimationFrame((t) => { last = t; frame(t); });
 })();
