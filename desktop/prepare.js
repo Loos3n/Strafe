@@ -19,6 +19,9 @@ for (const [family, pkg, faces] of fonts) for (const [w, style = 'normal'] of fa
 const links = /<link rel="preconnect"[^>]*>\s*<link rel="preconnect"[^>]*>\s*<link rel="stylesheet" href="https:\/\/fonts\.googleapis\.com[^>]*>/;
 if (!links.test(html)) throw new Error('font links not found');
 html = html.replace(links, () => '<style>' + css + '</style>');
+// the claude.ai host wraps the page in a UTF-8 document; a file loaded on
+// its own needs to say so, or every · and ° shows up as Â· and Â°
+if (!/<meta charset/i.test(html)) html = '<!doctype html>\n<meta charset="utf-8">\n' + html;
 fs.writeFileSync(out, html);
 fs.copyFileSync(path.join(__dirname, 'icon.png'), path.join(__dirname, 'app', 'icon.png'));
 console.log('inlined three.js:', out, html.length, 'bytes');
