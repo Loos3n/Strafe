@@ -14,7 +14,7 @@
     sens: 2.0, fov: 90, airaccelerate: 150, autohop: true,
     fovKick: true, shadows: true, bob: true, keys: true, body: true, ghost: true,
     speedLines: true, landKick: true, scale: 100, fps: false, strafeMeter: true,
-    master: 80, music: 50, sfx: 80,
+    master: 80, music: 50, sfx: 80, padSens: 1, padAutoStrafe: true, padInvert: false,
   }, TOUCH ? { lookSens: 1, autoStrafe: true, scale: 70, shadows: false } : {}, load(SETTINGS_KEY) || {});
   const best = load(BEST_KEY) || {};
   // ------------------------------------------------------------ story
@@ -993,7 +993,7 @@
   });
 
   function requestLock() {
-    if (TOUCH) { touchLock(true); return; }
+    if (TOUCH || padStart) { softLock(true); return; }
     try {
       const r = canvas.requestPointerLock({ unadjustedMovement: true });
       if (r && r.catch) r.catch(() => { try { canvas.requestPointerLock(); } catch (e) { /* unsupported */ } });
@@ -1018,6 +1018,7 @@
       else { wheelPhase = false; wheelJumps--; }
     }
     if (TOUCH) return touchCmd(jump);
+    if (pad.on) return padCmd(jump);
     return {
       forward: (down('forward') ? 1 : 0) - (down('back') ? 1 : 0),
       side: (down('right') ? 1 : 0) - (down('left') ? 1 : 0),
@@ -1043,8 +1044,9 @@
       jump: jump || touch.jump, duck: down('duck') || touch.duck, yaw, pitch,
     };
   }
-  function touchLock(on) {
+  function softLock(on) {
     locked = on;
+    document.body.classList.toggle('padplay', on && !TOUCH);
     document.body.classList.toggle('playing', on);
     touch.fwd = touch.side = 0; touch.jump = false; touch.lastYaw = yaw; touch.turn = 0;
     if (on) {
@@ -1059,6 +1061,116 @@
     }
     touchUI && touchUI.sync();
   }
+  // ------------------------------------------------------------ controller
+  // Standard-mapping gamepads (Xbox, PlayStation, most others). Left stick
+  // moves like WASD, right stick looks. A or LB jumps (hold to hop), B, LT or
+  // the right stick click crouches, X goes back to the checkpoint, Y turns
+  // 180°, View restarts, Menu pauses. In menus the D-pad or left stick moves,
+  // A picks and B goes back. The pad only takes over once you use it, so
+  // keyboard and mouse play is unchanged with a pad plugged in.
+  const pad = { on: false, fwd: 0, side: 0, jump: false, duck: false, lastYaw: 0, turn: 0, prev: [], held: {}, padAt: -1, kbmAt: 0, menuAt: 0 };
+  let padStart = false;
+  const kbm = () => { pad.kbmAt = performance.now(); if (pad.on) { pad.on = false; pad.fwd = pad.side = 0; pad.jump = pad.duck = false; } };
+  window.addEventListener('keydown', (e) => { if (e.isTrusted) kbm(); }, true);
+  document.addEventListener('mousemove', (e) => { if (Math.abs(e.movementX) + Math.abs(e.movementY) > 2) kbm(); });
+  window.addEventListener('mousedown', kbm, true);
+  function padCmd(jump) {
+    const dy = Math.atan2(Math.sin(yaw - pad.lastYaw), Math.cos(yaw - pad.lastYaw));
+    pad.lastYaw = yaw;
+    pad.turn = pad.turn * 0.6 + dy * 0.4;
+    let forward = pad.fwd + (down('forward') ? 1 : 0) - (down('back') ? 1 : 0);
+    let side = pad.side + (down('right') ? 1 : 0) - (down('left') ? 1 : 0);
+    // auto strafe: in the air with the stick centred sideways, turning presses A or D
+    if (settings.padAutoStrafe && !player.onGround && Math.abs(pad.turn) > 0.0015 && pad.side === 0) { side = pad.turn > 0 ? -1 : 1; forward = 0; }
+    return {
+      forward: Math.max(-1, Math.min(1, forward)), side: Math.max(-1, Math.min(1, side)),
+      jump: jump || pad.jump, duck: down('duck') || pad.duck, yaw, pitch,
+    };
+  }
+  const fireKey = (code) => window.dispatchEvent(new KeyboardEvent('keydown', { code, key: code, bubbles: true, cancelable: true }));
+  function padClick(el) {
+    if (!el) return;
+    padStart = true;
+    try { el.click(); } finally { padStart = false; }
+  }
+  // focus walking for the drawer and the level-complete card, which have no arrow keys of their own
+  function padFocusStep(root, d) {
+    const els = [...root.querySelectorAll('button, input, [tabindex="0"]')].filter(el => !el.disabled && el.offsetParent !== null);
+    if (!els.length) return;
+    const i = els.indexOf(document.activeElement);
+    const n = els[i < 0 ? (d > 0 ? 0 : els.length - 1) : Math.max(0, Math.min(els.length - 1, i + d))];
+    n.focus({ preventScroll: false });
+    n.scrollIntoView && n.scrollIntoView({ block: 'nearest' });
+    A.play('hover');
+  }
+  function padMenu(b, ax, now) {
+    const press = (i) => b[i] && !pad.prev[i];
+    // held directions repeat, a little slower at first
+    const dir = (b[12] || ax[1] < -0.6) ? 'up' : (b[13] || ax[1] > 0.6) ? 'down' : (b[14] || ax[0] < -0.6) ? 'left' : (b[15] || ax[0] > 0.6) ? 'right' : null;
+    if (!dir) pad.menuAt = 0;
+    else if (!pad.menuAt || now > pad.menuAt) {
+      pad.menuAt = now + (pad.menuAt ? 120 : 380);
+      const open = !completeEl.hidden ? completeEl : !drawer.hidden ? drawer : null;
+      const ae = document.activeElement;
+      if (open && ae && ae.type === 'range' && (dir === 'left' || dir === 'right')) {
+        ae.stepUp && (dir === 'right' ? ae.stepUp() : ae.stepDown());
+        ae.dispatchEvent(new Event('input', { bubbles: true }));
+      } else if (open) padFocusStep(open, dir === 'up' || dir === 'left' ? -1 : 1);
+      else fireKey({ up: 'ArrowUp', down: 'ArrowDown', left: 'ArrowLeft', right: 'ArrowRight' }[dir]);
+    }
+    if (press(0)) {
+      const ae = document.activeElement;
+      if (ae && ae !== document.body && (ae.tagName === 'BUTTON' || ae.tagName === 'INPUT')) padClick(ae);
+      else { padStart = true; try { fireKey('Enter'); } finally { padStart = false; } }
+    }
+    if (press(1)) {
+      if (!completeEl.hidden) padClick(completeEl.querySelector('[data-act="levels"]'));
+      else fireKey('Escape');
+    }
+    if (press(9) && game.started && completeEl.hidden) padClick($('m-resume'));
+  }
+  function pollPad(dt) {
+    const list = navigator.getGamepads ? navigator.getGamepads() : [];
+    let gp = null;
+    for (const g of list) if (g && g.connected) { gp = g; break; }
+    if (!gp) { if (pad.on) { pad.on = false; pad.fwd = pad.side = 0; pad.jump = pad.duck = false; } return; }
+    const now = performance.now();
+    const b = gp.buttons.map(x => x.pressed || x.value > 0.5);
+    const ax = gp.axes.slice(0, 4).map(v => Math.abs(v) < 0.18 ? 0 : v);
+    while (ax.length < 4) ax.push(0);
+    const any = b.some(Boolean) || ax.some(v => v !== 0);
+    if (any && !pad.on && now - pad.kbmAt > 150) { pad.on = true; pad.lastYaw = yaw; pad.turn = 0; }
+    if (!pad.on) { pad.prev = b; return; }
+    const press = (i) => b[i] && !pad.prev[i];
+    if (locked) {
+      pad.side = ax[0] > 0.4 ? 1 : ax[0] < -0.4 ? -1 : 0;
+      pad.fwd = ax[1] < -0.4 ? 1 : ax[1] > 0.4 ? -1 : 0;
+      pad.jump = !!(b[0] || b[4] || b[5]);
+      pad.duck = !!(b[1] || b[6] || b[11]);
+      // look: a soft curve so small tilts aim finely and full tilt turns fast
+      const lx = ax[2], ly = ax[3] * (settings.padInvert ? -1 : 1);
+      const k = settings.padSens * 4.2 * dt;
+      yaw -= Math.sign(lx) * Math.pow(Math.abs(lx), 1.7) * k;
+      pitch -= Math.sign(ly) * Math.pow(Math.abs(ly), 1.7) * k * 0.7;
+      if (pitch > 89 * DEG) pitch = 89 * DEG;
+      if (pitch < -89 * DEG) pitch = -89 * DEG;
+      if (press(2)) respawn();
+      if (press(3) && turnLeft <= 0) turnLeft = Math.PI;
+      if (press(8)) restartCourse();
+      if (press(9)) { if (document.pointerLockElement) document.exitPointerLock(); else softLock(false); }
+    } else {
+      pad.fwd = pad.side = 0; pad.jump = pad.duck = false;
+      padMenu(b, ax, now);
+    }
+    pad.prev = b;
+  }
+  window.addEventListener('gamepadconnected', () => toast('Controller connected'));
+  window.addEventListener('gamepaddisconnected', () => toast('Controller disconnected'));
+  // Esc leaves a controller session the way it leaves pointer lock
+  window.addEventListener('keydown', (e) => { if (e.code === 'Escape' && locked && !document.pointerLockElement && !TOUCH) softLock(false); });
+  // clicking the view during a controller session hands it to the mouse
+  canvas.addEventListener('click', () => { if (locked && !TOUCH && !document.pointerLockElement) requestLock(); });
+
   const touchUI = TOUCH ? buildTouch() : null;
   function buildTouch() {
     const meta = document.createElement('meta');
@@ -1163,7 +1275,7 @@ body.touch #menu button, body.touch #drawer button { min-height: 40px; }
     for (const b of root.querySelectorAll('#t-bar [data-k]')) b.addEventListener('pointerdown', (e) => {
       e.preventDefault();
       const k = b.dataset.k;
-      if (k === 'pause') { swallowUntil = performance.now() + 600; touchLock(false); }
+      if (k === 'pause') { swallowUntil = performance.now() + 600; softLock(false); }
       else if (k === 'restart') restartCourse();
       else if (k === 'cp') respawn();
       else if (k === 'turn') { if (turnLeft <= 0) turnLeft = Math.PI; }
@@ -2171,7 +2283,7 @@ body.touch #menu button, body.touch #drawer button { min-height: 40px; }
       document.body.classList.add('complete');
       completeEl.hidden = false;
       if (document.pointerLockElement) document.exitPointerLock();
-      else if (TOUCH && locked) touchLock(false);
+      else if (locked) softLock(false);
       $('c-next').focus({ preventScroll: true });
     }, 900);
   }
@@ -2378,6 +2490,7 @@ body.touch #menu button, body.touch #drawer button { min-height: 40px; }
     let dt = (now - last) / 1000;
     last = now;
     if (dt > 0.1) dt = 0.1;
+    pollPad(dt);
 
     if (turnLeft > 0) {
       const s = Math.min(turnLeft, dt * Math.PI / 0.24);
@@ -2897,6 +3010,9 @@ body.touch #menu button, body.touch #drawer button { min-height: 40px; }
   bindRange('s-sens', 'sens', v => v.toFixed(2));
   bindRange('s-fov', 'fov', v => v + '°');
   bindRange('s-aa', 'airaccelerate', v => String(v), () => { player.cfg.airaccelerate = settings.airaccelerate; });
+  bindRange('s-pad', 'padSens', v => v.toFixed(2));
+  bindCheck('s-padstrafe', 'padAutoStrafe');
+  bindCheck('s-padinvert', 'padInvert');
   bindCheck('s-autohop', 'autohop', () => { player.cfg.autohop = settings.autohop; });
   bindCheck('s-kick', 'fovKick');
   bindCheck('s-bob', 'bob');
