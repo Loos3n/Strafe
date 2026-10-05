@@ -14,6 +14,8 @@ A browser prototype that mixes Mirror's Edge parkour with CS surf and bhop movem
 Play: open `dist/index.html` in a browser (it loads Three.js from cdnjs, so it needs a connection). No install step; Node is only needed to build and run the tests.
 
 Build: `node build.js` writes `dist/index.html`.
+
+Desktop: `desktop/` wraps the same game in Electron for Windows, macOS and Linux. `cd desktop && npm install && npm start` runs it; `npm run dist` builds the downloads into `desktop/release/`. `desktop/prepare.js` builds the page with Three.js and the fonts embedded, so the app runs offline. Best times, settings and ghosts are kept in the app's local storage; the online leaderboard only exists in the claude.ai version, so it stays hidden. Pushing a `v*` tag runs `.github/workflows/desktop.yml`, which builds all three platforms and attaches them to a GitHub release.
 Tests: `node test/sim.js` (movement checks),
 `node test/w2w.js` (bot chains the rooftop wall-to-wall section), `node test/routes.js [level] [checkpoint]` (one bot finishes Surf, Bhop, Canyon, Stairway and Crossover from the start and every checkpoint), `node test/tutorial.js` (bot clears every tutorial station), `node test/advanced.js [level] [checkpoint]` (bots finish Cascade, Spire and Freerun; the Cascade bot plans each jump by trying several aim points in a cloned player). `node test/city.js [level] [checkpoint]` (bots finish Rooftops and Downtown). `node test/gauntlet.js [level] [checkpoint]` (one plan-reading bot finishes all six Gauntlet levels).
 

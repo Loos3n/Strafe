@@ -1,0 +1,94 @@
+{
+  "name": "strafe",
+  "productName": "Strafe",
+  "version": "1.0.0",
+  "description": "Rooftop parkour meets CS surf and bhop.",
+  "author": "Logan",
+  "license": "UNLICENSED",
+  "private": true,
+  "main": "main.js",
+  "scripts": {
+    "prepare-app": "node prepare.js",
+    "start": "node prepare.js && electron .",
+    "dist": "node prepare.js && electron-builder --publish never"
+  },
+  "devDependencies": {
+    "electron": "33.4.11",
+    "electron-builder": "25.1.8",
+    "three": "0.128.0",
+    "@fontsource/barlow": "5.1.1",
+    "@fontsource/barlow-condensed": "5.1.1"
+  },
+  "build": {
+    "appId": "com.loos3n.strafe",
+    "productName": "Strafe",
+    "artifactName": "Strafe-${version}-${os}-${arch}.${ext}",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "main.js",
+      "app/**"
+    ],
+    "icon": "icon.png",
+    "win": {
+      "target": [
+        {
+          "target": "portable",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "zip",
+          "arch": [
+            "x64"
+          ]
+        }
+      ]
+    },
+    "portable": {
+      "artifactName": "Strafe-${version}-windows-portable.exe"
+    },
+    "mac": {
+      "target": [
+        {
+          "target": "dmg",
+          "arch": [
+            "universal"
+          ]
+        },
+        {
+          "target": "zip",
+          "arch": [
+            "universal"
+          ]
+        }
+      ],
+      "category": "public.app-category.games",
+      "identity": "-"
+    },
+    "linux": {
+      "target": [
+        {
+          "target": "AppImage",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "tar.gz",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "category": "Game"
+    },
+    "publish": null
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Loos3n/strafe.git"
+  }
+}
