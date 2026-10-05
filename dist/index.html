@@ -8088,14 +8088,20 @@ body.touch.playing:not(.complete) #touch { display: block; }
 .t-btn { position: absolute; border-radius: 50%; border: 2px solid rgba(255,255,255,.45); background: rgba(10,14,18,.38); color: #fff;
   font: 700 14px/1 'Barlow Condensed', sans-serif; letter-spacing: .06em; text-transform: uppercase; touch-action: none; display: grid; place-items: center; padding: 0; }
 .t-btn.on { background: rgba(255,255,255,.75); color: #15191d; }
-#t-jump { width: 104px; height: 104px; right: max(28px, env(safe-area-inset-right)); bottom: 34px; }
-#t-duck { width: 70px; height: 70px; font-size: 12px; right: calc(max(28px, env(safe-area-inset-right)) + 118px); bottom: 26px; }
-#t-bar { position: absolute; top: max(10px, env(safe-area-inset-top)); right: max(12px, env(safe-area-inset-right)); display: flex; gap: 8px; }
-#t-bar .t-btn { position: static; width: 46px; height: 46px; border-radius: 12px; font-size: 12px; }
+#t-jump { width: 96px; height: 96px; right: max(24px, env(safe-area-inset-right)); bottom: max(24px, env(safe-area-inset-bottom)); }
+#t-duck { width: 64px; height: 64px; font-size: 11px; right: calc(max(24px, env(safe-area-inset-right)) + 30px); bottom: calc(max(24px, env(safe-area-inset-bottom)) + 112px); }
+#t-bar { position: absolute; top: max(8px, env(safe-area-inset-top)); right: max(10px, env(safe-area-inset-right)); display: flex; gap: 6px; }
+#t-bar .t-btn { position: static; width: 42px; height: 42px; border-radius: 10px; font-size: 11px; }
 #t-rotate { position: fixed; inset: 0; z-index: 60; display: none; place-items: center; background: #0d1114; color: #f6f6f3; font: 700 22px/1.3 'Barlow Condensed', sans-serif; text-align: center; padding: 24px; }
 @media (orientation: portrait) { body.touch.playing #t-rotate { display: grid; } }
 body.touch #help, body.touch #keys, #t-hint { display: none; }
-body.touch #tut { zoom: .72; }
+body.touch #tut { zoom: .6; top: calc(14px + env(safe-area-inset-top, 0px)); left: calc(14px + env(safe-area-inset-left, 0px)); }
+/* phone HUD: small timer up top, speed low and centred between the thumbs */
+body.touch #top { zoom: .58; top: calc(8px + env(safe-area-inset-top, 0px)); }
+body.touch #speedwrap { zoom: .6; bottom: calc(10px + env(safe-area-inset-bottom, 0px)); }
+body.touch #graph { display: none; }
+body.touch #toast { zoom: .7; top: 22vh; }
+body.touch #fps { top: calc(8px + env(safe-area-inset-top, 0px)); left: calc(12px + env(safe-area-inset-left, 0px)); }
 @media (max-height: 560px) { body.touch #menu, body.touch #drawer, body.touch #complete { zoom: .62; } }
 body.touch #menu button, body.touch #drawer button { min-height: 40px; }
 `;
@@ -8167,11 +8173,16 @@ body.touch #menu button, body.touch #drawer button { min-height: 40px; }
     for (const b of root.querySelectorAll('#t-bar [data-k]')) b.addEventListener('pointerdown', (e) => {
       e.preventDefault();
       const k = b.dataset.k;
-      if (k === 'pause') touchLock(false);
+      if (k === 'pause') { swallowUntil = performance.now() + 600; touchLock(false); }
       else if (k === 'restart') restartCourse();
       else if (k === 'cp') respawn();
       else if (k === 'turn') { if (turnLeft <= 0) turnLeft = Math.PI; }
     });
+    // the tap that pauses would land as a click on whatever the menu puts
+    // under the thumb (or the view, which resumes), so drop it
+    let swallowUntil = 0;
+    const swallow = (e) => { if (performance.now() < swallowUntil) { e.stopPropagation(); e.preventDefault(); } };
+    for (const t of ['click', 'pointerup', 'mouseup', 'touchend']) document.addEventListener(t, swallow, true);
     // the page never scrolls or zooms under the thumbs
     document.addEventListener('touchmove', (e) => { if (locked) e.preventDefault(); }, { passive: false });
     document.addEventListener('gesturestart', (e) => e.preventDefault());
