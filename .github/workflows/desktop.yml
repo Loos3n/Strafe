@@ -65,7 +65,12 @@ jobs:
           tag_name: ${{ steps.tag.outputs.name }}
           target_commitish: ${{ github.sha }}
           name: Strafe ${{ steps.tag.outputs.name }}
-          files: dist/*
+          files: |
+            dist/*.exe
+            dist/*.zip
+            dist/*.dmg
+            dist/*.AppImage
+            dist/*.tar.gz
           body: |
             Strafe desktop build. Windows: run the portable .exe (or unzip the zip). macOS: open the .dmg and drag Strafe to Applications; the app is not notarized, so right-click it and choose Open the first time. Linux: make the AppImage executable and run it.
             Best times, settings and ghosts are saved on your computer. The online leaderboard is only in the browser version.
