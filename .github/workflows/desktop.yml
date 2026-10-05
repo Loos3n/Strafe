@@ -1,6 +1,6 @@
-# Builds the Strafe desktop app for Windows, macOS and Linux. Push a tag
-# like v1.0.1 (or run it by hand from the Actions tab) and the downloads
-# land on a GitHub release for that tag.
+# Builds the Strafe desktop app for Windows, macOS and Linux and puts the
+# downloads on a GitHub release. Run it from the Actions tab (it releases
+# the version in desktop/package.json) or push a tag like v1.0.1.
 name: Desktop build
 
 on:
@@ -46,16 +46,25 @@ jobs:
           if-no-files-found: error
 
   release:
-    if: startsWith(github.ref, 'refs/tags/v')
     needs: build
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v4
+      - name: Release tag
+        id: tag
+        shell: bash
+        run: |
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then echo "name=$GITHUB_REF_NAME" >> "$GITHUB_OUTPUT";
+          else echo "name=v$(node -p "require('./desktop/package.json').version")" >> "$GITHUB_OUTPUT"; fi
       - uses: actions/download-artifact@v4
         with:
           path: dist
           merge-multiple: true
       - uses: softprops/action-gh-release@v2
         with:
+          tag_name: ${{ steps.tag.outputs.name }}
+          target_commitish: ${{ github.sha }}
+          name: Strafe ${{ steps.tag.outputs.name }}
           files: dist/*
           body: |
             Strafe desktop build. Windows: run the portable .exe (or unzip the zip). macOS: open the .dmg and drag Strafe to Applications; the app is not notarized, so right-click it and choose Open the first time. Linux: make the AppImage executable and run it.
