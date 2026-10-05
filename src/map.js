@@ -931,7 +931,8 @@
             }
           }
         }
-        world.addBox([bx0 - 3000, def.base - 20, bz0 - 3000], [bx1 + 3000, def.base, bz1 + 3000], { color: COLORS.street, kind: 'street' });
+        // (the night city stands on the ground itself: a street slab just above it would flicker)
+        if (!def.night) world.addBox([bx0 - 3000, def.base - 20, bz0 - 3000], [bx1 + 3000, def.base, bz1 + 3000], { color: COLORS.street, kind: 'street' });
       }
       courses[name] = Object.assign({ spawn, stages: cp + 1, legs: legs.map(lg => ({ ox: lg.ox, oz: lg.oz, h: lg.h, items: lg.items, curveIn: !!lg.curveIn })),
         preview: { pos: (() => { const p = legs[0].at(0, 400); return [p[0], top, p[1]]; })(), yaw: legs[0].yaw } },
@@ -1060,7 +1061,7 @@
     // Six levels across a city at night, each harder than the last: rooftop
     // pads, block lines, slides and wallruns, and surf ramps that bend round
     // corners between the towers. Neon trims every edge you can stand on.
-    const NIGHT = { night: true, set: 'night', base: -3990, neon: [0xff2bd6, 0x18e7ff, 0x9b4dff, 0xff8a1f, 0x3dff9e], padColor: 0x353b48 };
+    const NIGHT = { night: true, set: 'night', base: -4000, neon: [0xff2bd6, 0x18e7ff, 0x9b4dff, 0xff8a1f, 0x3dff9e], padColor: 0x353b48 };
     const NRAMP = [0x7b3cf0, 0x1d9be0, 0xe0329b, 0x22c79a], NBLOCK = [0xff2bd6, 0x18c8ff, 0xffa31f, 0x9b4dff];
     const night = (name, ox, oz, top, def) => routeKit(name, ox, oz, top, Object.assign({}, NIGHT, def));
     night('n1', 200000, 30000, 7000, {
@@ -1084,7 +1085,7 @@
       desc: 'Night City 2. Slide a roof into a ramp that bends left, transfer across, then hop blocks and wallrun a billboard to the finish.',
       segs: [
         { t: 'pad', len: 700, w: 900 },
-        { t: 'slide', len: 1500, drop: 400, base: -3990 },
+        { t: 'slide', len: 1500, drop: 400, base: -4000 },
         { t: 'curve', dir: -1, face: 60, R: 3800, drop: 600 },
         { t: 'surf', face: 60, len: 3200, drop: 400, dx: -350, gap: 900, fall: 600 },
         { t: 'pad', len: 3000, w: 1400, cp: true }, { t: 'turn', dir: 1 },
@@ -1122,7 +1123,7 @@
         { t: 'pad', len: 3000, w: 1400, cp: true },
         { t: 'bhop', n: 10, size: 128, step: 280, dy: 20, lat: [0, 70, -70] },
         { t: 'pad', gap: 130, len: 700, w: 800 },
-        { t: 'slide', len: 1500, drop: 400, base: -3990 },
+        { t: 'slide', len: 1500, drop: 400, base: -4000 },
         { t: 'curve', dir: 1, face: 65, R: 3600, drop: 700 },
         { t: 'pad', len: 3000, w: 1400, end: true },
       ] });
@@ -1142,7 +1143,7 @@
         { t: 'pad', gap: 130, len: 800, w: 900 },
         { t: 'wall', side: 1, len: 700, gap: 550 },
         { t: 'pad', rise: 120, len: 1100, w: 1100, lip: true },
-        { t: 'slide', len: 1500, drop: 400, base: -3990 },
+        { t: 'slide', len: 1500, drop: 400, base: -4000 },
         { t: 'curve', dir: -1, face: 60, R: 3400, drop: 600 },
         { t: 'curve', dir: 1, face: 65, R: 3400, drop: 600, gap: 900, fall: 700, dx: -400 },
         { t: 'pad', len: 3000, w: 1400, end: true },
@@ -1155,7 +1156,7 @@
         { t: 'pad', len: 600 },
         { t: 'bhop', n: 12, size: 104, step: 295, lat: [0, 100, -100, 50, -50] },
         { t: 'pad', gap: 120, len: 500, w: 600 },
-        { t: 'slide', len: 1500, drop: 400, base: -3990 },
+        { t: 'slide', len: 1500, drop: 400, base: -4000 },
         { t: 'curve', dir: -1, face: 65, R: 3000, drop: 500 },
         { t: 'curve', dir: -1, face: 65, R: 3000, drop: 500, join: true },
         { t: 'curve', dir: 1, face: 65, R: 3000, drop: 500, gap: 900, fall: 700, dx: -400 },

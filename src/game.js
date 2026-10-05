@@ -617,8 +617,13 @@
       const [x0, y0, z0] = b.min, [x1, y1, z1] = b.max;
       const w = x1 - x0, d = z1 - z0, cx = (x0 + x1) / 2, cz = (z0 + z1) / 2;
       if (y1 - y0 < 200) continue;
-      // a cornice band just under the roof line, proud of the wall
-      add(unitBox, corniceMat, cx, y1 - 10, cz, w + 8, 20, d + 8, false);
+      // a cornice band just under the roof line, proud of the wall: four
+      // strips outside the walls, so nothing lies in the roof's own plane
+      // over the roof (a solid slab here made every roof flicker)
+      add(unitBox, corniceMat, cx, y1 - 10, z0 - 2, w + 8, 20, 4);
+      add(unitBox, corniceMat, cx, y1 - 10, z1 + 2, w + 8, 20, 4);
+      add(unitBox, corniceMat, x0 - 2, y1 - 10, cz, 4, 20, d);
+      add(unitBox, corniceMat, x1 + 2, y1 - 10, cz, 4, 20, d);
       if (!b.props.far) continue;
       // rooftop clutter on skyline buildings only
       const n = 1 + Math.floor(rand() * 3);
