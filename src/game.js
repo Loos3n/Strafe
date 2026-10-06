@@ -3500,6 +3500,13 @@ body.touch #menu button, body.touch #drawer button { min-height: 40px; }
     if (camera.fov !== baseVFov()) { camera.fov = baseVFov(); camera.updateProjectionMatrix(); }
   }
 
+  // a mouse wheel over the level strip scrolls it sideways
+  $('levels').addEventListener('wheel', (e) => {
+    const ol = e.currentTarget;
+    if (locked || Math.abs(e.deltaX) > Math.abs(e.deltaY) || ol.scrollWidth <= ol.clientWidth) return;
+    e.preventDefault();
+    ol.scrollLeft += e.deltaY * (e.deltaMode === 1 ? 40 : e.deltaMode === 2 ? ol.clientWidth : 1);
+  }, { passive: false });
   function buildLevelList() {
     const ol = $('levels');
     ol.textContent = '';
