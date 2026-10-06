@@ -39,4 +39,7 @@ jobs:
         run: npx wrangler deploy
       - name: Test the live server
         if: env.CLOUDFLARE_API_TOKEN != ''
-        run: sleep 5 && node test/api.js https://strafe-online.strafe-game.workers.dev
+        run: |
+          # a new workers.dev address can take a few minutes to get its certificate
+          for i in $(seq 1 30); do curl -sf https://strafe-online.strafe-game.workers.dev/ && break; sleep 10; done
+          node test/api.js https://strafe-online.strafe-game.workers.dev
