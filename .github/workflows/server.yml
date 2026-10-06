@@ -1,0 +1,28 @@
+name: server
+# Deploys the online board and race server (server/) to Cloudflare Workers.
+# Needs the repo secrets CLOUDFLARE_API_TOKEN and CLOUDFLARE_ACCOUNT_ID.
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths: ['server/**', '.github/workflows/server.yml']
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+    defaults:
+      run:
+        working-directory: server
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm install --no-audit --no-fund
+      - name: Check level data is current
+        run: node gen-levels.cjs && git diff --exit-code src/levels.json
+      - name: Deploy
+        if: env.CLOUDFLARE_API_TOKEN != ''
+        run: npx wrangler deploy

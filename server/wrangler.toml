@@ -1,0 +1,16 @@
+name = "strafe-online"
+main = "src/index.js"
+compatibility_date = "2025-09-01"
+workers_dev = true
+
+[[durable_objects.bindings]]
+name = "BOARD"
+class_name = "Board"
+
+[[durable_objects.bindings]]
+name = "RACE"
+class_name = "Race"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["Board", "Race"]
