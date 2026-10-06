@@ -23,6 +23,17 @@ jobs:
       - run: npm install --no-audit --no-fund
       - name: Check level data is current
         run: node gen-levels.cjs && git diff --exit-code src/levels.json
+      - name: Make sure the account has a workers.dev address
+        if: env.CLOUDFLARE_API_TOKEN != ''
+        run: |
+          api=https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/workers/subdomain
+          have=$(curl -s -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" $api | jq -r '.result.subdomain // empty')
+          for name in strafe-game strafe-online-game strafe-loos3n strafe-$RANDOM; do
+            [ -n "$have" ] && break
+            have=$(curl -s -X PUT -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" -H 'content-type: application/json' \
+              -d "{\"subdomain\":\"$name\"}" $api | tee /dev/stderr | jq -r '.result.subdomain // empty')
+          done
+          echo "workers.dev subdomain: $have"
       - name: Deploy
         if: env.CLOUDFLARE_API_TOKEN != ''
         run: npx wrangler deploy
