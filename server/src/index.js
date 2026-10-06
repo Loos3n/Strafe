@@ -45,6 +45,10 @@ export class Board extends DurableObject {
       CREATE TABLE IF NOT EXISTS ghosts (course TEXT NOT NULL, player TEXT NOT NULL, data TEXT NOT NULL, PRIMARY KEY (course, player));
     `);
     this.hits = new Map(); // rate limits, kept in memory
+    // once: clear the test players posted while setting the server up
+    if (!this.one("SELECT 1 FROM sqlite_master WHERE name = 'wiped1'")) {
+      this.sql.exec('DELETE FROM players; DELETE FROM times; DELETE FROM ghosts; CREATE TABLE wiped1 (x INTEGER);');
+    }
   }
   limited(key, max, ms) {
     const now = Date.now(), h = (this.hits.get(key) || []).filter(t => now - t < ms);
@@ -149,6 +153,13 @@ export class Board extends DurableObject {
       this.sql.exec('UPDATE players SET imported = 1 WHERE id = ?', me.id);
       return json({ imported: n });
     }
+    // takes the player, their times and ghosts off the board for good
+    if (path === '/delete-me' && req.method === 'POST') {
+      this.sql.exec('DELETE FROM times WHERE player = ?', me.id);
+      this.sql.exec('DELETE FROM ghosts WHERE player = ?', me.id);
+      this.sql.exec('DELETE FROM players WHERE id = ?', me.id);
+      return json({ deleted: true });
+    }
     return fail('not found', 404);
   }
 }
@@ -231,9 +242,9 @@ export class Race extends DurableObject {
         this.room.phase = 'race'; this.room.startAt = Date.now() + COUNTDOWN; this.room.round++;
         for (const p of this.players()) { Object.assign(p.a, { racing: true, fin: null, ready: false }); p.ws.serializeAttachment(p.a); }
         break;
-      case 'fin': // race ticks from the go, or -1 for gave up
-        if (this.room.phase !== 'race' || !a.racing || a.fin !== null || !Number.isInteger(m.ticks)) return;
-        set({ fin: m.ticks < 0 ? -1 : m.ticks });
+      case 'fin': // finished: the room times it from the go, in hundredths; -1 gave up
+        if (this.room.phase !== 'race' || !a.racing || a.fin !== null || Date.now() < this.room.startAt) return;
+        set({ fin: m.ticks < 0 ? -1 : Math.round((Date.now() - this.room.startAt) / 10) });
         break;
       case 'lobby':
         if (!host || this.room.phase === 'race') return;

@@ -78,13 +78,21 @@ check('start with countdown', go && go.startAt - go.now > 3000, go && go.startAt
 h.send(JSON.stringify({ t: 's', p: [1, 2, 3], y: 157, d: 0, c: 1 }));
 const st = await wait(j, m => m.t === 's');
 check('positions relay', st && st.id === you.id && st.p[2] === 3);
-h.send(JSON.stringify({ t: 'fin', ticks: 2400 }));
-j.send(JSON.stringify({ t: 'fin', ticks: 2500 }));
+h.send(JSON.stringify({ t: 'fin', ticks: 0 }));
+check('no finishing before the go', !(await wait(j, m => m.t === 'room' && m.players.some(p => p.fin !== null), 500)));
+await new Promise(r => setTimeout(r, go.startAt - go.now + 300));
+h.send(JSON.stringify({ t: 'fin', ticks: 0 }));
+await new Promise(r => setTimeout(r, 400));
+j.send(JSON.stringify({ t: 'fin', ticks: 0 }));
 const done = await wait(h, m => m.t === 'room' && m.phase === 'results');
-check('results when all finish', done && done.players.map(p => p.fin).sort().join() === '2400,2500', JSON.stringify(done && done.players));
+const fins = done ? done.players.map(p => p.fin).sort((x, y) => x - y) : [];
+check('results timed by the room', done && fins[0] >= 25 && fins[0] < 200 && fins[1] - fins[0] >= 35, JSON.stringify(fins));
 h.close();
 const handed = await wait(j, m => m.t === 'room' && m.players.length === 1);
 check('host leaves, joiner takes over', handed && handed.host === handed.players[0].id);
 j.close();
+// clean up: the test players remove themselves
+for (const p of [a, b]) check('delete me', (await call('/api/delete-me', {}, p.body.token)).body.deleted);
+check('gone from board', !(await call('/api/board?course=' + run.key)).body.rows.some(r => r.name.endsWith(tag)));
 console.log(ok ? 'ALL PASS' : 'SOME FAILED');
 process.exit(ok ? 0 : 1);

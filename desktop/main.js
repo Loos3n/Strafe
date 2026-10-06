@@ -1,6 +1,6 @@
 // Strafe desktop: the browser game in its own window. Best times, settings
-// and ghosts are kept in the app's local storage; the online leaderboard
-// only exists in the claude.ai version, so it stays hidden here.
+// and ghosts are kept in the app's local storage; online times and races go
+// to the Strafe server, the same one the browser and phone versions use.
 const { app, BrowserWindow, shell } = require('electron');
 const path = require('path');
 

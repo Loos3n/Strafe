@@ -309,6 +309,39 @@ table.controls { width: 100%; border-collapse: collapse; font-size: 14px; margin
 #lb-note:empty { display: none; }
 #c-online { margin: 6px 0 0; font-family: var(--display); font-weight: 700; font-size: 16px; letter-spacing: .12em; text-transform: uppercase; color: var(--red); }
 @media (max-width: 900px) { #lb { display: none; } }
+/* online: name, races and the board */
+.onrow { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin: 8px 0; }
+.onrow input, .onrow select, #c-post input { font: inherit; font-size: 15px; color: #eef1f4; background: rgba(255,255,255,.08); border: 1px solid rgba(255,255,255,.22); padding: 8px 10px; min-width: 0; flex: 1; }
+.onrow select option { color: #111; }
+#race-code { text-transform: uppercase; letter-spacing: .2em; max-width: 8em; }
+.onmsg { font-size: 13px; color: rgba(236,240,244,.7); margin: 4px 0; line-height: 1.4; }
+.onmsg:empty { display: none; }
+.onmsg.err { color: #ff7b72; }
+.onmsg a { color: #ff8a80; }
+.ghost.small { padding: 4px 10px; font-size: 12px; }
+.racecode { font-family: var(--display); font-weight: 700; font-size: 18px; letter-spacing: .14em; text-transform: uppercase; display: flex; align-items: center; gap: 10px; margin: 6px 0; }
+.racecode b { font-size: 28px; color: var(--red); letter-spacing: .24em; }
+.raceplayers, .onboard { list-style: none; margin: 6px 0; padding: 0; display: grid; gap: 2px; font-size: 14px; }
+.raceplayers li, .onboard li { display: grid; grid-template-columns: 26px minmax(0, 1fr) auto auto; gap: 8px; align-items: center; padding: 5px 6px; background: rgba(255,255,255,.04); }
+.raceplayers li.me, .onboard li.me { background: rgba(219,47,42,.28); }
+.raceplayers .r, .onboard .r { font-family: var(--display); font-weight: 700; color: rgba(236,240,244,.6); text-align: right; }
+.raceplayers .n, .onboard .n { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.raceplayers .t, .onboard .t { font-family: var(--display); font-weight: 700; font-variant-numeric: tabular-nums; }
+.onboard .old { font-size: 11px; color: rgba(236,240,244,.5); }
+#c-post { margin-top: 10px; }
+#c-post p { margin: 0; font-size: 14px; }
+#c-post[hidden] { display: none; }
+#racehud { position: fixed; top: calc(70px + env(safe-area-inset-top, 0px)); left: 16px; min-width: 200px; background: rgba(10,12,15,.55); padding: 8px 10px; font-size: 14px; }
+#racehud[hidden], #racecount[hidden] { display: none; }
+#rh-title { margin: 0 0 4px; font-family: var(--display); font-weight: 700; font-size: 12px; letter-spacing: .22em; text-transform: uppercase; color: rgba(236,240,244,.7); }
+#rh-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 2px; }
+#rh-list li { display: grid; grid-template-columns: 18px minmax(0, 1fr) auto; gap: 8px; }
+#rh-list li.me { color: #ff8a80; }
+#rh-list .t { font-family: var(--display); font-weight: 700; font-variant-numeric: tabular-nums; }
+#racecount { position: fixed; inset: 0; display: grid; place-items: center; text-align: center; font-family: var(--display); font-weight: 800; font-style: italic; font-size: clamp(60px, 14vw, 160px); color: #fff; text-shadow: 0 4px 30px rgba(0,0,0,.6); pointer-events: none; z-index: 5; }
+#racecount small { display: block; font-size: 22px; font-style: normal; letter-spacing: .2em; text-transform: uppercase; }
+body.touch #racehud { top: calc(56px + env(safe-area-inset-top, 0px)); left: 10px; min-width: 150px; font-size: 12px; }
+
 </style>
 
 <canvas id="view"></canvas>
@@ -324,6 +357,8 @@ table.controls { width: 100%; border-collapse: collapse; font-size: 14px; margin
   <div id="split" aria-live="polite"><span id="split-label"></span><span id="split-time"></span><span id="split-delta"></span></div>
 </div>
 <div class="hud" id="toast"></div>
+<div class="hud" id="racehud" hidden><p id="rh-title"></p><ol id="rh-list"></ol></div>
+<div id="racecount" hidden></div>
 <div class="hud" id="tut" hidden>
   <p id="tut-step"></p>
   <h3 id="tut-title"></h3>
@@ -363,6 +398,7 @@ table.controls { width: 100%; border-collapse: collapse; font-size: 14px; margin
       <button class="mbtn" data-open="story" aria-expanded="false" aria-controls="drawer"><span>Story</span><small id="m-story-sub"></small></button>
       <button class="mbtn" id="m-play"><span>Play</span><small id="m-play-sub"></small></button>
       <button class="mbtn" id="m-tutorial"><span>Tutorial</span><small id="m-tut-sub"></small></button>
+      <button class="mbtn" data-open="online" aria-expanded="false" aria-controls="drawer"><span>Online</span><small id="m-online-sub">Top times and races</small></button>
       <button class="mbtn" data-open="cosmetics" aria-expanded="false" aria-controls="drawer"><span>Cosmetics</span><small id="m-cos-sub"></small></button>
       <button class="mbtn" id="m-editor"><span>Level editor</span><small>Build and share</small></button>
       <button class="mbtn" data-open="settings" aria-expanded="false" aria-controls="drawer"><span>Settings</span></button>
@@ -495,6 +531,37 @@ table.controls { width: 100%; border-collapse: collapse; font-size: 14px; margin
           </div>
         </div>
       </div>
+    <div data-pane="online" hidden>
+      <div class="group" id="on-off" hidden><p class="onmsg">Can't reach the Strafe server from here, so online times and races are off. Your runs still save on this device. You can play online at <a href="https://strafe-online.strafe-game.workers.dev" target="_blank" rel="noopener">strafe-online.strafe-game.workers.dev</a>.</p></div>
+      <div id="on-body">
+        <div class="group">
+          <p class="label">Your name</p>
+          <form class="onrow" id="on-nameform"><input id="on-name" maxlength="16" placeholder="Pick a name" autocomplete="off" spellcheck="false"><button class="ghost" id="on-namesave">Save</button></form>
+          <p class="onmsg" id="on-namemsg"></p>
+        </div>
+        <div class="group">
+          <p class="label">Race friends</p>
+          <div id="race-out">
+            <p class="onmsg">Make a room and send your friends the code. Everyone runs the same level at once and sees each other live.</p>
+            <div class="onrow"><button class="cprimary" id="race-make">Make a room</button></div>
+            <form class="onrow" id="race-joinform"><input id="race-code" maxlength="5" placeholder="Code" autocomplete="off" spellcheck="false"><button class="ghost">Join</button></form>
+          </div>
+          <div id="race-in" hidden>
+            <p class="racecode">Room <b id="race-codeview"></b> <button class="ghost small" id="race-copy">Copy</button></p>
+            <ol class="raceplayers" id="race-players"></ol>
+            <div class="onrow" id="race-hostrow"><select id="race-level" aria-label="Level"></select><button class="cprimary" id="race-start">Start race</button></div>
+            <p class="onmsg" id="race-msg"></p>
+            <div class="onrow"><button class="ghost" id="race-leave">Leave room</button></div>
+          </div>
+        </div>
+        <div class="group">
+          <p class="label">Top times</p>
+          <div class="onrow"><select id="on-level" aria-label="Level"></select></div>
+          <ol class="onboard" id="on-board"></ol>
+          <p class="onmsg" id="on-boardmsg"></p>
+        </div>
+      </div>
+    </div>
     <div data-pane="controls" hidden>
         <table class="controls">
           <tr><td>WASD</td><td>Move. In the air, strafe with A or D while turning the mouse the same way.</td></tr>
@@ -520,6 +587,7 @@ table.controls { width: 100%; border-collapse: collapse; font-size: 14px; margin
     <h2 id="c-name"></h2>
     <div class="ctime"><span id="c-time"></span><span id="c-best"></span></div>
     <p id="c-online" hidden></p>
+    <form id="c-post" hidden><p>Post this time to the online board? Pick a name.</p><div class="onrow"><input id="c-postname" maxlength="16" placeholder="Your name" autocomplete="off" spellcheck="false"><button class="ghost" id="c-postgo">Post</button></div><p class="onmsg" id="c-postmsg"></p></form>
     <div id="c-story" hidden><p class="cstars" id="c-stars"></p><p class="cdebrief" id="c-debrief"></p><p class="cunlock" id="c-unlock" hidden></p></div>
     <dl class="cstats">
       <div><dt>Top speed</dt><dd><span id="c-top"></span> u/s</dd></div>

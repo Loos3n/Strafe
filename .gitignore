@@ -4,3 +4,4 @@ node_modules/
 backup/
 desktop/app/
 desktop/release/
+server/public/
