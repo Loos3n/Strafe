@@ -48,13 +48,13 @@ body:not(.playing) #fps { display: none; }
 #split-label { font-size: 13px; font-weight: 600; letter-spacing: .18em; text-transform: uppercase; color: rgba(255,255,255,.8); }
 #split-time { font-size: 18px; font-weight: 600; font-variant-numeric: tabular-nums; color: #fff; }
 #split-delta { font-size: 26px; font-weight: 700; font-style: italic; font-variant-numeric: tabular-nums; }
-#split-delta.ahead { color: #43e07f; }
-#split-delta.behind { color: #ff5148; }
+#split-delta.ahead { color: var(--ahead); }
+#split-delta.behind { color: var(--behind); }
 #split-delta.even { color: #fff; }
 #ghostgap { margin-top: 4px; font-size: 15px; font-weight: 700; font-style: italic; letter-spacing: .04em; font-variant-numeric: tabular-nums; color: #63d6ff; opacity: 0; transition: opacity .2s; }
 #ghostgap.show { opacity: .95; }
-#ghostgap.ahead { color: #43e07f; }
-#ghostgap.behind { color: #ff5148; }
+#ghostgap.ahead { color: var(--ahead); }
+#ghostgap.behind { color: var(--behind); }
 
 #keys { left: calc(20px + env(safe-area-inset-left, 0px)); bottom: calc(20px + env(safe-area-inset-bottom, 0px)); display: grid; grid-template-columns: repeat(3, 34px); gap: 4px; font-size: 15px; font-weight: 700; }
 #keys span { height: 34px; display: grid; place-items: center; border: 2px solid rgba(255,255,255,.7); background: rgba(10,14,18,.38); transition: background .05s; text-shadow: none; }
@@ -309,6 +309,39 @@ table.controls { width: 100%; border-collapse: collapse; font-size: 14px; margin
 #lb-note:empty { display: none; }
 #c-online { margin: 6px 0 0; font-family: var(--display); font-weight: 700; font-size: 16px; letter-spacing: .12em; text-transform: uppercase; color: var(--red); }
 @media (max-width: 900px) { #lb { display: none; } }
+/* replay viewer */
+body.replaying #menu, body.replaying .hud, body.replaying #crosshair { display: none; }
+#replay { position: fixed; left: 50%; bottom: calc(14px + env(safe-area-inset-bottom, 0px)); transform: translateX(-50%); width: min(920px, calc(100% - 24px)); box-sizing: border-box; background: rgba(12,15,19,.82); backdrop-filter: blur(10px); color: #eef1f4; padding: 10px 14px; z-index: 6; }
+#replay[hidden] { display: none; }
+.rp-top { display: flex; gap: 14px; align-items: baseline; font-family: var(--display); font-weight: 700; letter-spacing: .08em; }
+#rp-who { flex: 1; font-size: 17px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#rp-time, #rp-speed { font-variant-numeric: tabular-nums; font-size: 16px; }
+#rp-speed { color: rgba(236,240,244,.7); min-width: 6em; text-align: right; }
+#rp-scrub { width: 100%; accent-color: var(--red); margin: 8px 0; }
+.rp-btns { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.rp-btns .ghost.small { padding: 6px 10px; }
+.rp-play { font-size: 15px; padding: 7px 20px; min-width: 4.5em; text-align: center; }
+.rp-rate, .rp-cams { display: inline-flex; gap: 4px; align-items: center; }
+.rp-rate b { font-family: var(--display); min-width: 3em; text-align: center; font-variant-numeric: tabular-nums; }
+.rp-cams [aria-pressed=true] { background: var(--red); border-color: var(--red); }
+#rp-exit { margin-left: auto; }
+#rp-exit kbd { font-size: 11px; border: 1px solid currentColor; padding: 0 3px; margin-left: 4px; opacity: .7; }
+.rp-help { margin: 6px 0 0; font-size: 12px; color: rgba(236,240,244,.6); }
+body.touch .rp-help { display: none; }
+body.touch #replay { padding: 6px 10px; }
+body.touch #rp-scrub { margin: 4px 0; }
+.rowbtns { display: inline-flex; gap: 4px; }
+.onboard li { grid-template-columns: 26px minmax(0, 1fr) auto auto; }
+
+/* accessibility: colour modes and HUD size */
+:root { --ahead: #43e07f; --behind: #ff5148; --hudz: 1; }
+body[data-colors=redgreen] { --ahead: #3aa0ff; --behind: #ff9f1c; }
+body[data-colors=blueyellow] { --ahead: #2ee6d6; --behind: #ff4f8b; }
+body[data-colors=contrast] { --ahead: #5cf2ff; --behind: #ff4df0; }
+#top, #speedwrap, #keys, #racehud, #tut, #toast { zoom: var(--hudz); }
+.setsel { grid-column: 1 / -1; font: inherit; font-size: 15px; color: #eef1f4; background: rgba(255,255,255,.08); border: 1px solid rgba(255,255,255,.22); padding: 7px 9px; }
+.setsel option { color: #111; }
+
 /* online: name, races and the board */
 .onrow { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin: 8px 0; }
 .onrow input, .onrow select, #c-post input { font: inherit; font-size: 15px; color: #eef1f4; background: rgba(255,255,255,.08); border: 1px solid rgba(255,255,255,.22); padding: 8px 10px; min-width: 0; flex: 1; }
@@ -430,6 +463,7 @@ body.touch #racehud { top: calc(56px + env(safe-area-inset-top, 0px)); left: 10p
       <button id="play">Play <kbd>Enter</kbd></button>
       <button class="ghost" id="resume" hidden>Resume</button>
       <button class="ghost" id="restart" hidden>Restart</button>
+      <button class="ghost" id="watch" hidden>Watch best run</button>
           </div>
   </section>
   <aside id="lb" class="lv" hidden aria-labelledby="lb-title">
@@ -485,6 +519,29 @@ body.touch #racehud { top: calc(56px + env(safe-area-inset-top, 0px)); left: 10p
             <label for="s-fov">Field of view (horizontal, 4:3)</label><output id="s-fov-v"></output>
             <input type="range" id="s-fov" min="70" max="120" step="1">
           </div>
+        </div>
+        <div class="group">
+          <p class="label">Accessibility</p>
+          <div class="settings">
+            <label for="s-colors">Colours</label><span></span>
+            <select id="s-colors" class="setsel">
+              <option value="standard">Standard</option>
+              <option value="redgreen">Red and green friendly</option>
+              <option value="blueyellow">Blue and yellow friendly</option>
+              <option value="contrast">High contrast</option>
+            </select>
+            <p class="hint">Recolours the route pieces and the ahead and behind colours on splits and the ghost.</p>
+            <label for="s-roll">Camera tilt</label><output id="s-roll-v"></output>
+            <input type="range" id="s-roll" min="0" max="100" step="5">
+            <label for="s-hud">HUD size</label><output id="s-hud-v"></output>
+            <input type="range" id="s-hud" min="80" max="150" step="5">
+          </div>
+          <div class="checks" style="margin-top:10px">
+            <label><input type="checkbox" id="s-flip"> Camera flip on landing rolls</label>
+            <label><input type="checkbox" id="s-flash"> Screen flashes</label>
+          </div>
+          <div class="onrow"><button class="ghost small" id="s-calm">Reduce motion</button></div>
+          <p class="hint" style="font-size:12px;color:rgba(236,240,244,.6);margin:0">Reduce motion turns off camera tilt, view bob, speed FOV kick, landing kick, speed lines, flips and flashes. Field of view is under Mouse and view.</p>
         </div>
         <div class="group">
           <p class="label">Movement</p>
@@ -580,6 +637,19 @@ body.touch #racehud { top: calc(56px + env(safe-area-inset-top, 0px)); left: 10p
       </div>
   </div>
 </aside>
+<div id="replay" hidden role="region" aria-label="Replay">
+  <div class="rp-top"><span id="rp-who"></span><span id="rp-time"></span><span id="rp-speed"></span></div>
+  <input type="range" id="rp-scrub" min="0" max="100" step="1" aria-label="Position in the run">
+  <div class="rp-btns">
+    <button class="ghost small" id="rp-back" aria-label="Back one second">&#9664;&#9664;</button>
+    <button class="cprimary rp-play" id="rp-play">Pause</button>
+    <button class="ghost small" id="rp-fwd" aria-label="Forward one second">&#9654;&#9654;</button>
+    <span class="rp-rate"><button class="ghost small" id="rp-slower" aria-label="Slower">&minus;</button><b id="rp-rate">1×</b><button class="ghost small" id="rp-faster" aria-label="Faster">+</button></span>
+    <span class="rp-cams"><button class="ghost small" data-cam="follow">Follow</button><button class="ghost small" data-cam="pov">First person</button><button class="ghost small" data-cam="free">Free</button></span>
+    <button class="ghost small" id="rp-exit">Exit <kbd>Esc</kbd></button>
+  </div>
+  <p class="rp-help">Space pause · &larr; &rarr; skip · , . step · &minus; + speed · C camera · drag to look · free camera: WASD, Q E, Shift</p>
+</div>
 <div id="flash"></div>
 <div id="complete" hidden role="dialog" aria-labelledby="c-name">
   <div class="csheet">
@@ -599,6 +669,7 @@ body.touch #racehud { top: calc(56px + env(safe-area-inset-top, 0px)); left: 10p
       <button class="cprimary" id="c-next" data-act="next"></button>
       <button class="ghost" data-act="retry">Retry <kbd>R</kbd></button>
       <button class="ghost" data-act="levels">Levels <kbd>Esc</kbd></button>
+      <button class="ghost" data-act="watch" id="c-watch" hidden>Watch best <kbd>V</kbd></button>
     </div>
   </div>
 </div>

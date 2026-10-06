@@ -15,6 +15,7 @@
     fovKick: true, shadows: true, bob: true, keys: true, body: true, ghost: true,
     speedLines: true, landKick: true, scale: 100, fps: false, strafeMeter: true,
     master: 80, music: 50, sfx: 80, padSens: 1, padAutoStrafe: true, padInvert: false,
+    colors: 'standard', roll: 100, flip: true, flash: true, hudSize: 100,
   }, TOUCH ? { lookSens: 1, autoStrafe: true, scale: 70, shadows: false } : {}, load(SETTINGS_KEY) || {});
   const best = load(BEST_KEY) || {};
   // ------------------------------------------------------------ story
@@ -321,6 +322,26 @@
     MATS.nramp = neonMat({ map: TEX.ramp, roughness: 0.35, metalness: 0.1, envMapIntensity: 0.45, emissiveIntensity: 0.38 });
     MATS.npanel = neonMat({ map: TEX.panel, roughness: 0.5, envMapIntensity: 0.3, emissiveIntensity: 0.22 });
   }
+  // colour modes (Settings, Accessibility): the route pieces and the ahead
+  // and behind colours on splits and the ghost gap
+  const PALETTES = {
+    standard: { route: 0xdb2f2a, glow: 0xb3120a },
+    redgreen: { route: 0x1f6bff, glow: 0x0a3db3 },
+    blueyellow: { route: 0xe0306a, glow: 0xa0103f },
+    contrast: { route: 0xffd000, glow: 0xb38f00 },
+  };
+  const routeU = { value: new THREE.Color() };
+  MATS.paint.onBeforeCompile = (sh) => {
+    sh.uniforms.routeCol = routeU;
+    sh.fragmentShader = 'uniform vec3 routeCol;\n' + sh.fragmentShader.replace('#include <color_fragment>', 'diffuseColor.rgb *= routeCol;');
+  };
+  function applyColors() {
+    const p = PALETTES[settings.colors] || PALETTES.standard;
+    routeU.value.setHex(p.route).convertSRGBToLinear();
+    MATS.paint.emissive.setHex(p.glow);
+    document.body.dataset.colors = settings.colors;
+  }
+  applyColors();
   const GLASS_COLOR = map.COLORS.glass;
   // which material a face gets
   function bucketFor(b, n) {
@@ -1144,6 +1165,7 @@
     if (any && !pad.on && now - pad.kbmAt > 150) { pad.on = true; pad.lastYaw = yaw; pad.turn = 0; }
     if (!pad.on) { pad.prev = b; return; }
     const press = (i) => b[i] && !pad.prev[i];
+    if (replay.on) { replayPad(b, ax, press, dt); pad.prev = b; return; }
     if (locked) {
       pad.side = ax[0] > 0.4 ? 1 : ax[0] < -0.4 ? -1 : 0;
       pad.fwd = ax[1] < -0.4 ? 1 : ax[1] > 0.4 ? -1 : 0;
@@ -1474,7 +1496,7 @@ body.touch #menu button, body.touch #drawer button { min-height: 40px; }
     const get = (course) => remote && remote.course === course ? remote.g : course in runs ? runs[course] : (runs[course] = load(GHOST_KEY + course));
     let remote = null; // someone else's run from the online board, raced instead of yours
     const sample = () => rec.push(Math.round(player.pos[0]), Math.round(player.pos[1]), Math.round(player.pos[2]), Math.round(yaw * 100), player.ducked ? 1 : 0);
-    return {
+    const api = {
       start() { rec = []; sample(); },
       stop() { rec = null; },
       tick(offset) { if (rec && offset % GHOST_EVERY === 0) sample(); },
@@ -1501,24 +1523,7 @@ body.touch #menu button, body.touch #drawer button { min-height: 40px; }
       update(dt, t) {
         const g = game.course && t !== null && settings.ghost ? get(game.course) : null;
         if (!g) { root.visible = false; gapEl.className = ''; return; }
-        const s = g.s, n = s.length / 5, f = Math.min(t / g.e, n - 1), i = Math.floor(f), j = Math.min(i + 1, n - 1), k = f - i;
-        const at = (q, o) => s[q * 5 + o];
-        const x = at(i, 0) + (at(j, 0) - at(i, 0)) * k, y = at(i, 1) + (at(j, 1) - at(i, 1)) * k, z = at(i, 2) + (at(j, 2) - at(i, 2)) * k;
-        let dy = (at(j, 3) - at(i, 3)) / 100;
-        dy = Math.atan2(Math.sin(dy), Math.cos(dy));
-        root.position.set(x, y, z);
-        root.rotation.y = at(i, 3) / 100 + dy * k;
-        const hs = Math.hypot(at(j, 0) - at(i, 0), at(j, 2) - at(i, 2)) / (g.e * TICK);
-        const air = Math.abs(at(j, 1) - at(i, 1)) > 2;
-        // waiting at the start it stands still rather than running on the spot
-        const moving = t > 0;
-        if (moving) phase += dt * Math.min(hs, 400) * 0.034;
-        const sw = air || !moving ? 0 : Math.sin(phase) * Math.min(1, hs / 250);
-        const lift = air && moving;
-        legs[0].rotation.x = sw * 0.7 + (lift ? 0.5 : 0); legs[1].rotation.x = -sw * 0.7 - (lift ? 0.2 : 0);
-        arms[0].rotation.x = -sw * 0.8 + (lift ? -1.2 : 0); arms[1].rotation.x = sw * 0.8 + (lift ? -1.2 : 0);
-        body.scale.y = at(i, 4) ? 0.72 : 1;
-        if (runner) { runner.update(dt, moving ? hs : 0, air && moving); runner.inner.scale.y = at(i, 4) ? 0.72 : 1; }
+        const { x, y, z, n, moving } = pose(g, t, dt);
         // stay visible beside you; only thin out when it is inside your view
         const d = Math.hypot(x - player.pos[0], y - player.pos[1], z - player.pos[2]);
         mat.opacity = smat.opacity = d < 22 ? 0 : 0.25 + 0.4 * Math.min(1, (d - 22) / 60);
@@ -1526,7 +1531,7 @@ body.touch #menu button, body.touch #drawer button { min-height: 40px; }
         marker.visible = d > 120;
         // time gap: when did the ghost pass the point nearest to you?
         if (!moving) { match = 0; gapEl.className = ''; return; }
-        const P = player.pos;
+        const s = g.s, P = player.pos;
         let bestD = Infinity, bi = match;
         for (let q = Math.max(0, match - 15); q < Math.min(n, match + 60); q++) {
           const dd = (s[q * 5] - P[0]) ** 2 + (s[q * 5 + 1] - P[1]) ** 2 + (s[q * 5 + 2] - P[2]) ** 2;
@@ -1538,7 +1543,40 @@ body.touch #menu button, body.touch #drawer button { min-height: 40px; }
         gapEl.textContent = 'Ghost ' + (gap >= 0 ? '+' : '−') + Math.abs(gap).toFixed(1) + 's';
         gapEl.className = 'show ' + (Math.abs(gap) < 0.05 ? 'even' : gap > 0 ? 'behind' : 'ahead');
       },
+      // the replay viewer: any run at any moment, fully visible
+      show(g, t, dt) {
+        const p = pose(g, t, dt);
+        mat.opacity = smat.opacity = 0.85;
+        root.visible = true;
+        marker.visible = false;
+        gapEl.className = '';
+        return p;
+      },
+      hide() { root.visible = false; gapEl.className = ''; },
     };
+    // place the runner at t ticks into run g and animate its stride
+    function pose(g, t, dt) {
+      const s = g.s, n = s.length / 5, f = Math.max(0, Math.min(t / g.e, n - 1)), i = Math.floor(f), j = Math.min(i + 1, n - 1), k = f - i;
+      const at = (q, o) => s[q * 5 + o];
+      const x = at(i, 0) + (at(j, 0) - at(i, 0)) * k, y = at(i, 1) + (at(j, 1) - at(i, 1)) * k, z = at(i, 2) + (at(j, 2) - at(i, 2)) * k;
+      let dy = (at(j, 3) - at(i, 3)) / 100;
+      dy = Math.atan2(Math.sin(dy), Math.cos(dy));
+      root.position.set(x, y, z);
+      root.rotation.y = at(i, 3) / 100 + dy * k;
+      const hs = Math.hypot(at(j, 0) - at(i, 0), at(j, 2) - at(i, 2)) / (g.e * TICK);
+      const air = Math.abs(at(j, 1) - at(i, 1)) > 2;
+      // waiting at the start it stands still rather than running on the spot
+      const moving = t > 0;
+      if (moving) phase += dt * Math.min(hs, 400) * 0.034;
+      const sw = air || !moving ? 0 : Math.sin(phase) * Math.min(1, hs / 250);
+      const lift = air && moving;
+      legs[0].rotation.x = sw * 0.7 + (lift ? 0.5 : 0); legs[1].rotation.x = -sw * 0.7 - (lift ? 0.2 : 0);
+      arms[0].rotation.x = -sw * 0.8 + (lift ? -1.2 : 0); arms[1].rotation.x = sw * 0.8 + (lift ? -1.2 : 0);
+      body.scale.y = at(i, 4) ? 0.72 : 1;
+      if (runner) { runner.update(dt, moving ? hs : 0, air && moving); runner.inner.scale.y = at(i, 4) ? 0.72 : 1; }
+      return { x, y, z, n, moving, hs, yaw: root.rotation.y, duck: !!at(i, 4), air };
+    }
+    return api;
   })();
 
   // ------------------------------------------------------------ cosmetics
@@ -1808,7 +1846,7 @@ body.touch #menu button, body.touch #drawer button { min-height: 40px; }
         stats.jumpSpeed = e.speed;
       } else if (e.type === 'land') {
         // big drop with crouch held: tuck and roll (camera only, speed is untouched)
-        if (e.speed > 620 && down('duck')) { cam.flip = 0.0001; body.act('roll', 0.55); A.play('slide'); }
+        if (e.speed > 620 && down('duck')) { if (settings.flip) cam.flip = 0.0001; body.act('roll', 0.55); A.play('slide'); }
         else if (e.speed > 200) {
           cam.dipVel -= Math.min(260, (e.speed - 150) * 0.5);
           // a hard landing nods the view down and jolts it sideways a touch
@@ -2269,6 +2307,7 @@ body.touch #menu button, body.touch #drawer button { min-height: 40px; }
     $('c-avg').textContent = Math.round(r.dist / Math.max(secs, 0.01));
     $('c-jumps').textContent = r.jumps;
     $('c-dist').textContent = (r.dist * 0.0254).toFixed(0);
+    $('c-watch').hidden = game.course === 'custom' || !ghost.has(game.course);
     const nx = nextLevel(game.course);
     $('c-next').textContent = game.course === 'custom' ? 'Back to editor' : nx ? 'Next: ' + map.courses[nx].name : 'Back to levels';
     $('c-next').dataset.target = game.course === 'custom' ? 'editor' : nx || 'levels';
@@ -2316,6 +2355,7 @@ body.touch #menu button, body.touch #drawer button { min-height: 40px; }
       startPlay();
     }
     else if (what === 'retry') { restartCourse(); startPlay(); }
+    else if (what === 'watch') watchBest(game.course, 'levels');
     else if (ed.testing) edBack();
     else { showMenuState(); showScreen('levels'); } // levels: back to level select
   }
@@ -2326,6 +2366,7 @@ body.touch #menu button, body.touch #drawer button { min-height: 40px; }
     if (e.code === 'Enter') { e.preventDefault(); completeAction('next'); }
     else if (e.code === 'KeyR') completeAction('retry');
     else if (e.code === 'Escape') completeAction('levels');
+    else if (e.code === 'KeyV' && game.course !== 'custom' && ghost.has(game.course)) completeAction('watch');
   });
 
   // ------------------------------------------------------------ tutorial
@@ -2519,7 +2560,7 @@ body.touch #menu button, body.touch #drawer button { min-height: 40px; }
       if (n === 12) acc = 0;
     }
     const alpha = acc / TICK;
-    ghost.update(dt, game.running ? game.tick - game.startTick + alpha : game.inStart && game.course ? 0 : null);
+    if (!replay.on) ghost.update(dt, game.running ? game.tick - game.startTick + alpha : game.inStart && game.course ? 0 : null);
     raceFrame(dt);
 
     histTimer += dt;
@@ -2560,6 +2601,8 @@ body.touch #menu button, body.touch #drawer button { min-height: 40px; }
 
     if (ed.on) {
       edUpdate(dt);
+    } else if (replay.on) {
+      replayFrame(dt);
     } else if (!locked && !game.demo && attract.active) {
       updateAttract(dt, now / 1000);
     } else {
@@ -2571,11 +2614,12 @@ body.touch #menu button, body.touch #drawer button { min-height: 40px; }
         else { const u = cam.flip; flipPitch = -Math.PI * 2 * (u * u * (3 - 2 * u)); }
       }
       camera.position.set(ix, iy + eye + cam.dip + cam.bob - (cam.flip > 0 ? Math.sin(cam.flip * Math.PI) * 26 : 0), iz);
-      camera.rotation.set(pitch + flipPitch - cam.kick * DEG, yaw, cam.roll + cam.kickRoll);
-      if (settings.body) body.update(dt, hs, pitch + flipPitch, cam.roll, cam.bob, cam.dip);
+      const tilt = settings.roll / 100;
+      camera.rotation.set(pitch + flipPitch - cam.kick * DEG, yaw, (cam.roll + cam.kickRoll) * tilt);
+      if (settings.body) body.update(dt, hs, pitch + flipPitch, cam.roll * tilt, cam.bob, cam.dip);
     }
-    cosmetics.update(now, ix, iy, iz, hs, (locked || !!game.demo) && !attract.active && !ed.on);
-    speedLines.update(dt, hs, settings.speedLines && (locked || !!game.demo) && !attract.active && !ed.on);
+    cosmetics.update(now, ix, iy, iz, hs, (locked || !!game.demo) && !attract.active && !ed.on && !replay.on);
+    speedLines.update(dt, hs, settings.speedLines && (locked || !!game.demo) && !attract.active && !ed.on && !replay.on);
     updateFps(dt);
     A.update({
       speed: hs, playing: locked || !!game.demo, airborne: !player.onGround,
@@ -2607,7 +2651,7 @@ body.touch #menu button, body.touch #drawer button { min-height: 40px; }
     camera.updateMatrixWorld();
     updateModelChunks();
     renderer.render(scene, camera);
-    if (settings.body && (locked || game.demo) && !attract.active && !ed.on) body.render();
+    if (settings.body && (locked || game.demo) && !attract.active && !ed.on && !replay.on) body.render();
   }
 
   // ------------------------------------------------------------ online leaderboard
@@ -2872,12 +2916,17 @@ body.touch #menu button, body.touch #drawer button { min-height: 40px; }
     if (token !== boardToken) return;
     ol.textContent = '';
     for (const r of data.rows) {
-      let btn = null;
+      const btn = document.createElement('span');
+      btn.className = 'rowbtns';
       if (r.ghost) {
-        btn = document.createElement('button'); btn.className = 'ghost small'; btn.textContent = 'Race';
-        btn.title = 'Race this ghost';
-        btn.addEventListener('click', () => raceGhost(course, r.id, r.name));
-      } else btn = document.createElement('span');
+        const w = document.createElement('button'); w.className = 'ghost small'; w.textContent = 'Watch';
+        w.title = 'Watch this run';
+        w.addEventListener('click', () => watchOnline(course, r.id, r.name));
+        const b = document.createElement('button'); b.className = 'ghost small'; b.textContent = 'Race';
+        b.title = 'Race this ghost';
+        b.addEventListener('click', () => raceGhost(course, r.id, r.name));
+        btn.append(w, b);
+      }
       ol.appendChild(boardRow(r, net.id, btn));
     }
     msg.textContent = !data.total ? 'No times yet.' : data.mine && data.mine.rank > data.rows.length ? 'You are #' + data.mine.rank + ' of ' + data.total + '.' : data.total + (data.total === 1 ? ' runner' : ' runners') + ' on this level.';
@@ -3124,6 +3173,191 @@ body.touch #menu button, body.touch #drawer button { min-height: 40px; }
     if (lb.db && lb.me && !lb.readOnly && net.ok !== null) lb.db.doc('reach/' + lb.me).set({ ok: net.ok, at: Date.now() }).catch(() => {});
   }
 
+  // ------------------------------------------------------------ replay viewer
+  // Watch any run that has a ghost: your own best on a level, or a run from
+  // the online board. Play, pause, slow it down, scrub, and pick a camera:
+  // behind the runner, through its eyes, or a free camera you fly yourself
+  // (keyboard and mouse). Drag the view to look around. Nothing here touches
+  // the physics: the replay only moves the ghost runner and the camera.
+  const RP_SPEEDS = [0.1, 0.25, 0.5, 1, 2, 4];
+  const replay = {
+    on: false, course: null, g: null, name: '', ticks: 0, t: 0, rate: 3, playing: true, cam: 'follow', from: null,
+    orbit: { yaw: 0, pitch: -0.3, dist: 300 }, free: { pos: [0, 0, 0], yaw: 0, pitch: 0 }, look: [0, 0, 0], camPos: null, keys: new Set(), drag: null, last: null,
+  };
+  const rpEl = $('replay');
+  function replayOpen(course, g, name, ticks, from) {
+    if (!g || !Array.isArray(g.s) || !g.s.length) return;
+    A.init();
+    if (document.pointerLockElement) document.exitPointerLock();
+    else if (locked) softLock(false);
+    if (race.ws && race.active) raceLeave();
+    closeDrawer();
+    closeComplete();
+    ghost.stop();
+    goCourse(course);
+    $('toast').classList.remove('show');
+    game.started = false; attract.active = false;
+    Object.assign(replay, { on: true, course, g, name, ticks: ticks || (g.s.length / 5 - 1) * g.e, t: 0, rate: 3, playing: true, cam: 'follow', from, camPos: null, last: null });
+    replay.orbit.yaw = 0; replay.orbit.pitch = -0.3; replay.orbit.dist = 300;
+    document.body.classList.add('replaying');
+    rpEl.hidden = false;
+    $('rp-who').textContent = name + ' · ' + rowCourse(course).name;
+    const sc = $('rp-scrub');
+    sc.max = String(replay.ticks); sc.value = '0';
+    for (const b of rpEl.querySelectorAll('[data-cam]')) b.hidden = b.dataset.cam === 'free' && TOUCH;
+    replayUi();
+    $('rp-play').focus({ preventScroll: true });
+  }
+  function replayClose() {
+    if (!replay.on) return;
+    replay.on = false;
+    replay.keys.clear();
+    document.body.classList.remove('replaying');
+    rpEl.hidden = true;
+    ghost.hide();
+    goIdle();
+    game.started = false;
+    selected = replay.course;
+    showScreen('levels');
+    if (replay.from === 'online') openDrawer('online');
+  }
+  function replayUi() {
+    $('rp-play').textContent = replay.playing ? 'Pause' : 'Play';
+    $('rp-rate').textContent = RP_SPEEDS[replay.rate] + '×';
+    for (const b of rpEl.querySelectorAll('[data-cam]')) b.setAttribute('aria-pressed', String(b.dataset.cam === replay.cam));
+  }
+  const replaySeek = (t) => { replay.t = Math.max(0, Math.min(replay.ticks, t)); };
+  function replayCamMode(m) {
+    if (m === 'free' && TOUCH) m = 'follow';
+    if (m === 'free' && replay.cam !== 'free') {
+      // start the free camera where the view is now
+      replay.free.pos = [camera.position.x, camera.position.y, camera.position.z];
+      replay.free.yaw = camera.rotation.y; replay.free.pitch = camera.rotation.x;
+    }
+    replay.cam = m;
+    replayUi();
+  }
+  // called from frame() instead of the physics and the game camera
+  function replayFrame(dt) {
+    if (replay.playing) {
+      replay.t += dt / TICK * RP_SPEEDS[replay.rate];
+      if (replay.t >= replay.ticks) { replay.t = replay.ticks; replay.playing = false; replayUi(); }
+    }
+    const p = ghost.show(replay.g, replay.t, dt * RP_SPEEDS[replay.rate]);
+    if (document.activeElement !== $('rp-scrub')) $('rp-scrub').value = String(Math.round(replay.t));
+    $('rp-time').textContent = fmt(Math.round(replay.t)) + ' / ' + fmt(replay.ticks);
+    $('rp-speed').textContent = Math.round(p.hs) + ' u/s';
+    const eye = p.duck ? 46 : 64;
+    if (replay.cam === 'pov') {
+      ghost.root.visible = false; // the camera is inside it
+      camera.position.set(p.x, p.y + eye, p.z);
+      camera.rotation.set(replay.orbit.pitch + 0.3, p.yaw + replay.orbit.yaw, 0);
+    } else if (replay.cam === 'free') {
+      const f = replay.free, k = replay.keys;
+      const sp = (k.has('ShiftLeft') || k.has('ShiftRight') ? 2400 : 700) * dt;
+      const fx = -Math.sin(f.yaw) * Math.cos(f.pitch), fy = Math.sin(f.pitch), fz = -Math.cos(f.yaw) * Math.cos(f.pitch);
+      const rx = Math.cos(f.yaw), rz = -Math.sin(f.yaw);
+      const mv = (a, b) => (k.has(a) || k.has(b) ? 1 : 0);
+      const fw = mv('KeyW', 'ArrowUp') - mv('KeyS', 'ArrowDown'), sd = mv('KeyD', 'ArrowRight') - mv('KeyA', 'ArrowLeft'), up = mv('KeyE', 'Space') - mv('KeyQ', 'KeyC');
+      f.pos[0] += (fx * fw + rx * sd) * sp; f.pos[1] += (fy * fw + up) * sp; f.pos[2] += (fz * fw + rz * sd) * sp;
+      camera.position.set(f.pos[0], f.pos[1], f.pos[2]);
+      camera.rotation.set(f.pitch, f.yaw, 0);
+    } else {
+      // behind the runner, swinging round smoothly as it turns
+      const o = replay.orbit, yawC = p.yaw + o.yaw;
+      const tx = p.x, ty = p.y + 50, tz = p.z;
+      const want = [tx + Math.sin(yawC) * Math.cos(o.pitch) * o.dist, ty - Math.sin(o.pitch) * o.dist, tz + Math.cos(yawC) * Math.cos(o.pitch) * o.dist];
+      const c = replay.camPos || (replay.camPos = want.slice());
+      const a = Math.min(1, dt * 6);
+      for (let q = 0; q < 3; q++) c[q] += (want[q] - c[q]) * a;
+      // never let a big jump in the run (a respawn, a scrub) drag the camera across the map
+      if (Math.hypot(want[0] - c[0], want[1] - c[1], want[2] - c[2]) > 1500) for (let q = 0; q < 3; q++) c[q] = want[q];
+      camera.position.set(c[0], c[1], c[2]);
+      camera.lookAt(tx, ty, tz);
+    }
+    if (Math.abs(camera.fov - baseVFov()) > 0.01) { camera.fov = baseVFov(); camera.updateProjectionMatrix(); }
+  }
+  $('rp-play').addEventListener('click', () => {
+    if (!replay.playing && replay.t >= replay.ticks) replay.t = 0;
+    replay.playing = !replay.playing; replayUi(); A.play('click');
+  });
+  $('rp-slower').addEventListener('click', () => { replay.rate = Math.max(0, replay.rate - 1); replayUi(); });
+  $('rp-faster').addEventListener('click', () => { replay.rate = Math.min(RP_SPEEDS.length - 1, replay.rate + 1); replayUi(); });
+  $('rp-back').addEventListener('click', () => replaySeek(replay.t - 1 / TICK));
+  $('rp-fwd').addEventListener('click', () => replaySeek(replay.t + 1 / TICK));
+  $('rp-scrub').addEventListener('input', () => replaySeek(+$('rp-scrub').value));
+  $('rp-exit').addEventListener('click', () => { A.play('click'); replayClose(); });
+  for (const b of rpEl.querySelectorAll('[data-cam]')) b.addEventListener('click', () => { replayCamMode(b.dataset.cam); A.play('click'); });
+  // drag the view to look around (follow: swing round the runner)
+  canvas.addEventListener('pointerdown', (e) => { if (replay.on) { replay.drag = { x: e.clientX, y: e.clientY }; try { canvas.setPointerCapture(e.pointerId); } catch (x) { /* fine */ } } });
+  canvas.addEventListener('pointermove', (e) => {
+    if (!replay.on || !replay.drag) return;
+    const dx = (e.clientX - replay.drag.x) * 0.006, dy = (e.clientY - replay.drag.y) * 0.006;
+    replay.drag = { x: e.clientX, y: e.clientY };
+    if (replay.cam === 'free') {
+      replay.free.yaw -= dx; replay.free.pitch = Math.max(-1.5, Math.min(1.5, replay.free.pitch - dy));
+    } else {
+      replay.orbit.yaw -= dx;
+      replay.orbit.pitch = Math.max(-1.3, Math.min(0.6, replay.orbit.pitch - dy));
+    }
+  });
+  const endDrag = () => { replay.drag = null; };
+  canvas.addEventListener('pointerup', endDrag); canvas.addEventListener('pointercancel', endDrag);
+  canvas.addEventListener('wheel', (e) => {
+    if (!replay.on || replay.cam !== 'follow') return;
+    replay.orbit.dist = Math.max(90, Math.min(1600, replay.orbit.dist * (e.deltaY > 0 ? 1.12 : 0.89)));
+  }, { passive: true });
+  window.addEventListener('keydown', (e) => {
+    if (!replay.on) return;
+    const tag = document.activeElement && document.activeElement.tagName;
+    if (e.code === 'Escape') { e.preventDefault(); e.stopImmediatePropagation(); replayClose(); return; }
+    if (replay.cam === 'free' && /^(Key[WASDQEC]|Arrow(Up|Down|Left|Right)|Space|Shift(Left|Right))$/.test(e.code)) { e.preventDefault(); replay.keys.add(e.code); return; }
+    if (tag === 'BUTTON' && (e.code === 'Space' || e.code === 'Enter')) return; // the focused button handles it
+    if (e.code === 'Space' || e.code === 'KeyK') { e.preventDefault(); $('rp-play').click(); }
+    else if (e.code === 'ArrowLeft' || e.code === 'KeyJ') { e.preventDefault(); replaySeek(replay.t - (e.shiftKey ? 5 : 1) / TICK); }
+    else if (e.code === 'ArrowRight' || e.code === 'KeyL') { e.preventDefault(); replaySeek(replay.t + (e.shiftKey ? 5 : 1) / TICK); }
+    else if (e.code === 'Comma') { replay.playing = false; replaySeek(replay.t - replay.g.e); replayUi(); }
+    else if (e.code === 'Period') { replay.playing = false; replaySeek(replay.t + replay.g.e); replayUi(); }
+    else if (e.code === 'Minus' || e.code === 'ArrowDown') { e.preventDefault(); $('rp-slower').click(); }
+    else if (e.code === 'Equal' || e.code === 'ArrowUp') { e.preventDefault(); $('rp-faster').click(); }
+    else if (e.code === 'KeyC') replayCamMode({ follow: 'pov', pov: TOUCH ? 'follow' : 'free', free: 'follow' }[replay.cam]);
+    else if (e.code === 'Home') replaySeek(0);
+  });
+  window.addEventListener('keyup', (e) => replay.keys.delete(e.code));
+  window.addEventListener('blur', () => replay.keys.clear());
+  // controller: A play or pause, B exit, LB and RB speed, D-pad left and right
+  // skip a second, Y camera, right stick looks, left stick flies the free camera
+  function replayPad(b, ax, press, dt) {
+    if (press(0)) $('rp-play').click();
+    if (press(1) || press(9)) replayClose();
+    if (press(4)) $('rp-slower').click();
+    if (press(5)) $('rp-faster').click();
+    if (press(14)) replaySeek(replay.t - 1 / TICK);
+    if (press(15)) replaySeek(replay.t + 1 / TICK);
+    if (press(3)) replayCamMode({ follow: 'pov', pov: 'free', free: 'follow' }[replay.cam]);
+    const lx = ax[2] * 2.4 * dt, ly = ax[3] * 1.6 * dt;
+    if (replay.cam === 'free') {
+      const f = replay.free;
+      f.yaw -= lx; f.pitch = Math.max(-1.5, Math.min(1.5, f.pitch - ly));
+      const sp = (b[7] ? 2400 : 700) * dt, fx = -Math.sin(f.yaw), fz = -Math.cos(f.yaw), rx = Math.cos(f.yaw), rz = -Math.sin(f.yaw);
+      f.pos[0] += (-fx * ax[1] + rx * ax[0]) * sp; f.pos[2] += (-fz * ax[1] + rz * ax[0]) * sp; f.pos[1] += Math.sin(f.pitch) * -ax[1] * sp;
+    } else {
+      replay.orbit.yaw -= lx; replay.orbit.pitch = Math.max(-1.3, Math.min(0.6, replay.orbit.pitch - ly));
+    }
+  }
+  // where replays start: your best on the selected level, a board run, the finish screen
+  function watchBest(course, from) {
+    const g = ghost.saved(course);
+    if (g) replayOpen(course, g, 'Your best', best[course], from);
+  }
+  async function watchOnline(course, id, name) {
+    try {
+      const r = await api('/ghost?course=' + encodeURIComponent(lbKey(course)) + '&id=' + encodeURIComponent(id));
+      replayOpen(course, r.ghost, name, r.ticks, 'online');
+    } catch (e) { $('on-boardmsg').textContent = 'Could not load that run.'; }
+  }
+  $('watch').addEventListener('click', () => { A.play('click'); watchBest(selected, 'levels'); });
+
   // ------------------------------------------------------------ menu
   const menu = $('menu');
   const hex = (n) => '#' + n.toString(16).padStart(6, '0');
@@ -3157,7 +3391,7 @@ body.touch #menu button, body.touch #drawer button { min-height: 40px; }
     if (attract.course === name) return;
     attract.course = name;
     attract.t0 = performance.now() / 1000;
-    flashEl.classList.remove('go'); void flashEl.offsetWidth; flashEl.classList.add('go');
+    if (settings.flash) { flashEl.classList.remove('go'); void flashEl.offsetWidth; flashEl.classList.add('go'); }
   }
   // fly through a level; when paused on that level, show the frozen game instead
   function showPreview(name) {
@@ -3225,6 +3459,7 @@ body.touch #menu button, body.touch #drawer button { min-height: 40px; }
     $('resume').hidden = !paused || here;
     $('restart').hidden = !here || !game.course;
     $('menunote').hidden = paused;
+    $('watch').hidden = !ghost.has(selected);
   }
 
   // two screens: the title (main or pause menu) and level select behind Play
@@ -3458,6 +3693,24 @@ body.touch #menu button, body.touch #drawer button { min-height: 40px; }
   bindCheck('s-lines', 'speedLines');
   bindCheck('s-landkick', 'landKick');
   bindCheck('s-fps', 'fps');
+  // accessibility
+  const applyHud = () => document.documentElement.style.setProperty('--hudz', String(settings.hudSize / 100));
+  applyHud();
+  $('s-colors').value = settings.colors;
+  $('s-colors').addEventListener('change', () => { settings.colors = $('s-colors').value; applyColors(); save(SETTINGS_KEY, settings); A.play('click'); });
+  bindRange('s-roll', 'roll', v => v + '%');
+  bindRange('s-hud', 'hudSize', v => v + '%', applyHud);
+  bindCheck('s-flip', 'flip');
+  bindCheck('s-flash', 'flash');
+  // one press for the calmest camera; each switch can still be turned back on
+  $('s-calm').addEventListener('click', () => {
+    Object.assign(settings, { roll: 0, flip: false, flash: false, bob: false, fovKick: false, landKick: false, speedLines: false });
+    save(SETTINGS_KEY, settings);
+    $('s-roll').value = 0; $('s-roll-v').textContent = '0%';
+    for (const [id, k] of [['s-flip', 'flip'], ['s-flash', 'flash'], ['s-bob', 'bob'], ['s-kick', 'fovKick'], ['s-landkick', 'landKick'], ['s-lines', 'speedLines']]) $(id).checked = settings[k];
+    A.play('click');
+    toast('Motion reduced', 1500);
+  });
   bindRange('s-scale', 'scale', v => v + '%', () => { applyScale(); resize(); });
   bindCheck('s-ghost', 'ghost');
   bindCheck('s-keys', 'keys', () => hud.keys.hidden = !settings.keys);
@@ -3495,6 +3748,7 @@ body.touch #menu button, body.touch #drawer button { min-height: 40px; }
   document.addEventListener('pointerlockchange', () => { if (!locked) menuOnUnlock(); });
   // the editor and its test runs pause into the editor's own panel
   function menuOnUnlock() {
+    if (replay.on) return;
     if (ed.on || ed.testing) { if (completeEl.hidden) edShowPanel(); }
     else showMenuState();
   }
@@ -3502,7 +3756,7 @@ body.touch #menu button, body.touch #drawer button { min-height: 40px; }
   window.addEventListener('pointerdown', () => A.init(), { once: true });
   // menu keys: arrows browse levels, Enter plays, Esc closes the drawer
   window.addEventListener('keydown', (e) => {
-    if (locked || !completeEl.hidden || document.body.classList.contains('playing') || document.body.classList.contains('edmode')) return;
+    if (locked || !completeEl.hidden || document.body.classList.contains('playing') || document.body.classList.contains('edmode') || replay.on) return;
     if (e.code === 'Escape') { if (!drawer.hidden) closeDrawer(); else if (screen === 'levels') { A.play('click'); showScreen('title'); } return; }
     if (!drawer.hidden) return;
     const tag = document.activeElement && document.activeElement.tagName;
@@ -3912,6 +4166,7 @@ body.editing.playing #edhelp { display: block; }
   showMenuState();
   if (location.hash === '#demo') game.demo = true; // headless screenshot mode
   window.__strafe = { courses: map.courses, mats: MATS, lights: { hemi, sun }, setNight, player, game, keys, eff, faceInsets, practice: { set: setPractice, save: practiceSave, load: practiceLoad }, goCourse, place, attract, previewCourse, body, ghost, cosmetics, preview, step, modelChunks, renderer, setView: (y, p) => { yaw = y; pitch = p; }, editor: { ed, enter: enterEditor, test: edTest, back: edBack, code: edCode, decode: edDecode },
-    online: { net, race, submit: netSubmit, raceFinish, showComplete, openDrawer } };
+    online: { net, race, submit: netSubmit, raceFinish, showComplete, openDrawer },
+    replay: { state: replay, open: replayOpen, close: replayClose, watchBest }, settings, applyColors };
   requestAnimationFrame((t) => { last = t; frame(t); });
 })();
