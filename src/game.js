@@ -3517,10 +3517,15 @@ body.touch #menu button, body.touch #drawer button { min-height: 40px; }
         '<span class="cm">' + pips + '<span>' + bt + '</span></span>';
       b.addEventListener('mouseenter', () => { A.play('hover'); showPreview(r.name); });
       b.addEventListener('mouseleave', () => showPreview(selected));
+      // a press only plays a card that was already selected before it; focus from that press selects it first
+      let wasSel = false;
+      b.addEventListener('pointerdown', () => { wasSel = selected === r.name; });
       b.addEventListener('focus', () => { if (selected !== r.name) select(r.name); });
-      b.addEventListener('click', () => {
+      b.addEventListener('click', e => {
         A.init();
-        if (selected === r.name) playSelected(); else { A.play('click'); select(r.name); }
+        const play = e.detail === 0 ? selected === r.name : wasSel;
+        wasSel = false;
+        if (play) playSelected(); else { A.play('click'); if (selected !== r.name) select(r.name); }
       });
       b.addEventListener('dblclick', () => playSelected());
       li.appendChild(b);
