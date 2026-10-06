@@ -44,4 +44,7 @@ jobs:
         run: |
           # a new workers.dev address can take a few minutes to get its certificate
           for i in $(seq 1 30); do curl -sf https://strafe-online.strafe-game.workers.dev/ && break; sleep 10; done
+          # a deploy reaches every Cloudflare location over about a minute, and each
+          # race room restarts when it does, dropping its sockets; let it settle first
+          sleep 60
           node test/api.js https://strafe-online.strafe-game.workers.dev

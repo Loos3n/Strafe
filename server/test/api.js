@@ -59,6 +59,7 @@ const ws = (name) => new Promise((res, rej) => {
   const w = new WebSocket(BASE.replace('http', 'ws') + '/race/T' + tag.toUpperCase().replace(/[^A-Z0-9]/g, 'X'));
   w.msgs = []; w.onmessage = (e) => w.msgs.push(JSON.parse(e.data));
   w.onopen = () => { w.send(JSON.stringify({ t: 'hello', name })); res(w); }; w.onerror = rej;
+  w.onclose = (e) => { if (!w.closing) console.log('socket closed by server', name, e.code, e.reason); };
 });
 const wait = (w, f, ms = 3000) => new Promise((res) => {
   const t0 = Date.now(), iv = setInterval(() => { const m = w.msgs.find(f); if (m || Date.now() - t0 > ms) { clearInterval(iv); res(m); } }, 20);
@@ -87,10 +88,11 @@ j.send(JSON.stringify({ t: 'fin', ticks: 0 }));
 const done = await wait(h, m => m.t === 'room' && m.phase === 'results');
 const fins = done ? done.players.map(p => p.fin).sort((x, y) => x - y) : [];
 check('results timed by the room', done && fins[0] >= 25 && fins[0] < 200 && fins[1] - fins[0] >= 35, JSON.stringify(fins));
-h.close();
+if (!done) console.log('host saw', JSON.stringify(h.msgs.slice(-3)));
+h.closing = true; h.close();
 const handed = await wait(j, m => m.t === 'room' && m.players.length === 1);
 check('host leaves, joiner takes over', handed && handed.host === handed.players[0].id);
-j.close();
+j.closing = true; j.close();
 // clean up: the test players remove themselves
 for (const p of [a, b]) check('delete me', (await call('/api/delete-me', {}, p.body.token)).body.deleted);
 check('gone from board', !(await call('/api/board?course=' + run.key)).body.rows.some(r => r.name.endsWith(tag)));
