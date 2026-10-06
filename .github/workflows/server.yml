@@ -37,3 +37,6 @@ jobs:
       - name: Deploy
         if: env.CLOUDFLARE_API_TOKEN != ''
         run: npx wrangler deploy
+      - name: Test the live server
+        if: env.CLOUDFLARE_API_TOKEN != ''
+        run: sleep 5 && node test/api.js https://strafe-online.strafe-game.workers.dev
