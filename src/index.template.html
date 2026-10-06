@@ -309,6 +309,15 @@ table.controls { width: 100%; border-collapse: collapse; font-size: 14px; margin
 #lb-note:empty { display: none; }
 #c-online { margin: 6px 0 0; font-family: var(--display); font-weight: 700; font-size: 16px; letter-spacing: .12em; text-transform: uppercase; color: var(--red); }
 @media (max-width: 900px) { #lb { display: none; } }
+/* saved replays */
+.rplist { list-style: none; margin: 6px 0; padding: 0; display: grid; gap: 2px; font-size: 14px; }
+.rplist li { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; gap: 10px; align-items: center; padding: 6px 8px; background: rgba(255,255,255,.04); }
+.rplist .n { display: grid; min-width: 0; }
+.rplist .n b, .rplist .n small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rplist .n small { color: rgba(236,240,244,.6); font-size: 12px; }
+.rplist .t { font-family: var(--display); font-weight: 700; font-variant-numeric: tabular-nums; }
+#c-save:disabled { opacity: .6; cursor: default; }
+
 /* replay viewer */
 body.replaying #menu, body.replaying .hud, body.replaying #crosshair { display: none; }
 #replay { position: fixed; left: 50%; bottom: calc(14px + env(safe-area-inset-bottom, 0px)); transform: translateX(-50%); width: min(920px, calc(100% - 24px)); box-sizing: border-box; background: rgba(12,15,19,.82); backdrop-filter: blur(10px); color: #eef1f4; padding: 10px 14px; z-index: 6; }
@@ -432,6 +441,7 @@ body.touch #racehud { top: calc(56px + env(safe-area-inset-top, 0px)); left: 10p
       <button class="mbtn" id="m-play"><span>Play</span><small id="m-play-sub"></small></button>
       <button class="mbtn" id="m-tutorial"><span>Tutorial</span><small id="m-tut-sub"></small></button>
       <button class="mbtn" data-open="online" aria-expanded="false" aria-controls="drawer"><span>Online</span><small id="m-online-sub">Top times and races</small></button>
+      <button class="mbtn" data-open="replays" aria-expanded="false" aria-controls="drawer"><span>Replays</span><small>Saved runs and bests</small></button>
       <button class="mbtn" data-open="cosmetics" aria-expanded="false" aria-controls="drawer"><span>Cosmetics</span><small id="m-cos-sub"></small></button>
       <button class="mbtn" id="m-editor"><span>Level editor</span><small>Build and share</small></button>
       <button class="mbtn" data-open="settings" aria-expanded="false" aria-controls="drawer"><span>Settings</span></button>
@@ -588,6 +598,19 @@ body.touch #racehud { top: calc(56px + env(safe-area-inset-top, 0px)); left: 10p
           </div>
         </div>
       </div>
+    <div data-pane="replays" hidden>
+      <div class="onrow"><select id="rpl-level" aria-label="Level"></select></div>
+      <div class="group">
+        <p class="label">Saved replays</p>
+        <ol class="rplist" id="rpl-saved"></ol>
+        <p class="onmsg" id="rpl-savedmsg"></p>
+      </div>
+      <div class="group">
+        <p class="label">Personal bests</p>
+        <ol class="rplist" id="rpl-bests"></ol>
+        <p class="onmsg" id="rpl-bestsmsg"></p>
+      </div>
+    </div>
     <div data-pane="online" hidden>
       <div class="group" id="on-off" hidden><p class="onmsg">Can't reach the Strafe server from here, so online times and races are off. Your runs still save on this device. You can play online at <a href="https://strafe-online.strafe-game.workers.dev" target="_blank" rel="noopener">strafe-online.strafe-game.workers.dev</a>.</p></div>
       <div id="on-body">
@@ -627,12 +650,11 @@ body.touch #racehud { top: calc(56px + env(safe-area-inset-top, 0px)); left: 10p
           <tr><td>Into a wall</td><td>Jump at a wall head-on to climb it. Hold W and run past one at an angle to wallrun.</td></tr>
           <tr><td>Into a ledge</td><td>Hold W to mantle. Jump into a low obstacle to vault it at speed.</td></tr>
           <tr><td>1 to 0 / T</td><td>Jump straight to a level, or the tutorial.</td></tr>
-          <tr><td>Q</td><td>Quick turn 180°. Great for climbing a wall and kicking off backwards.</td></tr>
           <tr><td>Crouch on landing</td><td>Roll out of a big drop.</td></tr>
           <tr><td>R / F</td><td>Restart level, last checkpoint.</td></tr>
           <tr><td>P</td><td>Practice mode. Z saves your exact spot and speed, X (or F, or falling) puts you back. Practice runs are not recorded.</td></tr>
           <tr><td>M / Esc</td><td>Mute sound. Open this menu. In the menu, arrow keys pick a level and Enter plays it.</td></tr>
-          <tr><td>Controller</td><td>Left stick moves, right stick looks. A or LB jumps (hold to hop), B, LT or right stick click crouches. X back to checkpoint, Y quick turn, View restarts, Menu pauses. In menus, D-pad moves, A picks, B goes back. Auto strafe (Settings) presses A or D in the air as you turn.</td></tr>
+          <tr><td>Controller</td><td>Left stick moves, right stick looks. A or LB jumps (hold to hop), B, LT or right stick click crouches. X back to checkpoint, View restarts, Menu pauses. In menus, D-pad moves, A picks, B goes back. Auto strafe (Settings) presses A or D in the air as you turn.</td></tr>
         </table>
       </div>
   </div>
@@ -669,6 +691,7 @@ body.touch #racehud { top: calc(56px + env(safe-area-inset-top, 0px)); left: 10p
       <button class="cprimary" id="c-next" data-act="next"></button>
       <button class="ghost" data-act="retry">Retry <kbd>R</kbd></button>
       <button class="ghost" data-act="levels">Levels <kbd>Esc</kbd></button>
+      <button class="ghost" data-act="save" id="c-save" hidden>Save replay <kbd>S</kbd></button>
       <button class="ghost" data-act="watch" id="c-watch" hidden>Watch best <kbd>V</kbd></button>
     </div>
   </div>

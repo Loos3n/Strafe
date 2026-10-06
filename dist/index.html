@@ -309,6 +309,15 @@ table.controls { width: 100%; border-collapse: collapse; font-size: 14px; margin
 #lb-note:empty { display: none; }
 #c-online { margin: 6px 0 0; font-family: var(--display); font-weight: 700; font-size: 16px; letter-spacing: .12em; text-transform: uppercase; color: var(--red); }
 @media (max-width: 900px) { #lb { display: none; } }
+/* saved replays */
+.rplist { list-style: none; margin: 6px 0; padding: 0; display: grid; gap: 2px; font-size: 14px; }
+.rplist li { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; gap: 10px; align-items: center; padding: 6px 8px; background: rgba(255,255,255,.04); }
+.rplist .n { display: grid; min-width: 0; }
+.rplist .n b, .rplist .n small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rplist .n small { color: rgba(236,240,244,.6); font-size: 12px; }
+.rplist .t { font-family: var(--display); font-weight: 700; font-variant-numeric: tabular-nums; }
+#c-save:disabled { opacity: .6; cursor: default; }
+
 /* replay viewer */
 body.replaying #menu, body.replaying .hud, body.replaying #crosshair { display: none; }
 #replay { position: fixed; left: 50%; bottom: calc(14px + env(safe-area-inset-bottom, 0px)); transform: translateX(-50%); width: min(920px, calc(100% - 24px)); box-sizing: border-box; background: rgba(12,15,19,.82); backdrop-filter: blur(10px); color: #eef1f4; padding: 10px 14px; z-index: 6; }
@@ -432,6 +441,7 @@ body.touch #racehud { top: calc(56px + env(safe-area-inset-top, 0px)); left: 10p
       <button class="mbtn" id="m-play"><span>Play</span><small id="m-play-sub"></small></button>
       <button class="mbtn" id="m-tutorial"><span>Tutorial</span><small id="m-tut-sub"></small></button>
       <button class="mbtn" data-open="online" aria-expanded="false" aria-controls="drawer"><span>Online</span><small id="m-online-sub">Top times and races</small></button>
+      <button class="mbtn" data-open="replays" aria-expanded="false" aria-controls="drawer"><span>Replays</span><small>Saved runs and bests</small></button>
       <button class="mbtn" data-open="cosmetics" aria-expanded="false" aria-controls="drawer"><span>Cosmetics</span><small id="m-cos-sub"></small></button>
       <button class="mbtn" id="m-editor"><span>Level editor</span><small>Build and share</small></button>
       <button class="mbtn" data-open="settings" aria-expanded="false" aria-controls="drawer"><span>Settings</span></button>
@@ -588,6 +598,19 @@ body.touch #racehud { top: calc(56px + env(safe-area-inset-top, 0px)); left: 10p
           </div>
         </div>
       </div>
+    <div data-pane="replays" hidden>
+      <div class="onrow"><select id="rpl-level" aria-label="Level"></select></div>
+      <div class="group">
+        <p class="label">Saved replays</p>
+        <ol class="rplist" id="rpl-saved"></ol>
+        <p class="onmsg" id="rpl-savedmsg"></p>
+      </div>
+      <div class="group">
+        <p class="label">Personal bests</p>
+        <ol class="rplist" id="rpl-bests"></ol>
+        <p class="onmsg" id="rpl-bestsmsg"></p>
+      </div>
+    </div>
     <div data-pane="online" hidden>
       <div class="group" id="on-off" hidden><p class="onmsg">Can't reach the Strafe server from here, so online times and races are off. Your runs still save on this device. You can play online at <a href="https://strafe-online.strafe-game.workers.dev" target="_blank" rel="noopener">strafe-online.strafe-game.workers.dev</a>.</p></div>
       <div id="on-body">
@@ -627,12 +650,11 @@ body.touch #racehud { top: calc(56px + env(safe-area-inset-top, 0px)); left: 10p
           <tr><td>Into a wall</td><td>Jump at a wall head-on to climb it. Hold W and run past one at an angle to wallrun.</td></tr>
           <tr><td>Into a ledge</td><td>Hold W to mantle. Jump into a low obstacle to vault it at speed.</td></tr>
           <tr><td>1 to 0 / T</td><td>Jump straight to a level, or the tutorial.</td></tr>
-          <tr><td>Q</td><td>Quick turn 180°. Great for climbing a wall and kicking off backwards.</td></tr>
           <tr><td>Crouch on landing</td><td>Roll out of a big drop.</td></tr>
           <tr><td>R / F</td><td>Restart level, last checkpoint.</td></tr>
           <tr><td>P</td><td>Practice mode. Z saves your exact spot and speed, X (or F, or falling) puts you back. Practice runs are not recorded.</td></tr>
           <tr><td>M / Esc</td><td>Mute sound. Open this menu. In the menu, arrow keys pick a level and Enter plays it.</td></tr>
-          <tr><td>Controller</td><td>Left stick moves, right stick looks. A or LB jumps (hold to hop), B, LT or right stick click crouches. X back to checkpoint, Y quick turn, View restarts, Menu pauses. In menus, D-pad moves, A picks, B goes back. Auto strafe (Settings) presses A or D in the air as you turn.</td></tr>
+          <tr><td>Controller</td><td>Left stick moves, right stick looks. A or LB jumps (hold to hop), B, LT or right stick click crouches. X back to checkpoint, View restarts, Menu pauses. In menus, D-pad moves, A picks, B goes back. Auto strafe (Settings) presses A or D in the air as you turn.</td></tr>
         </table>
       </div>
   </div>
@@ -669,6 +691,7 @@ body.touch #racehud { top: calc(56px + env(safe-area-inset-top, 0px)); left: 10p
       <button class="cprimary" id="c-next" data-act="next"></button>
       <button class="ghost" data-act="retry">Retry <kbd>R</kbd></button>
       <button class="ghost" data-act="levels">Levels <kbd>Esc</kbd></button>
+      <button class="ghost" data-act="save" id="c-save" hidden>Save replay <kbd>S</kbd></button>
       <button class="ghost" data-act="watch" id="c-watch" hidden>Watch best <kbd>V</kbd></button>
     </div>
   </div>
@@ -8159,7 +8182,6 @@ window.STRAFE_ASSETS = {"city":"Z2xURgIAAABU+ggAYFIAAEpTT057ImFzc2V0Ijp7ImdlbmVy
     if (ed.on) return;
     if (e.code === 'KeyR') restartCourse();
     else if (e.code === 'KeyF') respawn();
-    else if (e.code === 'KeyQ') { if (turnLeft <= 0) turnLeft = Math.PI; } // Mirror's Edge 180° quick turn
     else if (/^Digit[0-9]$/.test(e.code) && map.order[(+e.code.slice(5) + 9) % 10]) goCourse(map.order[(+e.code.slice(5) + 9) % 10]);
     else if (e.code === 'KeyT') goCourse('tutorial');
     else if (e.code === 'KeyP') setPractice(!game.practice);
@@ -8252,8 +8274,8 @@ window.STRAFE_ASSETS = {"city":"Z2xURgIAAABU+ggAYFIAAEpTT057ImFzc2V0Ijp7ImdlbmVy
   // ------------------------------------------------------------ controller
   // Standard-mapping gamepads (Xbox, PlayStation, most others). Left stick
   // moves like WASD, right stick looks. A or LB jumps (hold to hop), B, LT or
-  // the right stick click crouches, X goes back to the checkpoint, Y turns
-  // 180°, View restarts, Menu pauses. In menus the D-pad or left stick moves,
+  // the right stick click crouches, X goes back to the checkpoint, View
+  // restarts, Menu pauses. In menus the D-pad or left stick moves,
   // A picks and B goes back. The pad only takes over once you use it, so
   // keyboard and mouse play is unchanged with a pad plugged in.
   const pad = { on: false, fwd: 0, side: 0, jump: false, duck: false, lastYaw: 0, turn: 0, prev: [], held: {}, padAt: -1, kbmAt: 0, menuAt: 0 };
@@ -8344,7 +8366,6 @@ window.STRAFE_ASSETS = {"city":"Z2xURgIAAABU+ggAYFIAAEpTT057ImFzc2V0Ijp7ImdlbmVy
       if (pitch > 89 * DEG) pitch = 89 * DEG;
       if (pitch < -89 * DEG) pitch = -89 * DEG;
       if (press(2)) respawn();
-      if (press(3) && turnLeft <= 0) turnLeft = Math.PI;
       if (press(8)) restartCourse();
       if (press(9)) { if (document.pointerLockElement) document.exitPointerLock(); else softLock(false); }
     } else {
@@ -8402,7 +8423,7 @@ body.touch #menu button, body.touch #drawer button { min-height: 40px; }
     root.innerHTML = '<div id="t-pad"></div><div id="t-stick"><div id="t-knob"></div></div>' +
       '<div id="t-hint">Left: move · Right: look · Hold Jump and drag to steer</div>' +
       '<button class="t-btn" id="t-duck" aria-label="Crouch">Crouch</button><button class="t-btn" id="t-jump" aria-label="Jump">Jump</button>' +
-      '<div id="t-bar"><button class="t-btn" data-k="turn" aria-label="Quick turn">180</button><button class="t-btn" data-k="cp" aria-label="Back to checkpoint">CP</button>' +
+      '<div id="t-bar"><button class="t-btn" data-k="cp" aria-label="Back to checkpoint">CP</button>' +
       '<button class="t-btn" data-k="restart" aria-label="Restart">Reset</button><button class="t-btn" data-k="pause" aria-label="Pause">II</button></div>';
     document.body.appendChild(root);
     const rot = document.createElement('div');
@@ -8467,7 +8488,6 @@ body.touch #menu button, body.touch #drawer button { min-height: 40px; }
       if (k === 'pause') { swallowUntil = performance.now() + 600; softLock(false); }
       else if (k === 'restart') restartCourse();
       else if (k === 'cp') respawn();
-      else if (k === 'turn') { if (turnLeft <= 0) turnLeft = Math.PI; }
     });
     // the tap that pauses would land as a click on whatever the menu puts
     // under the thumb (or the view, which resumes), so drop it
@@ -8600,6 +8620,7 @@ body.touch #menu button, body.touch #drawer button { min-height: 40px; }
           bestSplits[game.course] = game.run.splits; save(SPLITS_KEY, bestSplits);
         }
         const runGhost = ghost.current();
+        game.lastRun = runGhost && game.course !== 'custom' ? { course: game.course, ticks, g: runGhost, saved: false } : null;
         if (isBest || !ghost.has(game.course)) ghost.keep(game.course);
         lbSubmit(game.course, ticks, runGhost);
         raceFinish();
@@ -9473,6 +9494,9 @@ body.touch #menu button, body.touch #drawer button { min-height: 40px; }
     $('c-jumps').textContent = r.jumps;
     $('c-dist').textContent = (r.dist * 0.0254).toFixed(0);
     $('c-watch').hidden = game.course === 'custom' || !ghost.has(game.course);
+    const sv = $('c-save');
+    sv.hidden = !game.lastRun || game.lastRun.course !== game.course;
+    sv.disabled = false; sv.innerHTML = 'Save replay <kbd>S</kbd>';
     const nx = nextLevel(game.course);
     $('c-next').textContent = game.course === 'custom' ? 'Back to editor' : nx ? 'Next: ' + map.courses[nx].name : 'Back to levels';
     $('c-next').dataset.target = game.course === 'custom' ? 'editor' : nx || 'levels';
@@ -9509,6 +9533,7 @@ body.touch #menu button, body.touch #drawer button { min-height: 40px; }
   }
   function completeAction(what) {
     A.init(); A.play('click');
+    if (what === 'save') { saveLastRun(); return; }
     closeComplete();
     if (what === 'next') {
       const t = $('c-next').dataset.target;
@@ -9532,6 +9557,7 @@ body.touch #menu button, body.touch #drawer button { min-height: 40px; }
     else if (e.code === 'KeyR') completeAction('retry');
     else if (e.code === 'Escape') completeAction('levels');
     else if (e.code === 'KeyV' && game.course !== 'custom' && ghost.has(game.course)) completeAction('watch');
+    else if (e.code === 'KeyS' && !$('c-save').hidden) completeAction('save');
   });
 
   // ------------------------------------------------------------ tutorial
@@ -10384,7 +10410,7 @@ body.touch #menu button, body.touch #drawer button { min-height: 40px; }
     game.started = false;
     selected = replay.course;
     showScreen('levels');
-    if (replay.from === 'online') openDrawer('online');
+    if (replay.from === 'online' || replay.from === 'replays') openDrawer(replay.from);
   }
   function replayUi() {
     $('rp-play').textContent = replay.playing ? 'Pause' : 'Play';
@@ -10522,6 +10548,79 @@ body.touch #menu button, body.touch #drawer button { min-height: 40px; }
     } catch (e) { $('on-boardmsg').textContent = 'Could not load that run.'; }
   }
   $('watch').addEventListener('click', () => { A.play('click'); watchBest(selected, 'levels'); });
+
+  // saved replays: a run you chose to keep from the finish screen. The list
+  // lives in localStorage (strafe.replays.v1) and each run in its own key, so
+  // a full storage only stops new saves. Your best run on each level is kept
+  // anyway (the ghost) and shows in the same list.
+  const RP_LIST = 'strafe.replays.v1', RP_DATA = 'strafe.replay.v1.', RP_MAX = 60;
+  const rpList = () => load(RP_LIST) || [];
+  function saveLastRun() {
+    const r = game.lastRun, btn = $('c-save');
+    if (!r || r.saved) return;
+    const list = rpList();
+    if (list.length >= RP_MAX) { toast('You have ' + RP_MAX + ' saved replays. Delete some in Replays first.', 2600); return; }
+    const id = Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+    try {
+      localStorage.setItem(RP_DATA + id, JSON.stringify(r.g));
+      list.unshift({ id, course: r.course, key: lbKey(r.course), ticks: r.ticks, at: Date.now() });
+      localStorage.setItem(RP_LIST, JSON.stringify(list));
+    } catch (e) {
+      try { localStorage.removeItem(RP_DATA + id); } catch (x) { /* nothing to undo */ }
+      toast('No room left to save replays on this device. Delete some in Replays.', 2800);
+      return;
+    }
+    r.saved = true;
+    btn.disabled = true; btn.textContent = 'Replay saved';
+    A.play('checkpoint');
+  }
+  const rpDate = (t) => { const d = new Date(t); return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' }) + ' ' + d.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' }); };
+  function rpRow(title, sub, ticks, onWatch, onDelete) {
+    const li = document.createElement('li');
+    const n = document.createElement('span'); n.className = 'n';
+    const b = document.createElement('b'); b.textContent = title;
+    const sm = document.createElement('small'); sm.textContent = sub;
+    n.append(b, sm);
+    const t = document.createElement('span'); t.className = 't'; t.textContent = fmt(ticks);
+    const btns = document.createElement('span'); btns.className = 'rowbtns';
+    const w = document.createElement('button'); w.className = 'ghost small'; w.textContent = 'Watch'; w.addEventListener('click', onWatch);
+    btns.appendChild(w);
+    if (onDelete) { const d = document.createElement('button'); d.className = 'ghost small'; d.textContent = 'Delete'; d.addEventListener('click', onDelete); btns.appendChild(d); }
+    li.append(n, t, btns);
+    return li;
+  }
+  function replaysRender() {
+    const level = $('rpl-level').value;
+    if (!$('rpl-level').options.length) {
+      $('rpl-level').add(new Option('All levels', ''));
+      for (const n of LEVEL_ORDER) $('rpl-level').add(new Option(rowCourse(n).name, n));
+    }
+    const saved = $('rpl-saved'), bests = $('rpl-bests');
+    saved.textContent = ''; bests.textContent = '';
+    const list = rpList().filter(r => !level || r.course === level);
+    for (const r of list) {
+      const old = r.key !== lbKey(r.course) ? ' · older layout' : '';
+      saved.appendChild(rpRow(rowCourse(r.course).name, rpDate(r.at) + old, r.ticks, () => {
+        const g = load(RP_DATA + r.id);
+        if (g) replayOpen(r.course, g, 'Saved run', r.ticks, 'replays'); else toast('That replay could not be read.');
+      }, () => {
+        try { localStorage.removeItem(RP_DATA + r.id); } catch (e) { /* gone already */ }
+        save(RP_LIST, rpList().filter(x => x.id !== r.id));
+        A.play('click');
+        replaysRender();
+      }));
+    }
+    $('rpl-savedmsg').textContent = list.length ? '' : level ? 'No saved replays on this level yet.' : 'No saved replays yet. Finish a run and press Save replay.';
+    let nb = 0;
+    for (const c of LEVEL_ORDER) {
+      if (level && c !== level) continue;
+      if (!best[c] || !ghost.has(c)) continue;
+      nb++;
+      bests.appendChild(rpRow(rowCourse(c).name, 'Personal best', best[c], () => watchBest(c, 'replays')));
+    }
+    $('rpl-bestsmsg').textContent = nb ? '' : 'Your best run on each level shows here once you set one.';
+  }
+  $('rpl-level').addEventListener('change', replaysRender);
 
   // ------------------------------------------------------------ menu
   const menu = $('menu');
@@ -10689,8 +10788,9 @@ body.touch #menu button, body.touch #drawer button { min-height: 40px; }
   function openDrawer(which) {
     A.play('click');
     drawer.hidden = false;
-    $('d-title').textContent = { settings: 'Settings', story: 'Story', cosmetics: 'Cosmetics', controls: 'Controls', online: 'Online' }[which];
+    $('d-title').textContent = { settings: 'Settings', story: 'Story', cosmetics: 'Cosmetics', controls: 'Controls', online: 'Online', replays: 'Replays' }[which];
     if (which === 'online') onlineOpen();
+    if (which === 'replays') replaysRender();
     drawer.classList.toggle('wide', which === 'story' || which === 'cosmetics');
     if (which === 'cosmetics') buildCosmetics(); else preview.stop();
     if (which === 'story') {
@@ -11332,7 +11432,7 @@ body.editing.playing #edhelp { display: block; }
   if (location.hash === '#demo') game.demo = true; // headless screenshot mode
   window.__strafe = { courses: map.courses, mats: MATS, lights: { hemi, sun }, setNight, player, game, keys, eff, faceInsets, practice: { set: setPractice, save: practiceSave, load: practiceLoad }, goCourse, place, attract, previewCourse, body, ghost, cosmetics, preview, step, modelChunks, renderer, setView: (y, p) => { yaw = y; pitch = p; }, editor: { ed, enter: enterEditor, test: edTest, back: edBack, code: edCode, decode: edDecode },
     online: { net, race, submit: netSubmit, raceFinish, showComplete, openDrawer },
-    replay: { state: replay, open: replayOpen, close: replayClose, watchBest }, settings, applyColors };
+    replay: { state: replay, open: replayOpen, close: replayClose, watchBest }, settings, applyColors, saved: { save: saveLastRun, render: replaysRender } };
   requestAnimationFrame((t) => { last = t; frame(t); });
 })();
 

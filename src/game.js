@@ -994,7 +994,6 @@
     if (ed.on) return;
     if (e.code === 'KeyR') restartCourse();
     else if (e.code === 'KeyF') respawn();
-    else if (e.code === 'KeyQ') { if (turnLeft <= 0) turnLeft = Math.PI; } // Mirror's Edge 180° quick turn
     else if (/^Digit[0-9]$/.test(e.code) && map.order[(+e.code.slice(5) + 9) % 10]) goCourse(map.order[(+e.code.slice(5) + 9) % 10]);
     else if (e.code === 'KeyT') goCourse('tutorial');
     else if (e.code === 'KeyP') setPractice(!game.practice);
@@ -1087,8 +1086,8 @@
   // ------------------------------------------------------------ controller
   // Standard-mapping gamepads (Xbox, PlayStation, most others). Left stick
   // moves like WASD, right stick looks. A or LB jumps (hold to hop), B, LT or
-  // the right stick click crouches, X goes back to the checkpoint, Y turns
-  // 180°, View restarts, Menu pauses. In menus the D-pad or left stick moves,
+  // the right stick click crouches, X goes back to the checkpoint, View
+  // restarts, Menu pauses. In menus the D-pad or left stick moves,
   // A picks and B goes back. The pad only takes over once you use it, so
   // keyboard and mouse play is unchanged with a pad plugged in.
   const pad = { on: false, fwd: 0, side: 0, jump: false, duck: false, lastYaw: 0, turn: 0, prev: [], held: {}, padAt: -1, kbmAt: 0, menuAt: 0 };
@@ -1179,7 +1178,6 @@
       if (pitch > 89 * DEG) pitch = 89 * DEG;
       if (pitch < -89 * DEG) pitch = -89 * DEG;
       if (press(2)) respawn();
-      if (press(3) && turnLeft <= 0) turnLeft = Math.PI;
       if (press(8)) restartCourse();
       if (press(9)) { if (document.pointerLockElement) document.exitPointerLock(); else softLock(false); }
     } else {
@@ -1237,7 +1235,7 @@ body.touch #menu button, body.touch #drawer button { min-height: 40px; }
     root.innerHTML = '<div id="t-pad"></div><div id="t-stick"><div id="t-knob"></div></div>' +
       '<div id="t-hint">Left: move · Right: look · Hold Jump and drag to steer</div>' +
       '<button class="t-btn" id="t-duck" aria-label="Crouch">Crouch</button><button class="t-btn" id="t-jump" aria-label="Jump">Jump</button>' +
-      '<div id="t-bar"><button class="t-btn" data-k="turn" aria-label="Quick turn">180</button><button class="t-btn" data-k="cp" aria-label="Back to checkpoint">CP</button>' +
+      '<div id="t-bar"><button class="t-btn" data-k="cp" aria-label="Back to checkpoint">CP</button>' +
       '<button class="t-btn" data-k="restart" aria-label="Restart">Reset</button><button class="t-btn" data-k="pause" aria-label="Pause">II</button></div>';
     document.body.appendChild(root);
     const rot = document.createElement('div');
@@ -1302,7 +1300,6 @@ body.touch #menu button, body.touch #drawer button { min-height: 40px; }
       if (k === 'pause') { swallowUntil = performance.now() + 600; softLock(false); }
       else if (k === 'restart') restartCourse();
       else if (k === 'cp') respawn();
-      else if (k === 'turn') { if (turnLeft <= 0) turnLeft = Math.PI; }
     });
     // the tap that pauses would land as a click on whatever the menu puts
     // under the thumb (or the view, which resumes), so drop it
@@ -1435,6 +1432,7 @@ body.touch #menu button, body.touch #drawer button { min-height: 40px; }
           bestSplits[game.course] = game.run.splits; save(SPLITS_KEY, bestSplits);
         }
         const runGhost = ghost.current();
+        game.lastRun = runGhost && game.course !== 'custom' ? { course: game.course, ticks, g: runGhost, saved: false } : null;
         if (isBest || !ghost.has(game.course)) ghost.keep(game.course);
         lbSubmit(game.course, ticks, runGhost);
         raceFinish();
@@ -2308,6 +2306,9 @@ body.touch #menu button, body.touch #drawer button { min-height: 40px; }
     $('c-jumps').textContent = r.jumps;
     $('c-dist').textContent = (r.dist * 0.0254).toFixed(0);
     $('c-watch').hidden = game.course === 'custom' || !ghost.has(game.course);
+    const sv = $('c-save');
+    sv.hidden = !game.lastRun || game.lastRun.course !== game.course;
+    sv.disabled = false; sv.innerHTML = 'Save replay <kbd>S</kbd>';
     const nx = nextLevel(game.course);
     $('c-next').textContent = game.course === 'custom' ? 'Back to editor' : nx ? 'Next: ' + map.courses[nx].name : 'Back to levels';
     $('c-next').dataset.target = game.course === 'custom' ? 'editor' : nx || 'levels';
@@ -2344,6 +2345,7 @@ body.touch #menu button, body.touch #drawer button { min-height: 40px; }
   }
   function completeAction(what) {
     A.init(); A.play('click');
+    if (what === 'save') { saveLastRun(); return; }
     closeComplete();
     if (what === 'next') {
       const t = $('c-next').dataset.target;
@@ -2367,6 +2369,7 @@ body.touch #menu button, body.touch #drawer button { min-height: 40px; }
     else if (e.code === 'KeyR') completeAction('retry');
     else if (e.code === 'Escape') completeAction('levels');
     else if (e.code === 'KeyV' && game.course !== 'custom' && ghost.has(game.course)) completeAction('watch');
+    else if (e.code === 'KeyS' && !$('c-save').hidden) completeAction('save');
   });
 
   // ------------------------------------------------------------ tutorial
@@ -3219,7 +3222,7 @@ body.touch #menu button, body.touch #drawer button { min-height: 40px; }
     game.started = false;
     selected = replay.course;
     showScreen('levels');
-    if (replay.from === 'online') openDrawer('online');
+    if (replay.from === 'online' || replay.from === 'replays') openDrawer(replay.from);
   }
   function replayUi() {
     $('rp-play').textContent = replay.playing ? 'Pause' : 'Play';
@@ -3357,6 +3360,79 @@ body.touch #menu button, body.touch #drawer button { min-height: 40px; }
     } catch (e) { $('on-boardmsg').textContent = 'Could not load that run.'; }
   }
   $('watch').addEventListener('click', () => { A.play('click'); watchBest(selected, 'levels'); });
+
+  // saved replays: a run you chose to keep from the finish screen. The list
+  // lives in localStorage (strafe.replays.v1) and each run in its own key, so
+  // a full storage only stops new saves. Your best run on each level is kept
+  // anyway (the ghost) and shows in the same list.
+  const RP_LIST = 'strafe.replays.v1', RP_DATA = 'strafe.replay.v1.', RP_MAX = 60;
+  const rpList = () => load(RP_LIST) || [];
+  function saveLastRun() {
+    const r = game.lastRun, btn = $('c-save');
+    if (!r || r.saved) return;
+    const list = rpList();
+    if (list.length >= RP_MAX) { toast('You have ' + RP_MAX + ' saved replays. Delete some in Replays first.', 2600); return; }
+    const id = Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+    try {
+      localStorage.setItem(RP_DATA + id, JSON.stringify(r.g));
+      list.unshift({ id, course: r.course, key: lbKey(r.course), ticks: r.ticks, at: Date.now() });
+      localStorage.setItem(RP_LIST, JSON.stringify(list));
+    } catch (e) {
+      try { localStorage.removeItem(RP_DATA + id); } catch (x) { /* nothing to undo */ }
+      toast('No room left to save replays on this device. Delete some in Replays.', 2800);
+      return;
+    }
+    r.saved = true;
+    btn.disabled = true; btn.textContent = 'Replay saved';
+    A.play('checkpoint');
+  }
+  const rpDate = (t) => { const d = new Date(t); return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' }) + ' ' + d.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' }); };
+  function rpRow(title, sub, ticks, onWatch, onDelete) {
+    const li = document.createElement('li');
+    const n = document.createElement('span'); n.className = 'n';
+    const b = document.createElement('b'); b.textContent = title;
+    const sm = document.createElement('small'); sm.textContent = sub;
+    n.append(b, sm);
+    const t = document.createElement('span'); t.className = 't'; t.textContent = fmt(ticks);
+    const btns = document.createElement('span'); btns.className = 'rowbtns';
+    const w = document.createElement('button'); w.className = 'ghost small'; w.textContent = 'Watch'; w.addEventListener('click', onWatch);
+    btns.appendChild(w);
+    if (onDelete) { const d = document.createElement('button'); d.className = 'ghost small'; d.textContent = 'Delete'; d.addEventListener('click', onDelete); btns.appendChild(d); }
+    li.append(n, t, btns);
+    return li;
+  }
+  function replaysRender() {
+    const level = $('rpl-level').value;
+    if (!$('rpl-level').options.length) {
+      $('rpl-level').add(new Option('All levels', ''));
+      for (const n of LEVEL_ORDER) $('rpl-level').add(new Option(rowCourse(n).name, n));
+    }
+    const saved = $('rpl-saved'), bests = $('rpl-bests');
+    saved.textContent = ''; bests.textContent = '';
+    const list = rpList().filter(r => !level || r.course === level);
+    for (const r of list) {
+      const old = r.key !== lbKey(r.course) ? ' · older layout' : '';
+      saved.appendChild(rpRow(rowCourse(r.course).name, rpDate(r.at) + old, r.ticks, () => {
+        const g = load(RP_DATA + r.id);
+        if (g) replayOpen(r.course, g, 'Saved run', r.ticks, 'replays'); else toast('That replay could not be read.');
+      }, () => {
+        try { localStorage.removeItem(RP_DATA + r.id); } catch (e) { /* gone already */ }
+        save(RP_LIST, rpList().filter(x => x.id !== r.id));
+        A.play('click');
+        replaysRender();
+      }));
+    }
+    $('rpl-savedmsg').textContent = list.length ? '' : level ? 'No saved replays on this level yet.' : 'No saved replays yet. Finish a run and press Save replay.';
+    let nb = 0;
+    for (const c of LEVEL_ORDER) {
+      if (level && c !== level) continue;
+      if (!best[c] || !ghost.has(c)) continue;
+      nb++;
+      bests.appendChild(rpRow(rowCourse(c).name, 'Personal best', best[c], () => watchBest(c, 'replays')));
+    }
+    $('rpl-bestsmsg').textContent = nb ? '' : 'Your best run on each level shows here once you set one.';
+  }
+  $('rpl-level').addEventListener('change', replaysRender);
 
   // ------------------------------------------------------------ menu
   const menu = $('menu');
@@ -3524,8 +3600,9 @@ body.touch #menu button, body.touch #drawer button { min-height: 40px; }
   function openDrawer(which) {
     A.play('click');
     drawer.hidden = false;
-    $('d-title').textContent = { settings: 'Settings', story: 'Story', cosmetics: 'Cosmetics', controls: 'Controls', online: 'Online' }[which];
+    $('d-title').textContent = { settings: 'Settings', story: 'Story', cosmetics: 'Cosmetics', controls: 'Controls', online: 'Online', replays: 'Replays' }[which];
     if (which === 'online') onlineOpen();
+    if (which === 'replays') replaysRender();
     drawer.classList.toggle('wide', which === 'story' || which === 'cosmetics');
     if (which === 'cosmetics') buildCosmetics(); else preview.stop();
     if (which === 'story') {
@@ -4167,6 +4244,6 @@ body.editing.playing #edhelp { display: block; }
   if (location.hash === '#demo') game.demo = true; // headless screenshot mode
   window.__strafe = { courses: map.courses, mats: MATS, lights: { hemi, sun }, setNight, player, game, keys, eff, faceInsets, practice: { set: setPractice, save: practiceSave, load: practiceLoad }, goCourse, place, attract, previewCourse, body, ghost, cosmetics, preview, step, modelChunks, renderer, setView: (y, p) => { yaw = y; pitch = p; }, editor: { ed, enter: enterEditor, test: edTest, back: edBack, code: edCode, decode: edDecode },
     online: { net, race, submit: netSubmit, raceFinish, showComplete, openDrawer },
-    replay: { state: replay, open: replayOpen, close: replayClose, watchBest }, settings, applyColors };
+    replay: { state: replay, open: replayOpen, close: replayClose, watchBest }, settings, applyColors, saved: { save: saveLastRun, render: replaysRender } };
   requestAnimationFrame((t) => { last = t; frame(t); });
 })();
