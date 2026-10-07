@@ -10,6 +10,7 @@ on:
 
 permissions:
   contents: write
+  actions: write  # lets the release job delete its build artifacts
 
 jobs:
   build:
@@ -44,6 +45,9 @@ jobs:
             desktop/release/*.AppImage
             desktop/release/*.tar.gz
           if-no-files-found: error
+          # the release keeps the files; the artifact is only a hand-off between
+          # jobs and counts against the Actions storage allowance
+          retention-days: 1
 
   release:
     needs: build
@@ -74,3 +78,6 @@ jobs:
           body: |
             Strafe desktop build. Windows: run the portable .exe (or unzip the zip). macOS: open the .dmg and drag Strafe to Applications; the app is not notarized, so right-click it and choose Open the first time. Linux: make the AppImage executable and run it.
             Best times, settings and ghosts are saved on your computer. The online leaderboard is only in the browser version.
+      - uses: geekyeggo/delete-artifact@v5
+        with:
+          name: strafe-*
