@@ -980,28 +980,53 @@
   let muted = false;
   const ed = { on: false, testing: false }; // level editor state, filled in by the editor section
 
-  const KEYMAP = {
-    forward: ['KeyW', 'ArrowUp'], back: ['KeyS', 'ArrowDown'], left: ['KeyA', 'ArrowLeft'], right: ['KeyD', 'ArrowRight'],
-    jump: ['Space'], duck: ['ShiftLeft', 'ShiftRight', 'KeyC'],
-  };
+  // Every action has one key you can change in Controls. The arrows, right
+  // Shift and C stay on as extra keys unless you give one of them to another
+  // action. Mouse buttons (other than left click) can be bound too.
+  const BIND_KEY = 'strafe.keys.v1';
+  const ACTIONS = [
+    ['forward', 'Move forward', 'KeyW', ['ArrowUp']], ['back', 'Move back', 'KeyS', ['ArrowDown']],
+    ['left', 'Strafe left', 'KeyA', ['ArrowLeft']], ['right', 'Strafe right', 'KeyD', ['ArrowRight']],
+    ['jump', 'Jump', 'Space', []], ['duck', 'Crouch and slide', 'ShiftLeft', ['ShiftRight', 'KeyC']],
+    ['restart', 'Restart level', 'KeyR', []], ['respawn', 'Last checkpoint', 'KeyF', []],
+    ['practice', 'Practice mode', 'KeyP', []], ['psave', 'Practice save', 'KeyZ', []], ['pload', 'Practice load', 'KeyX', []],
+    ['tutorial', 'Tutorial', 'KeyT', []], ['mute', 'Mute sound', 'KeyM', []],
+  ];
+  const DEFAULT_BINDS = Object.fromEntries(ACTIONS.map(a => [a[0], a[2]]));
+  const binds = Object.assign({}, DEFAULT_BINDS, load(BIND_KEY) || {});
+  const KEYMAP = {};
+  function applyBinds() {
+    const taken = new Set(Object.values(binds));
+    for (const [id, , , extra] of ACTIONS) KEYMAP[id] = [binds[id]].concat(extra.filter(k => !taken.has(k)));
+  }
+  applyBinds();
   const down = (action) => KEYMAP[action].some(k => keys.has(k));
+  const actionOf = (code) => ACTIONS.find(a => binds[a[0]] === code)?.[0];
+  const isBound = (code) => Object.values(KEYMAP).some(l => l.includes(code));
 
+  function pressed(code) {
+    keys.add(code);
+    if (ed.on) return;
+    const act = actionOf(code);
+    if (act === 'restart') restartCourse();
+    else if (act === 'respawn') respawn();
+    else if (act === 'tutorial') goCourse('tutorial');
+    else if (act === 'practice') setPractice(!game.practice);
+    else if (act === 'psave') practiceSave();
+    else if (act === 'pload') practiceLoad();
+    else if (act === 'mute') { muted = !muted; A.setVolumes({ muted }); toast(muted ? 'Sound off' : 'Sound on'); }
+    else if (!act && /^Digit[0-9]$/.test(code) && map.order[(+code.slice(5) + 9) % 10]) goCourse(map.order[(+code.slice(5) + 9) % 10]);
+  }
   window.addEventListener('keydown', (e) => {
     if (!locked) return;
-    if (['Space', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Tab'].includes(e.code)) e.preventDefault();
+    if (['Space', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Tab'].includes(e.code) || isBound(e.code)) e.preventDefault();
     if (e.repeat) return;
-    keys.add(e.code);
-    if (ed.on) return;
-    if (e.code === 'KeyR') restartCourse();
-    else if (e.code === 'KeyF') respawn();
-    else if (/^Digit[0-9]$/.test(e.code) && map.order[(+e.code.slice(5) + 9) % 10]) goCourse(map.order[(+e.code.slice(5) + 9) % 10]);
-    else if (e.code === 'KeyT') goCourse('tutorial');
-    else if (e.code === 'KeyP') setPractice(!game.practice);
-    else if (e.code === 'KeyZ') practiceSave();
-    else if (e.code === 'KeyX') practiceLoad();
-    else if (e.code === 'KeyM') { muted = !muted; A.setVolumes({ muted }); toast(muted ? 'Sound off' : 'Sound on'); }
+    pressed(e.code);
   });
   window.addEventListener('keyup', (e) => keys.delete(e.code));
+  // mouse buttons only count while playing, and only once something is bound to them
+  window.addEventListener('mousedown', (e) => { if (locked && e.button > 0 && isBound('Mouse' + e.button)) { e.preventDefault(); pressed('Mouse' + e.button); } });
+  window.addEventListener('mouseup', (e) => { if (locked && e.button > 0 && isBound('Mouse' + e.button)) e.preventDefault(); keys.delete('Mouse' + e.button); });
   window.addEventListener('blur', () => keys.clear());
   window.addEventListener('wheel', (e) => { if (locked) { wheelJumps = Math.min(wheelJumps + 1, 3); e.preventDefault(); } }, { passive: false });
 
@@ -1346,7 +1371,7 @@ body.touch #menu button, body.touch #drawer button { min-height: 40px; }
     toast(mission === null ? c.name : (mission ? 'Job ' + mission : 'Prologue') + ': ' + STORY[mission].title);
     A.play('teleport');
   }
-  function restartCourse() { if (game.course) goCourse(game.course, game.mission); }
+  function restartCourse() { if (game.course) { if (locked) careerCount('restarts'); goCourse(game.course, game.mission); } }
   function respawn() {
     if (!game.course) return;
     if (game.practice && game.save) { practiceLoad(); return; }
@@ -1400,7 +1425,7 @@ body.touch #menu button, body.touch #drawer button { min-height: 40px; }
     let inStart = false;
     for (const t of player.triggersTouching()) {
       if (t.type === 'teleport') { goCourse(t.course); return; }
-      if (t.type === 'kill') { respawn(); return; }
+      if (t.type === 'kill') { careerCount('falls'); respawn(); return; }
       if (t.course !== game.course) continue;
       if (t.type === 'start') inStart = true;
       else if (t.type === 'hint') enterStep(t);
@@ -1427,7 +1452,9 @@ body.touch #menu button, body.touch #drawer button { min-height: 40px; }
         const prevBest = best[game.course];
         const isBest = !prevBest || ticks < prevBest;
         showSplit('Finish', ticks, prevBest);
+        careerCount('finishes', game.course);
         if (isBest) {
+          careerCount('pbs');
           best[game.course] = ticks; save(BEST_KEY, best);
           bestSplits[game.course] = game.run.splits; save(SPLITS_KEY, bestSplits);
         }
@@ -1451,6 +1478,7 @@ body.touch #menu button, body.touch #drawer button { min-height: 40px; }
     } else if (game.inStart && game.course) {
       game.running = true; game.startTick = game.tick;
       game.run = { top: 0, dist: 0, jumps: 0, splits: {} };
+      if (!game.practice) careerCount('runs', game.course);
       ghost.start();
       A.play('start');
     }
@@ -2387,6 +2415,9 @@ body.touch #menu button, body.touch #drawer button { min-height: 40px; }
     Wallrun: ['Run along a wall at a slight angle and jump toward it with the stick pushed up to run on it. Tap Jump again to kick off.', ['Stick up', 'Jump']],
     Surf: ['Jump onto the ramp. Push the stick sideways toward it to ride the slope, not up. Aim a little down the ramp to go faster.', ['Stick toward ramp']],
   };
+  // the keyboard steps name the default keys; say the player's own if they changed them
+  const BOUND_WORD = { WASD: ['forward', 'left', 'back', 'right'], 'Shift or C': ['duck'], Space: ['jump'], Shift: ['duck'], C: ['duck'], W: ['forward'], A: ['left'], S: ['back'], D: ['right'] };
+  const boundText = (t) => bindsDefault() ? t : t.replace(/\bWASD\b|Shift or C|\bSpace\b|\bShift\b|\b[WASDC]\b/g, (w) => { const n = BOUND_WORD[w].map(a => keyName(binds[a])); return n.join(n.every(x => x.length === 1) ? '' : ' '); });
   function resetTutorial() {
     tut.step = -1; tut.done = false;
     setDoor('strafe', false);
@@ -2416,10 +2447,10 @@ body.touch #menu button, body.touch #drawer button { min-height: 40px; }
     $('tut-step').textContent = 'Step ' + (tut.step + 1) + ' of ' + n;
     $('tut-title').textContent = s.title;
     const tt = TOUCH && TOUCH_TUT[s.title];
-    $('tut-body').textContent = tt ? tt[0] : s.body;
+    $('tut-body').textContent = tt ? tt[0] : boundText(s.body);
     const keysEl = $('tut-keys');
     keysEl.textContent = '';
-    for (const k of tt ? tt[1] : s.keys) { const kc = document.createElement('span'); kc.className = 'kc'; kc.textContent = k; keysEl.appendChild(kc); }
+    for (const k of tt ? tt[1] : [...new Set(s.keys.map(boundText))]) { const kc = document.createElement('span'); kc.className = 'kc'; kc.textContent = k; keysEl.appendChild(kc); }
   }
   function completeStep() {
     if (tut.done) return;
@@ -2519,6 +2550,35 @@ body.touch #menu button, body.touch #drawer button { min-height: 40px; }
     if (fpsMeter.t >= 0.5) { fpsEl.textContent = Math.round(fpsMeter.n / fpsMeter.t) + ' FPS'; fpsMeter.n = 0; fpsMeter.t = 0; }
   }
 
+  // ------------------------------------------------------------ career stats
+  // Counted on this device from the first time this version runs. Personal
+  // bests come from the saved best times, so they go back further.
+  const STATS_KEY = 'strafe.stats.v1';
+  const career = Object.assign({ since: Date.now(), time: 0, jumps: 0, top: 0, dist: 0, runs: 0, finishes: 0, pbs: 0, restarts: 0, falls: 0,
+    wallruns: 0, walljumps: 0, slides: 0, vaults: 0, climbs: 0, levels: {} }, load(STATS_KEY) || {});
+  const CAREER_EVENTS = { jump: 'jumps', wallrun: 'wallruns', walljump: 'walljumps', climbjump: 'walljumps', slide: 'slides', vault: 'vaults', mantle: 'vaults', climb: 'climbs' };
+  let careerDirty = 0;
+  const careerLevel = (c) => career.levels[c] || (career.levels[c] = { runs: 0, finishes: 0, time: 0 });
+  function careerSave() { if (careerDirty) { careerDirty = 0; save(STATS_KEY, career); } }
+  function careerTick() {
+    if (game.demo || replay.on || !locked) return;
+    const hs = player.hspeed();
+    career.time += TICK;
+    career.dist += hs * TICK;
+    if (!game.practice && hs > career.top) career.top = hs;
+    if (game.course && game.course !== 'custom') careerLevel(game.course).time += TICK;
+    for (const e of player.events) if (CAREER_EVENTS[e.type]) career[CAREER_EVENTS[e.type]]++;
+    if (++careerDirty > 1000) careerSave(); // every ten seconds of play
+  }
+  function careerCount(key, course) {
+    if (game.demo) return;
+    career[key]++;
+    if (course && course !== 'custom' && (key === 'runs' || key === 'finishes')) careerLevel(course)[key]++;
+    careerDirty++; careerSave();
+  }
+  window.addEventListener('pagehide', careerSave);
+  document.addEventListener('visibilitychange', careerSave);
+
   // ------------------------------------------------------------ loop
   let acc = 0, last = performance.now(), histTimer = 0;
 
@@ -2539,6 +2599,7 @@ body.touch #menu button, body.touch #drawer button { min-height: 40px; }
       for (const e of player.events) if (e.type === 'jump') game.run.jumps++;
       ghost.tick(game.tick - game.startTick);
     }
+    careerTick();
     handleEvents();
     handleTriggers();
     tutorialTick();
@@ -3566,6 +3627,7 @@ body.touch #menu button, body.touch #drawer button { min-height: 40px; }
     $('m-tut-sub').textContent = best.tutorial ? 'Done' : 'Start here';
     const all = SKINS.concat(TRAILS);
     $('m-cos-sub').textContent = all.filter(unlocked).length + ' / ' + all.length + ' unlocked';
+    statsMenuSub();
   }
   function showScreen(which, focus = true) {
     screen = which;
@@ -3609,11 +3671,57 @@ body.touch #menu button, body.touch #drawer button { min-height: 40px; }
 
   // settings and controls slide in from the right
   const drawer = $('drawer');
+  // ---- stats page
+  function playTime(secs) {
+    const h = Math.floor(secs / 3600), m = Math.floor(secs / 60) % 60;
+    return h ? h + 'h ' + m + 'm' : m ? m + 'm' : Math.floor(secs) + 's';
+  }
+  const thousands = (n) => Math.round(n).toLocaleString('en-US');
+  function statsMenuSub() { $('m-stats-sub').textContent = career.time >= 60 ? playTime(career.time) + ' played' : 'Your numbers'; }
+  function statsRender() {
+    careerSave();
+    const courses = LEVEL_ORDER.filter(n => map.courses[n]);
+    const beaten = ALL_LEVELS.filter(n => best[n]).length;
+    const stars = storyStars(), maxStars = STORY.reduce((n, j) => n + (j.stars ? 3 : 0), 0);
+    const tiles = [
+      ['Time played', playTime(career.time)], ['Jumps', thousands(career.jumps)],
+      ['Top speed', thousands(career.top) + ' u/s'], ['Distance', (career.dist * 0.0254 / 1000).toFixed(1) + ' km'],
+      ['Levels beaten', beaten + ' / ' + ALL_LEVELS.length], ['Story stars', stars + ' / ' + maxStars],
+      ['Runs finished', thousands(career.finishes)], ['Runs started', thousands(career.runs)],
+      ['Personal bests set', thousands(career.pbs)], ['Falls', thousands(career.falls)],
+      ['Wallruns', thousands(career.wallruns)], ['Wall jumps', thousands(career.walljumps)],
+      ['Slides', thousands(career.slides)], ['Vaults and mantles', thousands(career.vaults)],
+    ];
+    const grid = $('st-tiles');
+    grid.textContent = '';
+    for (const [k, v] of tiles) {
+      const d = document.createElement('div');
+      const dt = document.createElement('dt'); dt.textContent = k;
+      const dd = document.createElement('dd'); dd.textContent = v;
+      d.append(dt, dd); grid.appendChild(d);
+    }
+    const body = $('st-levels');
+    body.textContent = '';
+    for (const n of courses) {
+      const L = career.levels[n] || { runs: 0, finishes: 0, time: 0 };
+      const tr = document.createElement('tr');
+      for (const v of [rowCourse(n).name, best[n] ? fmt(best[n]) : '—', L.finishes, L.runs, L.time >= 1 ? playTime(L.time) : '—']) {
+        const td = document.createElement('td'); td.textContent = v; tr.appendChild(td);
+      }
+      if (!best[n]) tr.className = 'none';
+      body.appendChild(tr);
+    }
+    $('st-since').textContent = 'Counting on this device since ' + new Date(career.since).toLocaleDateString(undefined, { day: 'numeric', month: 'long', year: 'numeric' }) +
+      '. Best times go back to your first run.';
+    statsMenuSub();
+  }
+
   function openDrawer(which) {
     A.play('click');
     drawer.hidden = false;
-    $('d-title').textContent = { settings: 'Settings', story: 'Story', cosmetics: 'Cosmetics', controls: 'Controls', online: 'Online', replays: 'Replays' }[which];
+    $('d-title').textContent = { settings: 'Settings', story: 'Story', cosmetics: 'Cosmetics', controls: 'Controls', online: 'Online', replays: 'Replays', stats: 'Stats' }[which];
     if (which === 'online') onlineOpen();
+    if (which === 'stats') statsRender();
     if (which === 'replays') replaysRender();
     drawer.classList.toggle('wide', which === 'story' || which === 'cosmetics');
     if (which === 'cosmetics') buildCosmetics(); else preview.stop();
@@ -3819,6 +3927,86 @@ body.touch #menu button, body.touch #drawer button { min-height: 40px; }
   }
   hud.keys.hidden = !settings.keys;
   applyAudio();
+
+  // ---- key rebinding (Controls). Click an action, press a key or mouse
+  // button; Esc cancels. A key that already does something else swaps over.
+  const MOUSE_NAMES = { Mouse1: 'Middle click', Mouse2: 'Right click', Mouse3: 'Mouse back', Mouse4: 'Mouse forward' };
+  function keyName(code) {
+    if (!code) return '?';
+    if (MOUSE_NAMES[code]) return MOUSE_NAMES[code];
+    let m;
+    if ((m = /^Key(.)$/.exec(code))) return m[1];
+    if ((m = /^Digit(.)$/.exec(code))) return m[1];
+    if ((m = /^Numpad(.+)$/.exec(code))) return 'Num ' + m[1];
+    if ((m = /^(Shift|Control|Alt|Meta)(Left|Right)$/.exec(code))) return m[2] + ' ' + ({ Control: 'Ctrl', Meta: 'Cmd' }[m[1]] || m[1]);
+    const named = { Space: 'Space', ArrowUp: '↑', ArrowDown: '↓', ArrowLeft: '←', ArrowRight: '→', CapsLock: 'Caps Lock', Backquote: '`', Minus: '-', Equal: '=',
+      BracketLeft: '[', BracketRight: ']', Backslash: '\\', Semicolon: ';', Quote: "'", Comma: ',', Period: '.', Slash: '/', Enter: 'Enter', Backspace: 'Backspace' };
+    return named[code] || code.replace(/([a-z])([A-Z0-9])/g, '$1 $2');
+  }
+  const keyShort = (code) => { const n = keyName(code); return n.length <= 5 ? n.toUpperCase() : n.replace(/^(Left|Right) /, '').slice(0, 5).toUpperCase(); };
+  const bindsDefault = () => ACTIONS.every(a => binds[a[0]] === a[2]);
+  // key names anywhere in the page: data-key="restart" or a list "forward,left,back,right"
+  function refreshKeyLabels() {
+    for (const el of document.querySelectorAll('[data-key]')) {
+      if (el.dataset.def === undefined) el.dataset.def = el.textContent;
+      if (bindsDefault()) { el.textContent = el.dataset.def; continue; }
+      const names = el.dataset.key.split(',').map(a => keyName(binds[a]));
+      el.textContent = names.every(n => n.length === 1) ? names.join('') : names.join(' ');
+    }
+    hud.k.w.textContent = keyShort(binds.forward); hud.k.a.textContent = keyShort(binds.left);
+    hud.k.s.textContent = keyShort(binds.back); hud.k.d.textContent = keyShort(binds.right);
+    if (game.course === 'tutorial' && tut.step >= 0 && !tutEl.hidden && $('tut-step').textContent !== 'Tutorial complete') renderStep();
+  }
+  let rebinding = null;
+  function buildBinds() {
+    const list = $('binds');
+    list.textContent = '';
+    for (const [id, label] of ACTIONS) {
+      const li = document.createElement('li');
+      const b = document.createElement('button');
+      b.className = 'bindkey' + (rebinding === id ? ' wait' : '');
+      b.textContent = rebinding === id ? 'Press a key' : keyName(binds[id]);
+      b.setAttribute('aria-label', label + ': ' + (rebinding === id ? 'press a key, Esc to cancel' : keyName(binds[id])));
+      b.addEventListener('click', (e) => { e.stopPropagation(); A.play('click'); rebinding = rebinding === id ? null : id; buildBinds(); if (rebinding) list.querySelector('.wait').focus(); });
+      const n = document.createElement('span'); n.textContent = label;
+      li.append(n, b);
+      list.appendChild(li);
+    }
+    $('binds-reset').disabled = bindsDefault();
+  }
+  function setBind(code) {
+    const id = rebinding;
+    rebinding = null;
+    const other = ACTIONS.find(a => a[0] !== id && binds[a[0]] === code);
+    if (other) { binds[other[0]] = binds[id]; toast(other[1] + ' moved to ' + keyName(binds[id])); }
+    binds[id] = code;
+    applyBinds();
+    save(BIND_KEY, bindsDefault() ? null : binds);
+    A.play('click');
+    buildBinds(); refreshKeyLabels();
+    $('binds').querySelectorAll('.bindkey')[ACTIONS.findIndex(a => a[0] === id)].focus();
+  }
+  // caught before every other key handler while waiting for a key
+  window.addEventListener('keydown', (e) => {
+    if (!rebinding) return;
+    e.preventDefault(); e.stopImmediatePropagation();
+    if (e.code === 'Escape') { rebinding = null; buildBinds(); return; }
+    if (e.repeat || !e.code || e.code === 'Tab' || /^(OS|Meta)/.test(e.code)) return;
+    setBind(e.code);
+  }, true);
+  window.addEventListener('mousedown', (e) => {
+    if (!rebinding || e.button === 0) return;
+    e.preventDefault(); e.stopImmediatePropagation();
+    if (MOUSE_NAMES['Mouse' + e.button]) setBind('Mouse' + e.button);
+  }, true);
+  window.addEventListener('click', (e) => { if (rebinding && !e.target.closest('#binds')) { rebinding = null; buildBinds(); } }, true);
+  window.addEventListener('contextmenu', (e) => { if (rebinding || (locked && isBound('Mouse2'))) e.preventDefault(); });
+  $('binds-reset').addEventListener('click', () => {
+    Object.assign(binds, DEFAULT_BINDS); rebinding = null; applyBinds(); save(BIND_KEY, null);
+    A.play('click'); buildBinds(); refreshKeyLabels(); toast('Keys back to default');
+  });
+  if (TOUCH) $('binds-group').hidden = true;
+  buildBinds(); refreshKeyLabels();
 
   $('play').addEventListener('click', () => playSelected());
   $('m-resume').addEventListener('click', () => { A.init(); A.play('click'); startPlay(); });
@@ -4256,6 +4444,6 @@ body.editing.playing #edhelp { display: block; }
   if (location.hash === '#demo') game.demo = true; // headless screenshot mode
   window.__strafe = { courses: map.courses, mats: MATS, lights: { hemi, sun }, setNight, player, game, keys, eff, faceInsets, practice: { set: setPractice, save: practiceSave, load: practiceLoad }, goCourse, place, attract, previewCourse, body, ghost, cosmetics, preview, step, modelChunks, renderer, setView: (y, p) => { yaw = y; pitch = p; }, editor: { ed, enter: enterEditor, test: edTest, back: edBack, code: edCode, decode: edDecode },
     online: { net, race, submit: netSubmit, raceFinish, showComplete, openDrawer },
-    replay: { state: replay, open: replayOpen, close: replayClose, watchBest }, settings, applyColors, saved: { save: saveLastRun, render: replaysRender } };
+    replay: { state: replay, open: replayOpen, close: replayClose, watchBest }, career, binds: { binds, set: (id, code) => { rebinding = id; setBind(code); }, keyName }, settings, applyColors, saved: { save: saveLastRun, render: replaysRender } };
   requestAnimationFrame((t) => { last = t; frame(t); });
 })();

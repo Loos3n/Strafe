@@ -35,6 +35,10 @@ Saved replays: the finish screen's Save replay (S) keeps that run. Replays on th
 
 The manual 180 quick turn (Q, controller Y, the phone's 180 button) is gone. The automatic turn when you kick off a wall climb stays.
 
+Stats (title menu): time played, jumps, top speed, distance, runs started and finished, personal bests set, falls, wallruns, wall jumps, slides, vaults, levels beaten and story stars, then a table of every level with its best time, finishes, tries and time played. Counters live in localStorage (`strafe.stats.v1`) and start the first time this version runs; best times come from the saved bests. Demo, replays and the menu don't count, and practice runs don't set top speed or count as runs.
+
+Key rebinding (Controls, keyboard and mouse only): each action (move, jump, crouch, restart, checkpoint, practice mode, practice save and load, tutorial, mute) has one key you can change, including middle, right, back and forward mouse buttons. Taking a key that another action uses swaps them. The arrows, right Shift and C stay as extra keys until another action takes them, and the wheel always jumps. Saved in `strafe.keys.v1`; with the defaults nothing changes. The Controls table, the HUD keys, the help line and the keyboard tutorial show your keys.
+
 Accessibility (Settings): colour modes (standard, red and green friendly, blue and yellow friendly, high contrast) recolour the route pieces through the paint material's shader and the ahead and behind colours on splits and the ghost gap; camera tilt scales wallrun and landing roll; switches for the landing roll flip and screen flashes; HUD size; and Reduce motion, which turns off tilt, bob, FOV kick, landing kick, speed lines, flips and flashes in one press.
 
 Polish: speed lines streak past the screen edges above about 450 u/s, hard landings nod and jolt the camera, footsteps and landings sound different on concrete, metal, wooden blocks, tiled pads and gravel (`SURFACE` in `src/game.js`, `step` in `src/audio.js`), and Settings has speed lines and landing kick toggles plus a Performance group (render scale 50 to 100%, frame rate counter).
