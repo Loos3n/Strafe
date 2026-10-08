@@ -1353,6 +1353,7 @@ body.touch #menu button, body.touch #drawer button { min-height: 40px; }
   // no level loaded: the menu is showing
   function goIdle() {
     game.course = null; game.running = false; game.finished = null; game.mission = null;
+    ghost.useRemote(null, null);
     resetTutorial();
     place(map.hubSpawn);
     updateCourseHud();
@@ -1360,6 +1361,7 @@ body.touch #menu button, body.touch #drawer button { min-height: 40px; }
   function goCourse(name, mission = null) {
     const c = map.courses[name];
     if (name !== game.course) game.save = null; // R keeps practice saves
+    if (!ghost.remoteFor(name)) ghost.useRemote(null, null); // a raced ghost lasts until you change level
     game.course = name; game.cp = 0; game.cpSpawn = c.spawn; game.running = false; game.finished = null;
     game.mission = mission;
     ghost.stop();
@@ -2328,7 +2330,7 @@ body.touch #menu button, body.touch #drawer button { min-height: 40px; }
     $('c-time').textContent = fmt(ticks);
     const badge = $('c-best');
     badge.classList.toggle('new', isBest);
-    badge.textContent = isBest ? (prevBest ? 'New best, ' + fmt(prevBest - ticks).replace(/^0:0?/, '-') + 's' : 'First clear') : 'Best ' + fmt(prevBest) + '  (+' + (((ticks - prevBest) * TICK).toFixed(2)) + 's)';
+    badge.textContent = isBest ? (prevBest ? 'New best, -' + ((prevBest - ticks) * TICK).toFixed(2) + 's' : 'First clear') : 'Best ' + fmt(prevBest) + '  (+' + (((ticks - prevBest) * TICK).toFixed(2)) + 's)';
     $('c-top').textContent = Math.round(r.top);
     $('c-avg').textContent = Math.round(r.dist / Math.max(secs, 0.01));
     $('c-jumps').textContent = r.jumps;
@@ -3531,7 +3533,7 @@ body.touch #menu button, body.touch #drawer button { min-height: 40px; }
     if (settings.flash) { flashEl.classList.remove('go'); void flashEl.offsetWidth; flashEl.classList.add('go'); }
   }
   // fly through a level; when paused on that level, show the frozen game instead
-  function showPreview(name) {
+  function previewLevel(name) {
     attract.active = !(game.started && game.course === name);
     previewCourse(name);
   }
@@ -3543,7 +3545,7 @@ body.touch #menu button, body.touch #drawer button { min-height: 40px; }
       if (on) { b.scrollIntoView({ block: 'nearest', inline: 'nearest', behavior: 'smooth' }); if (focus) b.focus({ preventScroll: true }); }
     }
     attract.hover = name;
-    showPreview(name);
+    previewLevel(name);
     showHero(name);
   }
   function updateAttract(dt, t) {
@@ -3583,8 +3585,8 @@ body.touch #menu button, body.touch #drawer button { min-height: 40px; }
       const adv = c.set === 'gauntlet' ? '<span class="adv">GAUNTLET</span>' : c.set === 'night' ? '<span class="adv">NIGHT</span>' : map.order.indexOf(r.name) >= 6 ? '<span class="adv">ADV</span>' : '';
       b.innerHTML = '<span class="ck"><span>' + r.key + '</span>' + adv + '</span><span class="cn">' + c.name + '</span>' +
         '<span class="cm">' + pips + '<span>' + bt + '</span></span>';
-      b.addEventListener('mouseenter', () => { A.play('hover'); showPreview(r.name); });
-      b.addEventListener('mouseleave', () => showPreview(selected));
+      b.addEventListener('mouseenter', () => { A.play('hover'); previewLevel(r.name); });
+      b.addEventListener('mouseleave', () => previewLevel(selected));
       // a press only plays a card that was already selected before it; focus from that press selects it first
       let wasSel = false;
       b.addEventListener('pointerdown', () => { wasSel = selected === r.name; });
@@ -4326,7 +4328,8 @@ body.editing.playing #edhelp { display: block; }
       if (!t) throw new Error('bad piece');
       const p = { t };
       ED_KEYS.slice(1).forEach((k, i) => { p[k] = num(r[i + 1], -200000, 200000); });
-      p.w = num(p.w, 16, 8000); p.l = num(p.l, 16, 20000); p.h = num(p.h, 0, 8000); p.a = num(p.a || 60, 30, 80); p.d = num(p.d, -6000, 6000);
+      p.w = num(p.w, 16, 8000); p.l = num(p.l, 16, 20000); p.h = num(p.h, 0, 8000);
+      if (t === 'ramp') { p.a = num(p.a || 60, 30, 80); p.d = num(p.d, -6000, 6000); } else { delete p.a; delete p.d; }
       return p;
     });
     return { name: String(name || 'Shared level').slice(0, 40), pieces };
@@ -4420,7 +4423,7 @@ body.editing.playing #edhelp { display: block; }
     const a = ed.aim;
     if (e.button === 0 && a && a.at) { const pc = edNewPiece(a.at); edChange(() => { ed.level.pieces.push(pc); }); A.play('land'); }
     else if (e.button === 2) edDelete();
-    else if (e.button === 1 && a && a.hit) { const p = ed.level.pieces[a.hit.piece]; ed.type = p.t; ed.rot = p.r; Object.assign(ed.params[p.t], p.a ? { w: p.w, l: p.l, a: p.a, d: p.d } : { w: p.w, l: p.l, h: p.h }); toast('Copied ' + ED_NAMES[p.t]); }
+    else if (e.button === 1 && a && a.hit) { const p = ed.level.pieces[a.hit.piece]; ed.type = p.t; ed.rot = p.r; Object.assign(ed.params[p.t], p.t === 'ramp' ? { w: p.w, l: p.l, a: p.a, d: p.d } : { w: p.w, l: p.l, h: p.h }); toast('Copied ' + ED_NAMES[p.t]); }
   });
   window.addEventListener('contextmenu', (e) => { if (ed.on) e.preventDefault(); });
   // Esc on the panel goes straight back to building (or to the test run)
