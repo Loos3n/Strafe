@@ -1,6 +1,9 @@
 # Builds the Strafe desktop app for Windows, macOS and Linux and puts the
 # downloads on a GitHub release. Run it from the Actions tab (it releases
 # the version in desktop/package.json) or push a tag like v1.0.1.
+#
+# Each build uploads its files straight to the release. No Actions artifacts
+# are used, so the build never counts against the Actions storage allowance.
 name: Desktop build
 
 on:
@@ -10,10 +13,31 @@ on:
 
 permissions:
   contents: write
-  actions: write  # lets the release job delete its build artifacts
 
 jobs:
+  release:
+    runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.tag.outputs.name }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Release tag
+        id: tag
+        shell: bash
+        run: |
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then echo "name=$GITHUB_REF_NAME" >> "$GITHUB_OUTPUT";
+          else echo "name=v$(node -p "require('./desktop/package.json').version")" >> "$GITHUB_OUTPUT"; fi
+      - uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.tag.outputs.name }}
+          target_commitish: ${{ github.sha }}
+          name: Strafe ${{ steps.tag.outputs.name }}
+          body: |
+            Strafe desktop build. Windows: run the portable .exe (or unzip the zip). macOS: open the .dmg and drag Strafe to Applications; the app is not notarized, so right-click it and choose Open the first time. Linux: make the AppImage executable and run it.
+            Best times, settings and ghosts are saved on your computer. The online leaderboard is only in the browser version.
+
   build:
+    needs: release
     strategy:
       fail-fast: false
       matrix:
@@ -35,49 +59,13 @@ jobs:
       - run: npm run dist
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: 'false'
-      - uses: actions/upload-artifact@v4
+      - uses: softprops/action-gh-release@v2
         with:
-          name: strafe-${{ matrix.os }}
-          path: |
+          tag_name: ${{ needs.release.outputs.tag }}
+          fail_on_unmatched_files: false
+          files: |
             desktop/release/*.exe
             desktop/release/*.zip
             desktop/release/*.dmg
             desktop/release/*.AppImage
             desktop/release/*.tar.gz
-          if-no-files-found: error
-          # the release keeps the files; the artifact is only a hand-off between
-          # jobs and counts against the Actions storage allowance
-          retention-days: 1
-
-  release:
-    needs: build
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - name: Release tag
-        id: tag
-        shell: bash
-        run: |
-          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then echo "name=$GITHUB_REF_NAME" >> "$GITHUB_OUTPUT";
-          else echo "name=v$(node -p "require('./desktop/package.json').version")" >> "$GITHUB_OUTPUT"; fi
-      - uses: actions/download-artifact@v4
-        with:
-          path: dist
-          merge-multiple: true
-      - uses: softprops/action-gh-release@v2
-        with:
-          tag_name: ${{ steps.tag.outputs.name }}
-          target_commitish: ${{ github.sha }}
-          name: Strafe ${{ steps.tag.outputs.name }}
-          files: |
-            dist/*.exe
-            dist/*.zip
-            dist/*.dmg
-            dist/*.AppImage
-            dist/*.tar.gz
-          body: |
-            Strafe desktop build. Windows: run the portable .exe (or unzip the zip). macOS: open the .dmg and drag Strafe to Applications; the app is not notarized, so right-click it and choose Open the first time. Linux: make the AppImage executable and run it.
-            Best times, settings and ghosts are saved on your computer. The online leaderboard is only in the browser version.
-      - uses: geekyeggo/delete-artifact@v5
-        with:
-          name: strafe-*
