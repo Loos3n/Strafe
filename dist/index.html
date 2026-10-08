@@ -408,6 +408,19 @@ body[data-colors=contrast] { --ahead: #5cf2ff; --behind: #ff4df0; }
 .raceplayers .n, .onboard .n { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .raceplayers .t, .onboard .t { font-family: var(--display); font-weight: 700; font-variant-numeric: tabular-nums; }
 .onboard .old { font-size: 11px; color: rgba(236,240,244,.5); }
+/* community levels */
+.cmtabs { display: flex; gap: 6px; margin: 4px 0 8px; }
+.cmtabs .on { background: var(--red); border-color: var(--red); color: #fff; }
+.cmlist { list-style: none; margin: 6px 0; padding: 0; display: grid; gap: 4px; }
+.cmrow { all: unset; box-sizing: border-box; cursor: pointer; width: 100%; display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 2px 10px; padding: 9px 10px; background: rgba(255,255,255,.05); border-left: 3px solid transparent; }
+.cmrow:hover, .cmrow:focus-visible { background: rgba(255,255,255,.1); border-left-color: var(--red); }
+.cmrow .n { font-family: var(--display); font-weight: 700; font-size: 18px; letter-spacing: .04em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cmrow .lk { font-family: var(--display); font-weight: 700; font-size: 16px; font-variant-numeric: tabular-nums; text-align: right; }
+.cmrow .lk.on { color: #ff8a80; }
+.cmrow .m { grid-column: 1 / -1; font-size: 13px; color: rgba(236,240,244,.65); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cmname { font-family: var(--display); font-weight: 800; font-style: italic; font-size: 32px; line-height: 1.05; margin: 12px 0 4px; overflow-wrap: anywhere; }
+#cm-like.on, #c-like.on { background: rgba(219,47,42,.35); border-color: var(--red); }
+#cm-like:disabled { opacity: .5; cursor: default; }
 #c-post { margin-top: 10px; }
 #c-post p { margin: 0; font-size: 14px; }
 #c-post[hidden] { display: none; }
@@ -483,6 +496,7 @@ body.touch #racehud { top: calc(56px + env(safe-area-inset-top, 0px)); left: 10p
       <button class="mbtn" data-open="replays" aria-expanded="false" aria-controls="drawer"><span>Replays</span><small>Saved runs and bests</small></button>
       <button class="mbtn" data-open="stats" aria-expanded="false" aria-controls="drawer"><span>Stats</span><small id="m-stats-sub">Your numbers</small></button>
       <button class="mbtn" data-open="cosmetics" aria-expanded="false" aria-controls="drawer"><span>Cosmetics</span><small id="m-cos-sub"></small></button>
+      <button class="mbtn" data-open="community" aria-expanded="false" aria-controls="drawer"><span>Community</span><small>Levels players made</small></button>
       <button class="mbtn" id="m-editor"><span>Level editor</span><small>Build and share</small></button>
       <button class="mbtn" data-open="settings" aria-expanded="false" aria-controls="drawer"><span>Settings</span></button>
       <button class="mbtn" data-open="controls" aria-expanded="false" aria-controls="drawer"><span>Controls</span></button>
@@ -698,6 +712,30 @@ body.touch #racehud { top: calc(56px + env(safe-area-inset-top, 0px)); left: 10p
         </div>
       </div>
     </div>
+    <div data-pane="community" hidden>
+      <div class="group" id="cm-off" hidden><p class="onmsg">Can't reach the Strafe server from here, so community levels are off. You can play them at <a href="https://strafe-online.strafe-game.workers.dev" target="_blank" rel="noopener">strafe-online.strafe-game.workers.dev</a>.</p></div>
+      <div id="cm-listview">
+        <div class="cmtabs" id="cm-tabs" role="tablist"><button class="ghost small" data-sort="top">Top rated</button><button class="ghost small" data-sort="new">Newest</button><button class="ghost small" data-sort="mine">Mine</button></div>
+        <form class="onrow" id="cm-search"><input id="cm-q" maxlength="32" placeholder="Search levels or makers" autocomplete="off" spellcheck="false" aria-label="Search levels"><button class="ghost">Search</button></form>
+        <ol class="cmlist" id="cm-list"></ol>
+        <p class="onmsg" id="cm-msg"></p>
+        <div class="onrow"><button class="ghost small" id="cm-more" hidden>Show more</button></div>
+        <p class="onmsg">Made something? Build it in the Level editor, finish it in a test play, then pick Publish in the editor menu.</p>
+      </div>
+      <div id="cm-detail" hidden>
+        <button class="ghost small" id="cm-back">&larr; All levels</button>
+        <h3 class="cmname" id="cm-name"></h3>
+        <p class="onmsg" id="cm-meta"></p>
+        <div class="onrow"><button class="cprimary" id="cm-play">Play</button><button class="ghost" id="cm-like"></button></div>
+        <div class="onrow"><button class="ghost small" id="cm-edit">Open in editor</button><button class="ghost small" id="cm-copy">Copy level code</button><button class="ghost small" id="cm-del" hidden>Take down</button></div>
+        <p class="onmsg" id="cm-dmsg"></p>
+        <div class="group">
+          <p class="label">Top times</p>
+          <ol class="onboard" id="cm-board"></ol>
+          <p class="onmsg" id="cm-boardmsg"></p>
+        </div>
+      </div>
+    </div>
     <div data-pane="controls" hidden>
         <div class="group" id="binds-group" style="margin-top:0">
           <p class="label">Keys</p>
@@ -756,6 +794,7 @@ body.touch #racehud { top: calc(56px + env(safe-area-inset-top, 0px)); left: 10p
       <button class="ghost" data-act="levels">Levels <kbd>Esc</kbd></button>
       <button class="ghost" data-act="save" id="c-save" hidden>Save replay <kbd>S</kbd></button>
       <button class="ghost" data-act="watch" id="c-watch" hidden>Watch best <kbd>V</kbd></button>
+      <button class="ghost" id="c-like" hidden></button>
     </div>
   </div>
 </div>
@@ -7320,6 +7359,9 @@ window.STRAFE_ASSETS = {"city":"Z2xURgIAAABU+ggAYFIAAEpTT057ImFzc2V0Ijp7ImdlbmVy
   // reset drops their times and ghosts once; stars already earned stay. The
   // suffix is the leaderboard field they post under now.
   const REBUILT = { surf: '_v3', bhop: '_v3', canyon: '_v3', stairway: '_v3', crossover: '_v4', cascade: '_v6', g1: '_v2', g2: '_v2', g3: '_v2', g4: '_v2', g5: '_v2', g6: '_v2', n1: '_v2', n2: '_v2', n3: '_v2', n4: '_v2', n5: '_v2', n6: '_v2' };
+  // levels players build: the editor's own ('custom') and community ones ('c:<id>')
+  const isCommunity = (c) => typeof c === 'string' && c.startsWith('c:');
+  const userCourse = (c) => c === 'custom' || isCommunity(c);
   const RESETS = [['strafe.rebuild.v2', ['surf', 'bhop', 'canyon', 'stairway', 'crossover']],
     ['strafe.rebuild.v3', ['surf', 'canyon', 'crossover', 'cascade']], ['strafe.rebuild.v4', ['cascade']], ['strafe.rebuild.v5', ['cascade']], ['strafe.rebuild.v6', ['cascade']],
     ['strafe.rebuild.v7', ['bhop', 'stairway', 'crossover', 'g1', 'g2', 'g3', 'g4', 'g5', 'g6', 'n1', 'n2', 'n3', 'n4', 'n5', 'n6']]];
@@ -8615,7 +8657,7 @@ body.touch #menu button, body.touch #drawer button { min-height: 40px; }
     if (name !== game.course) game.save = null; // R keeps practice saves
     if (!ghost.remoteFor(name)) ghost.useRemote(null, null); // a raced ghost lasts until you change level
     game.course = name; game.cp = 0; game.cpSpawn = c.spawn; game.running = false; game.finished = null;
-    if (name !== 'custom' && !game.demo) save(LAST_KEY, name);
+    if (!userCourse(name) && !game.demo) save(LAST_KEY, name);
     game.mission = mission;
     ghost.stop();
     closeComplete();
@@ -8722,7 +8764,7 @@ body.touch #menu button, body.touch #drawer button { min-height: 40px; }
           bestSplits[game.course] = game.run.splits; save(SPLITS_KEY, bestSplits);
         }
         const runGhost = ghost.current();
-        game.lastRun = runGhost && game.course !== 'custom' ? { course: game.course, ticks, g: runGhost, saved: false } : null;
+        game.lastRun = runGhost && !userCourse(game.course) ? { course: game.course, ticks, g: runGhost, saved: false } : null;
         if (isBest || !ghost.has(game.course)) ghost.keep(game.course);
         lbSubmit(game.course, ticks, runGhost);
         raceFinish();
@@ -9654,13 +9696,14 @@ body.touch #menu button, body.touch #drawer button { min-height: 40px; }
     $('c-avg').textContent = Math.round(r.dist / Math.max(secs, 0.01));
     $('c-jumps').textContent = r.jumps;
     $('c-dist').textContent = (r.dist * 0.0254).toFixed(0);
-    $('c-watch').hidden = game.course === 'custom' || !ghost.has(game.course);
+    $('c-watch').hidden = userCourse(game.course) || !ghost.has(game.course);
+    cmRenderComplete();
     const sv = $('c-save');
     sv.hidden = !game.lastRun || game.lastRun.course !== game.course;
     sv.disabled = false; sv.innerHTML = 'Save replay <kbd>S</kbd>';
     const nx = nextLevel(game.course);
-    $('c-next').textContent = game.course === 'custom' ? 'Back to editor' : nx ? 'Next: ' + map.courses[nx].name : 'Back to levels';
-    $('c-next').dataset.target = game.course === 'custom' ? 'editor' : nx || 'levels';
+    $('c-next').textContent = game.course === 'custom' ? 'Back to editor' : isCommunity(game.course) ? 'More community levels' : nx ? 'Next: ' + map.courses[nx].name : 'Back to levels';
+    $('c-next').dataset.target = game.course === 'custom' ? 'editor' : isCommunity(game.course) ? 'community' : nx || 'levels';
     const job = game.mission !== null ? STORY[game.mission] : null;
     $('c-label').textContent = job ? (game.mission ? 'Job ' + game.mission : 'Prologue') + ' complete' : 'Level complete';
     $('c-story').hidden = !job;
@@ -9700,6 +9743,7 @@ body.touch #menu button, body.touch #drawer button { min-height: 40px; }
       const t = $('c-next').dataset.target;
       if (t === 'story') { goIdle(); showMenuState(); openDrawer('story'); return; }
       if (t === 'editor') { edBack(); return; }
+      if (t === 'community') { goIdle(); game.started = false; showMenuState(); openDrawer('community'); return; }
       if (t === 'levels') { goIdle(); game.started = false; showMenuState(); showScreen('levels'); return; }
       if (t.startsWith('job:')) { startJob(+t.slice(4)); return; }
       goCourse(t);
@@ -9717,7 +9761,7 @@ body.touch #menu button, body.touch #drawer button { min-height: 40px; }
     if (e.code === 'Enter') { e.preventDefault(); completeAction('next'); }
     else if (e.code === 'KeyR') completeAction('retry');
     else if (e.code === 'Escape') completeAction('levels');
-    else if (e.code === 'KeyV' && game.course !== 'custom' && ghost.has(game.course)) completeAction('watch');
+    else if (e.code === 'KeyV' && !userCourse(game.course) && ghost.has(game.course)) completeAction('watch');
     else if (e.code === 'KeyS' && !$('c-save').hidden) completeAction('save');
   });
 
@@ -9887,14 +9931,14 @@ body.touch #menu button, body.touch #drawer button { min-height: 40px; }
     career.time += TICK;
     career.dist += hs * TICK;
     if (!game.practice && hs > career.top) career.top = hs;
-    if (game.course && game.course !== 'custom') careerLevel(game.course).time += TICK;
+    if (game.course && !userCourse(game.course)) careerLevel(game.course).time += TICK;
     for (const e of player.events) if (CAREER_EVENTS[e.type]) career[CAREER_EVENTS[e.type]]++;
     if (++careerDirty > 1000) careerSave(); // every ten seconds of play
   }
   function careerCount(key, course) {
     if (game.demo) return;
     career[key]++;
-    if (course && course !== 'custom' && (key === 'runs' || key === 'finishes')) careerLevel(course)[key]++;
+    if (course && !userCourse(course) && (key === 'runs' || key === 'finishes')) careerLevel(course)[key]++;
     careerDirty++; careerSave();
   }
   window.addEventListener('pagehide', careerSave);
@@ -10062,6 +10106,7 @@ body.touch #menu button, body.touch #drawer button { min-height: 40px; }
   function lbSubmit(course, ticks, run) {
     if (course === 'custom') return;
     if (net.ok) { netSubmit(course, ticks, run); return; }
+    if (isCommunity(course)) return; // community boards live only on the Strafe server
     if (!lb.db || settings.airaccelerate !== LB_AA) return;
     const cur = lbMine()[lbKey(course)];
     if (!(typeof cur === 'number' && cur <= ticks)) lbWrite({ [lbKey(course)]: ticks });
@@ -10117,7 +10162,7 @@ body.touch #menu button, body.touch #drawer button { min-height: 40px; }
   function lbRenderComplete() {
     if (net.ok) { netRenderComplete(); return; }
     const el = $('c-online');
-    const all = game.course && game.course !== 'custom' ? lbStandings(game.course) : [];
+    const all = game.course && !userCourse(game.course) ? lbStandings(game.course) : [];
     const k = all.findIndex(r => r.id === lb.me);
     el.hidden = !lb.db || k < 0;
     if (k >= 0) el.textContent = 'Online rank #' + (k + 1) + ' of ' + all.length;
@@ -10552,6 +10597,7 @@ body.touch #menu button, body.touch #drawer button { min-height: 40px; }
     } catch (e) { net.ok = false; }
     lbRender();
     if (!drawer.hidden && !$('on-body').closest('[data-pane]').hidden) onlineOpen();
+    if (!drawer.hidden && !$('cm-listview').closest('[data-pane]').hidden && $('cm-detail').hidden) cmOpen();
     // inside claude.ai, note whether the page could reach the server
     noteReach();
   })();
@@ -10970,7 +11016,7 @@ body.touch #menu button, body.touch #drawer button { min-height: 40px; }
       $('p-course').textContent = c ? c.name : '';
       $('p-time').textContent = c ? fmt(game.running ? game.tick - game.startTick : game.finished || 0) : '';
       $('p-stage').textContent = c ? 'Stage ' + (game.cp + 1) + ' / ' + c.stages : '';
-      if (game.course) selected = game.course;
+      if (game.course && !userCourse(game.course)) selected = game.course;
     }
     buildLevelList();
     select(selected);
@@ -11042,11 +11088,12 @@ body.touch #menu button, body.touch #drawer button { min-height: 40px; }
   function openDrawer(which) {
     A.play('click');
     drawer.hidden = false;
-    $('d-title').textContent = { settings: 'Settings', story: 'Story', cosmetics: 'Cosmetics', controls: 'Controls', online: 'Online', replays: 'Replays', stats: 'Stats' }[which];
+    $('d-title').textContent = { settings: 'Settings', story: 'Story', cosmetics: 'Cosmetics', controls: 'Controls', online: 'Online', replays: 'Replays', stats: 'Stats', community: 'Community' }[which];
     if (which === 'online') onlineOpen();
+    if (which === 'community') cmOpen();
     if (which === 'stats') statsRender();
     if (which === 'replays') replaysRender();
-    drawer.classList.toggle('wide', which === 'story' || which === 'cosmetics');
+    drawer.classList.toggle('wide', which === 'story' || which === 'cosmetics' || which === 'community');
     if (which === 'cosmetics') buildCosmetics(); else preview.stop();
     if (which === 'story') {
       // brief the first job that still has stars to win
@@ -11429,10 +11476,11 @@ body.touch #menu button, body.touch #drawer button { min-height: 40px; }
     for (const m of ed.meshes) { scene.remove(m); m.geometry.dispose(); }
     ed.meshes = [];
   }
-  // put the level into the world: brushes, triggers, a course and its meshes
-  function edBuild() {
+  // put a level into the world: brushes, triggers, a course and its meshes.
+  // One player-made level is loaded at a time: the editor's or a community one.
+  function userBuild(L, id) {
     edClear();
-    const L = ed.level, id = 'custom';
+    for (const k in map.courses) if (userCourse(k)) delete map.courses[k];
     let lowY = Infinity, box = [Infinity, Infinity, -Infinity, -Infinity], cps = 0, start = null;
     L.pieces.forEach((pc, i) => {
       const b = world.addHull(edFaces(pc), { custom: true, piece: i, kind: edKind(pc.t), color: ED_COLOR[pc.t] });
@@ -11447,9 +11495,6 @@ body.touch #menu button, body.touch #drawer button { min-height: 40px; }
       }
     });
     if (L.pieces.length) world.addTrigger([box[0] - 20000, lowY - 4000, box[1] - 20000], [box[2] + 20000, lowY - 1500, box[3] + 20000], { type: 'kill', custom: true });
-    // a changed level is a new level: its best time and ghost no longer apply
-    const sig = JSON.stringify(L.pieces);
-    if (sig !== load('strafe.editor.sig')) { delete best[id]; save(BEST_KEY, best); delete bestSplits[id]; save(SPLITS_KEY, bestSplits); ghost.forget(id); save('strafe.editor.sig', sig); }
     map.courses[id] = { name: L.name || 'Custom level', spawn: start || { pos: [EDO[0], EDO[1] + 200, EDO[2]], yaw: 0 }, stages: cps + 1, color: 0xe5533d, custom: true, hasStart: !!start,
       hasEnd: L.pieces.some(p => p.t === 'finish') };
     const parts = buildGeometry(b => b.props.custom, bucketFor);
@@ -11460,6 +11505,13 @@ body.touch #menu button, body.touch #drawer button { min-height: 40px; }
       const lines = new THREE.LineSegments(part.lg, new THREE.LineBasicMaterial({ color: 0x1b2530, transparent: true, opacity: 0.18 }));
       scene.add(lines); ed.meshes.push(lines);
     }
+  }
+  function edBuild() {
+    const L = ed.level, id = 'custom';
+    // a changed level is a new level: its best time and ghost no longer apply
+    const sig = JSON.stringify(L.pieces);
+    if (sig !== load('strafe.editor.sig')) { delete best[id]; save(BEST_KEY, best); delete bestSplits[id]; save(SPLITS_KEY, bestSplits); ghost.forget(id); save('strafe.editor.sig', sig); }
+    userBuild(L, id);
     save(ED_LEVEL_KEY, L);
   }
   function edChange(fn) {
@@ -11594,6 +11646,7 @@ body.editing.playing #edhelp { display: block; }
       btn('Keep building', () => { edPanel.hidden = true; requestLock(); }, 'cprimary').focus();
       btn('Test play', edTest);
       btn('Save', () => { const all = load(ED_SAVES_KEY) || {}; all[ed.level.name || 'My level'] = ed.level; save(ED_SAVES_KEY, all); edMsg('Saved as "' + (ed.level.name || 'My level') + '".'); edSaves(); });
+      btn('Publish', edPublish);
       btn('New level', () => { if (confirm('Start a new level? Unsaved changes are lost.')) { edChange(() => { ed.level = edBlank(); }); edShowPanel(); } });
     }
     btn('Exit editor', exitEditor, 'ebtn red');
@@ -11629,6 +11682,30 @@ body.editing.playing #edhelp { display: block; }
     try { const L = await edDecode(txt.trim()); edChange(() => { ed.level = L; }); edShowPanel(); edMsg('Loaded "' + L.name + '" with ' + L.pieces.length + ' pieces.'); }
     catch (e) { edMsg('That code did not load. Check it was copied whole.'); }
   });
+
+  // ---- publishing to the community levels. The level goes up with your
+  // best test run of it, so the server knows it can be finished.
+  async function edPublish() {
+    const c = map.courses.custom;
+    if (net.ok === false) { edMsg('Can\'t reach the Strafe server from here, so publishing is off.'); return; }
+    if (!c || !c.hasStart || !c.hasEnd) { edMsg('A level needs a Start and a Finish pad before you can publish it.'); return; }
+    const ticks = best.custom, run = ghost.saved('custom');
+    if (!ticks || !run) { edMsg('Finish your level in a test play first (Enter), so everyone knows it can be beaten.'); return; }
+    if (!canPost()) { edMsg('Set air acceleration back to ' + LB_AA + ' in Settings to publish.'); return; }
+    if (!net.token) {
+      const n = prompt('Pick a name to publish under (2 to 16 letters or numbers)', net.name || '');
+      if (!n) return;
+      edMsg('Saving your name…');
+      try { await netRegister(n); } catch (e) { edMsg(e.message); return; }
+    }
+    edMsg('Publishing…');
+    try {
+      const r = await api('/levels/publish', { name: ed.level.name || '', code: await edCode(), ticks, ghost: run });
+      cm.stale = true;
+      edMsg('Published "' + r.name + '" (level ' + r.id + '). It is in Community now, with your ' + fmt(ticks) + ' as the time to beat.');
+      toast('Published', 1800);
+    } catch (e) { edMsg(e.message); }
+  }
 
   // ---- share codes: compact JSON, deflated where the browser can, base64url
   const ED_KEYS = ['t', 'x', 'y', 'z', 'r', 'w', 'l', 'h', 'a', 'd'];
@@ -11766,12 +11843,169 @@ body.editing.playing #edhelp { display: block; }
   }, { passive: true });
   $('m-editor').addEventListener('click', enterEditor);
 
+  // ------------------------------------------------------------ community levels
+  // Levels players publish from the editor, kept on the Strafe server. Browse
+  // the top rated or newest, give them a thumbs up, play them and chase the
+  // board each one gets. A community level plays as course "c:<its id>".
+  const cm = { sort: 'top', q: '', page: 0, rows: [], more: false, level: null, playing: null, stale: true, token: 0 };
+  const cmEl = (tag, cls, text) => { const e = document.createElement(tag); e.className = cls; e.textContent = text; return e; };
+  const cmQuery = () => net.id ? '&me=' + encodeURIComponent(net.id) : '';
+  function cmSince(t) {
+    const d = (Date.now() - t) / 86400000;
+    return d < 1 ? 'today' : d < 2 ? 'yesterday' : d < 30 ? Math.floor(d) + ' days ago' : new Date(t).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' });
+  }
+  const cmLikeText = (L) => (L.liked ? 'Liked 👍 ' : 'Like 👍 ') + L.likes;
+  function cmOpen() {
+    const off = net.ok === false;
+    $('cm-off').hidden = !off;
+    $('cm-listview').hidden = off;
+    $('cm-detail').hidden = true;
+    cm.level = null;
+    for (const b of $('cm-tabs').children) { b.classList.toggle('on', b.dataset.sort === cm.sort); b.setAttribute('aria-selected', String(b.dataset.sort === cm.sort)); }
+    $('cm-q').value = cm.q;
+    if (off) return;
+    if (cm.stale || !cm.rows.length) cmLoad(false); else cmRenderList();
+  }
+  async function cmLoad(append) {
+    const token = ++cm.token;
+    if (!append) cm.page = 0;
+    if (cm.sort === 'mine' && !net.id) { cm.rows = []; cm.more = false; cmRenderList(); return; }
+    $('cm-msg').textContent = 'Loading…';
+    let data;
+    try {
+      data = await api('/levels?sort=' + (cm.sort === 'new' ? 'new' : 'top') + '&page=' + cm.page + (cm.q ? '&q=' + encodeURIComponent(cm.q) : '') +
+        (cm.sort === 'mine' ? '&by=' + encodeURIComponent(net.id) : '') + cmQuery());
+    } catch (e) { if (token === cm.token) $('cm-msg').textContent = 'Could not load levels.'; return; }
+    if (token !== cm.token) return;
+    cm.stale = false;
+    cm.rows = append ? cm.rows.concat(data.levels) : data.levels;
+    cm.more = data.more;
+    cmRenderList();
+  }
+  function cmRenderList() {
+    const ol = $('cm-list');
+    ol.textContent = '';
+    for (const L of cm.rows) {
+      const li = document.createElement('li'), b = document.createElement('button');
+      b.className = 'cmrow';
+      const lk = cmEl('span', 'lk' + (L.liked ? ' on' : ''), '👍 ' + L.likes);
+      lk.title = L.likes + (L.likes === 1 ? ' like' : ' likes');
+      b.append(cmEl('span', 'n', L.name), lk,
+        cmEl('span', 'm', 'by ' + L.author + (L.authorId === net.id ? ' (you)' : '') + ' · ' + L.plays + (L.plays === 1 ? ' play' : ' plays') + ' · ' +
+          L.runners + (L.runners === 1 ? ' runner' : ' runners') + (L.best ? ' · record ' + fmt(L.best) : '') + ' · ' + cmSince(L.created)));
+      b.addEventListener('click', () => { A.play('click'); cmShow(L.id); });
+      li.appendChild(b); ol.appendChild(li);
+    }
+    $('cm-msg').textContent = cm.rows.length ? '' : cm.q ? 'No levels match "' + cm.q + '".' :
+      cm.sort === 'mine' ? 'You have not published a level yet.' : 'No levels yet. Build one in the Level editor and be the first to publish.';
+    $('cm-more').hidden = !cm.more;
+  }
+  async function cmShow(id) {
+    $('cm-listview').hidden = true; $('cm-detail').hidden = false;
+    $('cm-name').textContent = 'Loading…';
+    for (const k of ['cm-meta', 'cm-dmsg', 'cm-board', 'cm-boardmsg']) $(k).textContent = '';
+    $('cm-del').hidden = true;
+    try { cm.level = await api('/level?id=' + encodeURIComponent(id) + cmQuery()); } catch (e) { $('cm-name').textContent = ''; $('cm-dmsg').textContent = e.message; return; }
+    cmRenderDetail();
+    cmBoard();
+    $('cm-play').focus({ preventScroll: true });
+  }
+  function cmRenderDetail() {
+    const L = cm.level, mine = L.authorId === net.id;
+    $('cm-name').textContent = L.name;
+    $('cm-meta').textContent = 'By ' + L.author + (mine ? ' (you)' : '') + ' · ' + L.pieces + ' pieces · ' + L.plays + (L.plays === 1 ? ' play' : ' plays') + ' · published ' + cmSince(L.created) + ' · level ' + L.id;
+    const lk = $('cm-like');
+    lk.textContent = cmLikeText(L);
+    lk.classList.toggle('on', L.liked);
+    lk.disabled = mine;
+    lk.title = mine ? 'Your level' : L.liked ? 'Take back your like' : 'Give this level a thumbs up';
+    $('cm-del').hidden = !mine;
+  }
+  async function cmBoard() {
+    const L = cm.level, ol = $('cm-board'), msg = $('cm-boardmsg');
+    let data;
+    try { data = await getBoard('c:' + L.id, true); } catch (e) { msg.textContent = 'Could not load times.'; return; }
+    if (cm.level !== L) return;
+    ol.textContent = '';
+    for (const r of data.rows) {
+      const btns = document.createElement('span');
+      btns.className = 'rowbtns';
+      if (r.ghost && r.id !== net.id) {
+        const b = document.createElement('button'); b.className = 'ghost small'; b.textContent = 'Race'; b.title = 'Race this ghost';
+        b.addEventListener('click', async () => {
+          try {
+            const g = await api('/ghost?course=' + encodeURIComponent('c:' + L.id) + '&id=' + encodeURIComponent(r.id));
+            if (await cmPlay(L, g.ghost)) toast('Racing ' + r.name + "'s ghost (" + fmt(g.ticks) + ')', 2600);
+          } catch (e) { msg.textContent = 'Could not load that ghost.'; }
+        });
+        btns.appendChild(b);
+      }
+      ol.appendChild(boardRow(r, net.id, btns));
+    }
+    msg.textContent = data.mine && data.mine.rank > data.rows.length ? 'You are #' + data.mine.rank + ' of ' + data.total + '.' : data.total + (data.total === 1 ? ' runner' : ' runners') + ' on this level.';
+  }
+  // load a community level into the world and start it, optionally racing a ghost
+  async function cmPlay(L, raceWith) {
+    let lv;
+    try { lv = await edDecode(L.code); } catch (e) { $('cm-dmsg').textContent = 'This level did not load.'; return false; }
+    if (ed.on || ed.testing) exitEditor();
+    const id = 'c:' + L.id;
+    userBuild(Object.assign(lv, { name: L.name }), id);
+    cm.playing = L;
+    api('/level?id=' + encodeURIComponent(L.id) + '&play=1').then(r => { L.plays = r.plays; }).catch(() => {});
+    ghost.useRemote(raceWith ? id : null, raceWith || null);
+    goCourse(id);
+    startPlay();
+    return true;
+  }
+  async function cmLike(L, el) {
+    if (!net.token) { el.hidden = false; el.textContent = 'Pick a name under Online to rate levels.'; return; }
+    try {
+      const r = await api('/levels/like', { id: L.id, on: !L.liked });
+      Object.assign(L, { liked: r.liked, likes: r.likes });
+      const row = cm.rows.find(x => x.id === L.id);
+      if (row) Object.assign(row, { liked: r.liked, likes: r.likes });
+      A.play('click');
+    } catch (e) { el.hidden = false; el.textContent = e.message; }
+  }
+  // the thumbs up on the level complete screen
+  function cmRenderComplete() {
+    const b = $('c-like'), L = cm.playing && game.course === 'c:' + cm.playing.id ? cm.playing : null;
+    b.hidden = !L || !net.token || L.authorId === net.id;
+    if (L) { b.textContent = cmLikeText(L); b.classList.toggle('on', !!L.liked); }
+  }
+  $('c-like').addEventListener('click', async () => { if (cm.playing) { await cmLike(cm.playing, $('c-online')); cmRenderComplete(); } });
+  for (const b of $('cm-tabs').children) b.addEventListener('click', () => { A.play('click'); cm.sort = b.dataset.sort; cm.stale = true; cmOpen(); });
+  $('cm-search').addEventListener('submit', (e) => { e.preventDefault(); cm.q = $('cm-q').value.trim(); cmLoad(false); });
+  $('cm-more').addEventListener('click', () => { cm.page++; cmLoad(true); });
+  $('cm-back').addEventListener('click', () => { A.play('click'); cmOpen(); });
+  $('cm-play').addEventListener('click', () => { if (cm.level) { A.init(); A.play('click'); cmPlay(cm.level); } });
+  $('cm-like').addEventListener('click', async () => { if (cm.level) { await cmLike(cm.level, $('cm-dmsg')); cmRenderDetail(); } });
+  $('cm-copy').addEventListener('click', async () => {
+    try { await navigator.clipboard.writeText(cm.level.code); $('cm-dmsg').textContent = 'Copied. Paste it in the editor with Load a code.'; }
+    catch (e) { $('cm-dmsg').textContent = 'Could not copy from here.'; }
+  });
+  $('cm-edit').addEventListener('click', async () => {
+    const L = cm.level;
+    if (!confirm('Open "' + L.name + '" in the editor? It replaces the level open there, so save yours first in the editor menu if you want to keep it.')) return;
+    try { const lv = await edDecode(L.code); ed.undo.push(JSON.stringify(ed.level)); ed.level = Object.assign(lv, { name: L.name }); }
+    catch (e) { $('cm-dmsg').textContent = 'This level did not load.'; return; }
+    closeDrawer();
+    enterEditor();
+  });
+  $('cm-del').addEventListener('click', async () => {
+    const L = cm.level;
+    if (!confirm('Take "' + L.name + '" down? Its times and likes go with it.')) return;
+    try { await api('/levels/delete', { id: L.id }); cm.rows = cm.rows.filter(x => x.id !== L.id); cm.stale = true; cmOpen(); toast('Level taken down', 1800); }
+    catch (e) { $('cm-dmsg').textContent = e.message; }
+  });
+
   // ------------------------------------------------------------ boot
   goIdle();
   previewCourse(map.order[0]);
   showMenuState();
   if (location.hash === '#demo') game.demo = true; // headless screenshot mode
-  window.__strafe = { courses: map.courses, mats: MATS, lights: { hemi, sun }, setNight, player, game, keys, eff, faceInsets, practice: { set: setPractice, save: practiceSave, load: practiceLoad }, goCourse, place, attract, previewCourse, body, ghost, cosmetics, preview, step, modelChunks, renderer, setView: (y, p) => { yaw = y; pitch = p; }, editor: { ed, enter: enterEditor, test: edTest, back: edBack, code: edCode, decode: edDecode },
+  window.__strafe = { courses: map.courses, mats: MATS, lights: { hemi, sun }, setNight, player, game, keys, eff, faceInsets, practice: { set: setPractice, save: practiceSave, load: practiceLoad }, goCourse, place, attract, previewCourse, body, ghost, cosmetics, preview, step, modelChunks, renderer, setView: (y, p) => { yaw = y; pitch = p; }, editor: { ed, enter: enterEditor, test: edTest, back: edBack, code: edCode, decode: edDecode, publish: edPublish }, community: { cm, open: cmOpen, show: cmShow, play: cmPlay },
     online: { net, race, submit: netSubmit, raceFinish, showComplete, openDrawer },
     replay: { state: replay, open: replayOpen, close: replayClose, watchBest }, career, binds: { binds, set: (id, code) => { rebinding = id; setBind(code); }, keyName }, settings, applyColors, saved: { save: saveLastRun, render: replaysRender } };
   requestAnimationFrame((t) => { last = t; frame(t); });

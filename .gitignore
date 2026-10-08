@@ -5,3 +5,5 @@ backup/
 desktop/app/
 desktop/release/
 server/public/
+server/.wrangler/
+server/package-lock.json

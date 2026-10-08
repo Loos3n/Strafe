@@ -17,7 +17,7 @@ export function checkRun(level, ticks, ghost) {
   if (n < want - 2 || n > want + 1) return 'replay does not match the time';
   const at = (i) => [s[i * 5], s[i * 5 + 1], s[i * 5 + 2]];
   if (!near(level.start, at(0), 80)) return 'run does not start at the start';
-  if (!near(level.end, at(n - 1), STEP + 20)) return 'run does not reach the finish';
+  if (!(level.ends || [level.end]).some(b => near(b, at(n - 1), STEP + 20))) return 'run does not reach the finish';
   for (let i = 1; i < n; i++) {
     const a = at(i - 1), b = at(i);
     if (Math.abs(b[0] - a[0]) <= STEP && Math.abs(b[1] - a[1]) <= STEP && Math.abs(b[2] - a[2]) <= STEP) continue;

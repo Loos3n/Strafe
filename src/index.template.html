@@ -408,6 +408,19 @@ body[data-colors=contrast] { --ahead: #5cf2ff; --behind: #ff4df0; }
 .raceplayers .n, .onboard .n { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .raceplayers .t, .onboard .t { font-family: var(--display); font-weight: 700; font-variant-numeric: tabular-nums; }
 .onboard .old { font-size: 11px; color: rgba(236,240,244,.5); }
+/* community levels */
+.cmtabs { display: flex; gap: 6px; margin: 4px 0 8px; }
+.cmtabs .on { background: var(--red); border-color: var(--red); color: #fff; }
+.cmlist { list-style: none; margin: 6px 0; padding: 0; display: grid; gap: 4px; }
+.cmrow { all: unset; box-sizing: border-box; cursor: pointer; width: 100%; display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 2px 10px; padding: 9px 10px; background: rgba(255,255,255,.05); border-left: 3px solid transparent; }
+.cmrow:hover, .cmrow:focus-visible { background: rgba(255,255,255,.1); border-left-color: var(--red); }
+.cmrow .n { font-family: var(--display); font-weight: 700; font-size: 18px; letter-spacing: .04em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cmrow .lk { font-family: var(--display); font-weight: 700; font-size: 16px; font-variant-numeric: tabular-nums; text-align: right; }
+.cmrow .lk.on { color: #ff8a80; }
+.cmrow .m { grid-column: 1 / -1; font-size: 13px; color: rgba(236,240,244,.65); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cmname { font-family: var(--display); font-weight: 800; font-style: italic; font-size: 32px; line-height: 1.05; margin: 12px 0 4px; overflow-wrap: anywhere; }
+#cm-like.on, #c-like.on { background: rgba(219,47,42,.35); border-color: var(--red); }
+#cm-like:disabled { opacity: .5; cursor: default; }
 #c-post { margin-top: 10px; }
 #c-post p { margin: 0; font-size: 14px; }
 #c-post[hidden] { display: none; }
@@ -483,6 +496,7 @@ body.touch #racehud { top: calc(56px + env(safe-area-inset-top, 0px)); left: 10p
       <button class="mbtn" data-open="replays" aria-expanded="false" aria-controls="drawer"><span>Replays</span><small>Saved runs and bests</small></button>
       <button class="mbtn" data-open="stats" aria-expanded="false" aria-controls="drawer"><span>Stats</span><small id="m-stats-sub">Your numbers</small></button>
       <button class="mbtn" data-open="cosmetics" aria-expanded="false" aria-controls="drawer"><span>Cosmetics</span><small id="m-cos-sub"></small></button>
+      <button class="mbtn" data-open="community" aria-expanded="false" aria-controls="drawer"><span>Community</span><small>Levels players made</small></button>
       <button class="mbtn" id="m-editor"><span>Level editor</span><small>Build and share</small></button>
       <button class="mbtn" data-open="settings" aria-expanded="false" aria-controls="drawer"><span>Settings</span></button>
       <button class="mbtn" data-open="controls" aria-expanded="false" aria-controls="drawer"><span>Controls</span></button>
@@ -698,6 +712,30 @@ body.touch #racehud { top: calc(56px + env(safe-area-inset-top, 0px)); left: 10p
         </div>
       </div>
     </div>
+    <div data-pane="community" hidden>
+      <div class="group" id="cm-off" hidden><p class="onmsg">Can't reach the Strafe server from here, so community levels are off. You can play them at <a href="https://strafe-online.strafe-game.workers.dev" target="_blank" rel="noopener">strafe-online.strafe-game.workers.dev</a>.</p></div>
+      <div id="cm-listview">
+        <div class="cmtabs" id="cm-tabs" role="tablist"><button class="ghost small" data-sort="top">Top rated</button><button class="ghost small" data-sort="new">Newest</button><button class="ghost small" data-sort="mine">Mine</button></div>
+        <form class="onrow" id="cm-search"><input id="cm-q" maxlength="32" placeholder="Search levels or makers" autocomplete="off" spellcheck="false" aria-label="Search levels"><button class="ghost">Search</button></form>
+        <ol class="cmlist" id="cm-list"></ol>
+        <p class="onmsg" id="cm-msg"></p>
+        <div class="onrow"><button class="ghost small" id="cm-more" hidden>Show more</button></div>
+        <p class="onmsg">Made something? Build it in the Level editor, finish it in a test play, then pick Publish in the editor menu.</p>
+      </div>
+      <div id="cm-detail" hidden>
+        <button class="ghost small" id="cm-back">&larr; All levels</button>
+        <h3 class="cmname" id="cm-name"></h3>
+        <p class="onmsg" id="cm-meta"></p>
+        <div class="onrow"><button class="cprimary" id="cm-play">Play</button><button class="ghost" id="cm-like"></button></div>
+        <div class="onrow"><button class="ghost small" id="cm-edit">Open in editor</button><button class="ghost small" id="cm-copy">Copy level code</button><button class="ghost small" id="cm-del" hidden>Take down</button></div>
+        <p class="onmsg" id="cm-dmsg"></p>
+        <div class="group">
+          <p class="label">Top times</p>
+          <ol class="onboard" id="cm-board"></ol>
+          <p class="onmsg" id="cm-boardmsg"></p>
+        </div>
+      </div>
+    </div>
     <div data-pane="controls" hidden>
         <div class="group" id="binds-group" style="margin-top:0">
           <p class="label">Keys</p>
@@ -756,6 +794,7 @@ body.touch #racehud { top: calc(56px + env(safe-area-inset-top, 0px)); left: 10p
       <button class="ghost" data-act="levels">Levels <kbd>Esc</kbd></button>
       <button class="ghost" data-act="save" id="c-save" hidden>Save replay <kbd>S</kbd></button>
       <button class="ghost" data-act="watch" id="c-watch" hidden>Watch best <kbd>V</kbd></button>
+      <button class="ghost" id="c-like" hidden></button>
     </div>
   </div>
 </div>

@@ -4,6 +4,7 @@
 // and Race (one per room code, websockets between the racers).
 import { DurableObject } from 'cloudflare:workers';
 import { checkRun, cleanName } from './check.js';
+import { decodeLevel, levelChecks, cleanLevelName } from './community.js';
 import LEVELS from './levels.json';
 
 const CORS = {
@@ -33,6 +34,10 @@ export default {
 const hex = (buf) => [...new Uint8Array(buf)].map(b => b.toString(16).padStart(2, '0')).join('');
 const sha = async (s) => hex(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(s)));
 const token = (n) => hex(crypto.getRandomValues(new Uint8Array(n)));
+// community level ids: six letters and digits that can't be mixed up
+const LEVEL_ID = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+const levelId = () => [...crypto.getRandomValues(new Uint8Array(6))].map(b => LEVEL_ID[b % 32]).join('');
+const PAGE = 30;
 
 export class Board extends DurableObject {
   constructor(ctx, env) {
@@ -43,7 +48,14 @@ export class Board extends DurableObject {
       CREATE TABLE IF NOT EXISTS times (course TEXT NOT NULL, player TEXT NOT NULL, ticks INTEGER NOT NULL, at INTEGER NOT NULL, legacy INTEGER NOT NULL DEFAULT 0, PRIMARY KEY (course, player));
       CREATE INDEX IF NOT EXISTS times_rank ON times (course, ticks);
       CREATE TABLE IF NOT EXISTS ghosts (course TEXT NOT NULL, player TEXT NOT NULL, data TEXT NOT NULL, PRIMARY KEY (course, player));
+      CREATE TABLE IF NOT EXISTS levels (id TEXT PRIMARY KEY, name TEXT NOT NULL, author TEXT NOT NULL, code TEXT NOT NULL, sig TEXT NOT NULL UNIQUE, chk TEXT NOT NULL,
+        pieces INTEGER NOT NULL, created INTEGER NOT NULL, plays INTEGER NOT NULL DEFAULT 0, likes INTEGER NOT NULL DEFAULT 0);
+      CREATE INDEX IF NOT EXISTS levels_top ON levels (likes DESC, plays DESC, created DESC);
+      CREATE INDEX IF NOT EXISTS levels_new ON levels (created DESC);
+      CREATE INDEX IF NOT EXISTS levels_author ON levels (author);
+      CREATE TABLE IF NOT EXISTS likes (level TEXT NOT NULL, player TEXT NOT NULL, PRIMARY KEY (level, player));
     `);
+    this.checks = new Map(); // community level run checks, parsed once
     this.hits = new Map(); // rate limits, kept in memory
     // once: clear the test players posted while setting the server up
     if (!this.one("SELECT 1 FROM sqlite_master WHERE name = 'wiped1'")) {
@@ -69,6 +81,33 @@ export class Board extends DurableObject {
     const ahead = this.one('SELECT COUNT(*) AS n FROM times WHERE course = ? AND ticks < ?', course, mine.ticks).n;
     return { rank: ahead + 1, ticks: mine.ticks };
   }
+  // the run checks for a built-in level, or a community level ("c:<id>")
+  levelFor(course) {
+    if (typeof course !== 'string') return null;
+    if (LEVELS[course]) return LEVELS[course];
+    if (!/^c:[A-Z0-9]{6}$/.test(course)) return null;
+    if (!this.checks.has(course)) {
+      const r = this.one('SELECT chk FROM levels WHERE id = ?', course.slice(2));
+      if (!r) return null;
+      this.checks.set(course, JSON.parse(r.chk));
+    }
+    return this.checks.get(course);
+  }
+  // a community level as the browser lists it
+  levelRows(where, args, order, limit, offset, me) {
+    return this.sql.exec(`SELECT l.id, l.name, l.author AS authorId, p.name AS author, l.likes, l.plays, l.created, l.pieces,
+        (SELECT COUNT(*) FROM times t WHERE t.course = 'c:' || l.id) AS runners,
+        (SELECT MIN(ticks) FROM times t WHERE t.course = 'c:' || l.id) AS best,
+        EXISTS (SELECT 1 FROM likes k WHERE k.level = l.id AND k.player = ?) AS liked
+      FROM levels l JOIN players p ON p.id = l.author ${where} ORDER BY ${order} LIMIT ? OFFSET ?`, me || '', ...args, limit, offset).toArray()
+      .map(r => Object.assign(r, { liked: !!r.liked }));
+  }
+  dropLevel(id) {
+    for (const q of ['DELETE FROM times WHERE course = ?', 'DELETE FROM ghosts WHERE course = ?']) this.sql.exec(q, 'c:' + id);
+    this.sql.exec('DELETE FROM likes WHERE level = ?', id);
+    this.sql.exec('DELETE FROM levels WHERE id = ?', id);
+    this.checks.delete('c:' + id);
+  }
   total(course) { return this.one('SELECT COUNT(*) AS n FROM times WHERE course = ?', course).n; }
 
   async fetch(req) {
@@ -84,7 +123,7 @@ export class Board extends DurableObject {
 
     if (path === '/board' && req.method === 'GET') {
       const course = url.searchParams.get('course');
-      if (!LEVELS[course]) return fail('unknown level', 404);
+      if (!this.levelFor(course)) return fail('unknown level', 404);
       const rows = this.sql.exec(`SELECT t.player AS id, p.name, t.ticks, t.legacy, g.player IS NOT NULL AS ghost
         FROM times t JOIN players p ON p.id = t.player LEFT JOIN ghosts g ON g.course = t.course AND g.player = t.player
         WHERE t.course = ? ORDER BY t.ticks, t.at LIMIT 50`, course).toArray()
@@ -98,6 +137,30 @@ export class Board extends DurableObject {
         WHERE g.course = ? AND g.player = ?`, course, id);
       if (!g) return fail('no ghost', 404);
       return json({ name: g.name, ticks: g.ticks, ghost: JSON.parse(g.data) });
+    }
+    // browse community levels: sort=top|new, q=search, by=author id, page
+    if (path === '/levels' && req.method === 'GET') {
+      const sort = url.searchParams.get('sort') === 'new' ? 'l.created DESC' : 'l.likes DESC, l.plays DESC, l.created DESC';
+      const q = (url.searchParams.get('q') || '').trim().slice(0, 32), by = url.searchParams.get('by');
+      const page = Math.max(0, Math.min(100, parseInt(url.searchParams.get('page'), 10) || 0));
+      const conds = [], args = [];
+      if (q) { conds.push("(l.name LIKE ? ESCAPE '\\' OR p.name LIKE ? ESCAPE '\\')"); const like = '%' + q.replace(/[\\%_]/g, c => '\\' + c) + '%'; args.push(like, like); }
+      if (by) { conds.push('l.author = ?'); args.push(by); }
+      const where = conds.length ? 'WHERE ' + conds.join(' AND ') : '';
+      const rows = this.levelRows(where, args, sort, PAGE + 1, page * PAGE, url.searchParams.get('me'));
+      return json({ levels: rows.slice(0, PAGE), more: rows.length > PAGE, page });
+    }
+    // one community level with its code; play=1 counts a play
+    if (path === '/level' && req.method === 'GET') {
+      const id = url.searchParams.get('id') || '';
+      const [row] = this.levelRows('WHERE l.id = ?', [id], 'l.id', 1, 0, url.searchParams.get('me'));
+      if (!row) return fail('That level is gone.', 404);
+      if (url.searchParams.get('play') === '1' && !this.limited('play:' + ip + ':' + id, 1, 3600000)) {
+        this.sql.exec('UPDATE levels SET plays = plays + 1 WHERE id = ?', id);
+        row.plays++;
+      }
+      row.code = this.one('SELECT code FROM levels WHERE id = ?', id).code;
+      return json(row);
     }
     if (path === '/register' && req.method === 'POST') {
       const name = cleanName(body.name);
@@ -127,7 +190,7 @@ export class Board extends DurableObject {
     if (path === '/run' && req.method === 'POST') {
       const { course, ticks, ghost } = body;
       if (this.limited('run:' + me.id, 30, 60000)) return fail('slow down', 429);
-      const err = checkRun(LEVELS[course], ticks, ghost);
+      const err = checkRun(this.levelFor(course), ticks, ghost);
       if (err) return fail('Run not accepted: ' + err + '.', 422);
       const cur = this.one('SELECT ticks, legacy FROM times WHERE course = ? AND player = ?', course, me.id);
       const better = !cur || ticks < cur.ticks || (cur.legacy && ticks <= cur.ticks);
@@ -153,8 +216,57 @@ export class Board extends DurableObject {
       this.sql.exec('UPDATE players SET imported = 1 WHERE id = ?', me.id);
       return json({ imported: n });
     }
-    // takes the player, their times and ghosts off the board for good
+    // publish an editor level. It must come with a run that finishes it, so
+    // every published level can be beaten; that run is the first on its board.
+    if (path === '/levels/publish' && req.method === 'POST') {
+      const name = cleanLevelName(body.name);
+      if (!name) return fail('Level names are 2 to 32 letters, numbers, spaces or simple punctuation.');
+      if (this.limited('pub:' + me.id, 10, 3600000) || this.limited('pubip:' + ip, 20, 3600000)) return fail('That is a lot of levels. Try again later.', 429);
+      let level;
+      try { level = await decodeLevel(body.code); } catch (e) { return fail('That level code did not read.'); }
+      const chk = levelChecks(level.pieces);
+      if (!chk) return fail('A level needs a Start and a Finish pad.');
+      const err = checkRun(chk, body.ticks, body.ghost);
+      if (err) return fail('Finish your level in a test run first (' + err + ').', 422);
+      const sig = await sha(JSON.stringify(level.pieces));
+      const dup = this.one('SELECT id, name FROM levels WHERE sig = ?', sig);
+      if (dup) return fail('This level is already published as "' + dup.name + '" (' + dup.id + ').', 409);
+      let id;
+      do id = levelId(); while (this.one('SELECT 1 FROM levels WHERE id = ?', id));
+      const now = Date.now();
+      this.sql.exec('INSERT INTO levels (id, name, author, code, sig, chk, pieces, created) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+        id, name, me.id, body.code, sig, JSON.stringify(chk), level.pieces.length, now);
+      this.sql.exec('INSERT INTO times (course, player, ticks, at, legacy) VALUES (?, ?, ?, ?, 0)', 'c:' + id, me.id, body.ticks, now);
+      this.sql.exec('INSERT INTO ghosts (course, player, data) VALUES (?, ?, ?)', 'c:' + id, me.id, JSON.stringify({ e: body.ghost.e, s: body.ghost.s }));
+      return json({ id, name });
+    }
+    // thumbs up (on) or take it back (off)
+    if (path === '/levels/like' && req.method === 'POST') {
+      const lv = this.one('SELECT author FROM levels WHERE id = ?', String(body.id || ''));
+      if (!lv) return fail('That level is gone.', 404);
+      if (lv.author === me.id) return fail('You can\'t rate your own level.', 403);
+      if (this.limited('like:' + me.id, 60, 60000)) return fail('slow down', 429);
+      const had = !!this.one('SELECT 1 FROM likes WHERE level = ? AND player = ?', body.id, me.id);
+      if (body.on && !had) this.sql.exec('INSERT INTO likes (level, player) VALUES (?, ?)', body.id, me.id);
+      if (!body.on && had) this.sql.exec('DELETE FROM likes WHERE level = ? AND player = ?', body.id, me.id);
+      this.sql.exec('UPDATE levels SET likes = (SELECT COUNT(*) FROM likes WHERE level = ?) WHERE id = ?', body.id, body.id);
+      return json({ liked: !!body.on, likes: this.one('SELECT likes FROM levels WHERE id = ?', body.id).likes });
+    }
+    // authors can take their own levels down, with their boards
+    if (path === '/levels/delete' && req.method === 'POST') {
+      const lv = this.one('SELECT author FROM levels WHERE id = ?', String(body.id || ''));
+      if (!lv) return fail('That level is gone.', 404);
+      if (lv.author !== me.id) return fail('Only the author can take a level down.', 403);
+      this.dropLevel(body.id);
+      return json({ deleted: true });
+    }
+    // takes the player, their times, ghosts and levels off the board for good
     if (path === '/delete-me' && req.method === 'POST') {
+      for (const r of this.sql.exec('SELECT id FROM levels WHERE author = ?', me.id).toArray()) this.dropLevel(r.id);
+      for (const r of this.sql.exec('SELECT level FROM likes WHERE player = ?', me.id).toArray()) {
+        this.sql.exec('DELETE FROM likes WHERE level = ? AND player = ?', r.level, me.id);
+        this.sql.exec('UPDATE levels SET likes = (SELECT COUNT(*) FROM likes WHERE level = ?) WHERE id = ?', r.level, r.level);
+      }
       this.sql.exec('DELETE FROM times WHERE player = ?', me.id);
       this.sql.exec('DELETE FROM ghosts WHERE player = ?', me.id);
       this.sql.exec('DELETE FROM players WHERE id = ?', me.id);
