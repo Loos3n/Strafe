@@ -28,6 +28,20 @@ body:not(.playing) #fps { display: none; }
 /* ---------- HUD */
 .hud { position: fixed; pointer-events: none; color: var(--hud); text-shadow: 0 0 1px rgba(10,14,18,.9), 0 1px 3px rgba(10,14,18,.55), 0 0 18px rgba(10,14,18,.25); font-family: var(--display); }
 #crosshair { position: fixed; left: 50%; top: 50%; width: 4px; height: 4px; margin: -2px 0 0 -2px; border-radius: 50%; background: #fff; box-shadow: 0 0 0 1px rgba(0,0,0,.35); pointer-events: none; }
+#crosshair[data-style="cross"] { width: 16px; height: 16px; margin: -8px 0 0 -8px; border-radius: 0; box-shadow: none; filter: drop-shadow(0 0 1px rgba(0,0,0,.7));
+  background: linear-gradient(#fff, #fff) 0 7px / 6px 2px no-repeat, linear-gradient(#fff, #fff) 10px 7px / 6px 2px no-repeat,
+              linear-gradient(#fff, #fff) 7px 0 / 2px 6px no-repeat, linear-gradient(#fff, #fff) 7px 10px / 2px 6px no-repeat; }
+#crosshair[data-style="circle"] { width: 14px; height: 14px; margin: -9px 0 0 -9px; background: none; border: 2px solid #fff; box-shadow: 0 0 0 1px rgba(0,0,0,.35), inset 0 0 0 1px rgba(0,0,0,.35); }
+#crosshair[data-style="off"] { display: none; }
+/* next checkpoint marker: sits on the checkpoint, or on the screen edge pointing at it */
+#cpmark { left: 0; top: 0; will-change: transform; }
+#cpmark[hidden] { display: none; }
+#cpmark .cpdot { position: relative; width: 16px; height: 16px; display: grid; place-items: center; }
+#cpmark i { width: 12px; height: 12px; border: 2px solid #fff; background: rgba(229,57,53,.55); transform: rotate(45deg); box-shadow: 0 0 6px rgba(0,0,0,.5); }
+#cpmark.end i { background: rgba(255,255,255,.75); }
+#cpmark b { position: absolute; left: 2px; top: 3px; width: 0; height: 0; border: 6px solid transparent; border-top: 0; border-bottom: 9px solid #fff; display: none; filter: drop-shadow(0 0 2px rgba(0,0,0,.6)); }
+#cpmark.edge b { display: block; }
+#cpmark span { position: absolute; left: 8px; top: 8px; white-space: nowrap; padding: 1px 5px; background: rgba(10,14,18,.45); text-shadow: none; font-size: 12px; font-weight: 700; letter-spacing: .08em; font-variant-numeric: tabular-nums; }
 #speedwrap { left: 0; right: 0; bottom: calc(15vh + env(safe-area-inset-bottom, 0px)); display: flex; flex-direction: column; align-items: center; gap: 2px; }
 #speed { font-size: clamp(40px, 6vw, 64px); font-weight: 700; font-style: italic; font-variant-numeric: tabular-nums; letter-spacing: .01em; line-height: 1; transition: color .15s; }
 #speedwrap[data-trend="up"] #speed { color: var(--up); }
@@ -262,6 +276,9 @@ table.controls { width: 100%; border-collapse: collapse; font-size: 14px; margin
 .controls td:first-child { font-family: var(--display); font-weight: 700; font-size: 15px; letter-spacing: .04em; white-space: nowrap; padding-right: 14px; width: 1%; color: #fff; }
 .controls td:last-child { color: rgba(236,240,244,.7); }
 #flash { position: fixed; inset: 0; background: #fff; opacity: 0; pointer-events: none; }
+#fade { position: fixed; inset: 0; background: #05070a; opacity: 0; pointer-events: none; }
+#fade.go { animation: fade .4s ease-out; }
+@keyframes fade { from { opacity: .75; } to { opacity: 0; } }
 #flash.go { animation: flash .45s ease-out; }
 @keyframes flash { from { opacity: .85; } to { opacity: 0; } }
 @media (max-width: 720px) {
@@ -272,7 +289,7 @@ table.controls { width: 100%; border-collapse: collapse; font-size: 14px; margin
   .striphead span:last-child { display: none; }
 }
 @media (max-height: 640px) { #h-desc { display: none; } .hstats { margin-top: 8px; } .hact { margin-top: 12px; } }
-@media (prefers-reduced-motion: reduce) { #flash.go { animation: none; } }
+@media (prefers-reduced-motion: reduce) { #flash.go, #fade.go { animation: none; } }
 @media (prefers-reduced-motion: reduce) { #movestate, #toast, #split { transition: none; } }
 /* ---------- title screen: logo and a stack of big buttons over the live flythrough;
    level select is its own screen behind Play */
@@ -411,6 +428,7 @@ body.touch #racehud { top: calc(56px + env(safe-area-inset-top, 0px)); left: 10p
 <canvas id="lines" aria-hidden="true"></canvas>
 <div id="fps" hidden></div>
 <div id="crosshair"></div>
+<div class="hud" id="cpmark" hidden><div class="cpdot"><i></i><b></b></div><span></span></div>
 
 <div class="hud" id="top">
   <div id="timer"></div>
@@ -550,6 +568,13 @@ body.touch #racehud { top: calc(56px + env(safe-area-inset-top, 0px)); left: 10p
             <input type="range" id="s-sens" min="0.2" max="8" step="0.05">
             <label for="s-fov">Field of view (horizontal, 4:3)</label><output id="s-fov-v"></output>
             <input type="range" id="s-fov" min="70" max="120" step="1">
+            <label for="s-xhair">Crosshair</label><span></span>
+            <select id="s-xhair" class="setsel">
+              <option value="dot">Dot</option>
+              <option value="cross">Cross</option>
+              <option value="circle">Circle</option>
+              <option value="off">None</option>
+            </select>
           </div>
         </div>
         <div class="group">
@@ -606,6 +631,7 @@ body.touch #racehud { top: calc(56px + env(safe-area-inset-top, 0px)); left: 10p
             <label><input type="checkbox" id="s-landkick"> Landing camera kick</label>
             <label><input type="checkbox" id="s-body"> Show arms and legs</label>
             <label><input type="checkbox" id="s-ghost"> Race the ghost of your best run</label>
+            <label><input type="checkbox" id="s-cpmark"> Next checkpoint marker</label>
           </div>
         </div>
         <div class="group">
@@ -709,6 +735,7 @@ body.touch #racehud { top: calc(56px + env(safe-area-inset-top, 0px)); left: 10p
   <p class="rp-help">Space pause · &larr; &rarr; skip · , . step · &minus; + speed · C camera · drag to look · free camera: WASD, Q E, Shift</p>
 </div>
 <div id="flash"></div>
+<div id="fade"></div>
 <div id="complete" hidden role="dialog" aria-labelledby="c-name">
   <div class="csheet">
     <p class="clabel" id="c-label">Level complete</p>

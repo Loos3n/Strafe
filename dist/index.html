@@ -28,6 +28,20 @@ body:not(.playing) #fps { display: none; }
 /* ---------- HUD */
 .hud { position: fixed; pointer-events: none; color: var(--hud); text-shadow: 0 0 1px rgba(10,14,18,.9), 0 1px 3px rgba(10,14,18,.55), 0 0 18px rgba(10,14,18,.25); font-family: var(--display); }
 #crosshair { position: fixed; left: 50%; top: 50%; width: 4px; height: 4px; margin: -2px 0 0 -2px; border-radius: 50%; background: #fff; box-shadow: 0 0 0 1px rgba(0,0,0,.35); pointer-events: none; }
+#crosshair[data-style="cross"] { width: 16px; height: 16px; margin: -8px 0 0 -8px; border-radius: 0; box-shadow: none; filter: drop-shadow(0 0 1px rgba(0,0,0,.7));
+  background: linear-gradient(#fff, #fff) 0 7px / 6px 2px no-repeat, linear-gradient(#fff, #fff) 10px 7px / 6px 2px no-repeat,
+              linear-gradient(#fff, #fff) 7px 0 / 2px 6px no-repeat, linear-gradient(#fff, #fff) 7px 10px / 2px 6px no-repeat; }
+#crosshair[data-style="circle"] { width: 14px; height: 14px; margin: -9px 0 0 -9px; background: none; border: 2px solid #fff; box-shadow: 0 0 0 1px rgba(0,0,0,.35), inset 0 0 0 1px rgba(0,0,0,.35); }
+#crosshair[data-style="off"] { display: none; }
+/* next checkpoint marker: sits on the checkpoint, or on the screen edge pointing at it */
+#cpmark { left: 0; top: 0; will-change: transform; }
+#cpmark[hidden] { display: none; }
+#cpmark .cpdot { position: relative; width: 16px; height: 16px; display: grid; place-items: center; }
+#cpmark i { width: 12px; height: 12px; border: 2px solid #fff; background: rgba(229,57,53,.55); transform: rotate(45deg); box-shadow: 0 0 6px rgba(0,0,0,.5); }
+#cpmark.end i { background: rgba(255,255,255,.75); }
+#cpmark b { position: absolute; left: 2px; top: 3px; width: 0; height: 0; border: 6px solid transparent; border-top: 0; border-bottom: 9px solid #fff; display: none; filter: drop-shadow(0 0 2px rgba(0,0,0,.6)); }
+#cpmark.edge b { display: block; }
+#cpmark span { position: absolute; left: 8px; top: 8px; white-space: nowrap; padding: 1px 5px; background: rgba(10,14,18,.45); text-shadow: none; font-size: 12px; font-weight: 700; letter-spacing: .08em; font-variant-numeric: tabular-nums; }
 #speedwrap { left: 0; right: 0; bottom: calc(15vh + env(safe-area-inset-bottom, 0px)); display: flex; flex-direction: column; align-items: center; gap: 2px; }
 #speed { font-size: clamp(40px, 6vw, 64px); font-weight: 700; font-style: italic; font-variant-numeric: tabular-nums; letter-spacing: .01em; line-height: 1; transition: color .15s; }
 #speedwrap[data-trend="up"] #speed { color: var(--up); }
@@ -262,6 +276,9 @@ table.controls { width: 100%; border-collapse: collapse; font-size: 14px; margin
 .controls td:first-child { font-family: var(--display); font-weight: 700; font-size: 15px; letter-spacing: .04em; white-space: nowrap; padding-right: 14px; width: 1%; color: #fff; }
 .controls td:last-child { color: rgba(236,240,244,.7); }
 #flash { position: fixed; inset: 0; background: #fff; opacity: 0; pointer-events: none; }
+#fade { position: fixed; inset: 0; background: #05070a; opacity: 0; pointer-events: none; }
+#fade.go { animation: fade .4s ease-out; }
+@keyframes fade { from { opacity: .75; } to { opacity: 0; } }
 #flash.go { animation: flash .45s ease-out; }
 @keyframes flash { from { opacity: .85; } to { opacity: 0; } }
 @media (max-width: 720px) {
@@ -272,7 +289,7 @@ table.controls { width: 100%; border-collapse: collapse; font-size: 14px; margin
   .striphead span:last-child { display: none; }
 }
 @media (max-height: 640px) { #h-desc { display: none; } .hstats { margin-top: 8px; } .hact { margin-top: 12px; } }
-@media (prefers-reduced-motion: reduce) { #flash.go { animation: none; } }
+@media (prefers-reduced-motion: reduce) { #flash.go, #fade.go { animation: none; } }
 @media (prefers-reduced-motion: reduce) { #movestate, #toast, #split { transition: none; } }
 /* ---------- title screen: logo and a stack of big buttons over the live flythrough;
    level select is its own screen behind Play */
@@ -411,6 +428,7 @@ body.touch #racehud { top: calc(56px + env(safe-area-inset-top, 0px)); left: 10p
 <canvas id="lines" aria-hidden="true"></canvas>
 <div id="fps" hidden></div>
 <div id="crosshair"></div>
+<div class="hud" id="cpmark" hidden><div class="cpdot"><i></i><b></b></div><span></span></div>
 
 <div class="hud" id="top">
   <div id="timer"></div>
@@ -550,6 +568,13 @@ body.touch #racehud { top: calc(56px + env(safe-area-inset-top, 0px)); left: 10p
             <input type="range" id="s-sens" min="0.2" max="8" step="0.05">
             <label for="s-fov">Field of view (horizontal, 4:3)</label><output id="s-fov-v"></output>
             <input type="range" id="s-fov" min="70" max="120" step="1">
+            <label for="s-xhair">Crosshair</label><span></span>
+            <select id="s-xhair" class="setsel">
+              <option value="dot">Dot</option>
+              <option value="cross">Cross</option>
+              <option value="circle">Circle</option>
+              <option value="off">None</option>
+            </select>
           </div>
         </div>
         <div class="group">
@@ -606,6 +631,7 @@ body.touch #racehud { top: calc(56px + env(safe-area-inset-top, 0px)); left: 10p
             <label><input type="checkbox" id="s-landkick"> Landing camera kick</label>
             <label><input type="checkbox" id="s-body"> Show arms and legs</label>
             <label><input type="checkbox" id="s-ghost"> Race the ghost of your best run</label>
+            <label><input type="checkbox" id="s-cpmark"> Next checkpoint marker</label>
           </div>
         </div>
         <div class="group">
@@ -709,6 +735,7 @@ body.touch #racehud { top: calc(56px + env(safe-area-inset-top, 0px)); left: 10p
   <p class="rp-help">Space pause · &larr; &rarr; skip · , . step · &minus; + speed · C camera · drag to look · free camera: WASD, Q E, Shift</p>
 </div>
 <div id="flash"></div>
+<div id="fade"></div>
 <div id="complete" hidden role="dialog" aria-labelledby="c-name">
   <div class="csheet">
     <p class="clabel" id="c-label">Level complete</p>
@@ -7231,6 +7258,7 @@ window.STRAFE_ASSETS = {"city":"Z2xURgIAAABU+ggAYFIAAEpTT057ImFzc2V0Ijp7ImdlbmVy
 
   // ------------------------------------------------------------ settings
   const SETTINGS_KEY = 'strafe.settings.v1';
+  const LAST_KEY = 'strafe.last.v1'; // the level select opens on the last level played
   const BEST_KEY = 'strafe.best.v1';
   // phones and tablets get touch controls; the desktop app and mouse play never do (?touch=1 forces it for testing)
   const TOUCH = /[?&]touch=1/.test(location.search) || (!/Electron/.test(navigator.userAgent) && navigator.maxTouchPoints > 0 && matchMedia('(pointer: coarse)').matches);
@@ -7239,7 +7267,7 @@ window.STRAFE_ASSETS = {"city":"Z2xURgIAAABU+ggAYFIAAEpTT057ImFzc2V0Ijp7ImdlbmVy
     fovKick: true, shadows: true, bob: true, keys: true, body: true, ghost: true,
     speedLines: true, landKick: true, scale: 100, fps: false, strafeMeter: true,
     master: 80, music: 50, sfx: 80, padSens: 1, padAutoStrafe: true, padInvert: false,
-    colors: 'standard', roll: 100, flip: true, flash: true, hudSize: 100,
+    colors: 'standard', roll: 100, flip: true, flash: true, hudSize: 100, crosshair: 'dot', cpMarker: true,
   }, TOUCH ? { lookSens: 1, autoStrafe: true, scale: 70, shadows: false } : {}, load(SETTINGS_KEY) || {});
   const best = load(BEST_KEY) || {};
   // ------------------------------------------------------------ story
@@ -8587,6 +8615,7 @@ body.touch #menu button, body.touch #drawer button { min-height: 40px; }
     if (name !== game.course) game.save = null; // R keeps practice saves
     if (!ghost.remoteFor(name)) ghost.useRemote(null, null); // a raced ghost lasts until you change level
     game.course = name; game.cp = 0; game.cpSpawn = c.spawn; game.running = false; game.finished = null;
+    if (name !== 'custom' && !game.demo) save(LAST_KEY, name);
     game.mission = mission;
     ghost.stop();
     closeComplete();
@@ -8602,7 +8631,14 @@ body.touch #menu button, body.touch #drawer button { min-height: 40px; }
     if (!game.course) return;
     if (game.practice && game.save) { practiceLoad(); return; }
     place(game.cpSpawn);
+    respawnFade();
     A.play('respawn');
+  }
+  // a quick dip to black on respawn, so a fall reads as a cut instead of a jump in place
+  function respawnFade() {
+    if (!settings.flash) return;
+    const fadeEl = document.getElementById('fade');
+    fadeEl.classList.remove('go'); void fadeEl.offsetWidth; fadeEl.classList.add('go');
   }
 
   // ------------------------------------------------------------ practice
@@ -8644,6 +8680,7 @@ body.touch #menu button, body.touch #drawer button { min-height: 40px; }
     if (sv.running) { game.startTick = game.tick - sv.elapsed; game.run = { top: 0, dist: 0, jumps: 0, splits: copyState(sv.splits) }; }
     ghost.stop();
     closeComplete();
+    respawnFade();
     A.play('respawn');
   }
 
@@ -9448,6 +9485,64 @@ body.touch #menu button, body.touch #drawer button { min-height: 40px; }
   }
   updateCourseHud();
 
+  // next checkpoint marker: a diamond on the next checkpoint (white for the
+  // finish) with the distance to it, pinned to the screen edge with an arrow
+  // when it is behind you or off screen
+  const cpMark = { el: $('cpmark'), arrow: null, label: null, key: '', target: null, text: '', shown: false };
+  cpMark.arrow = cpMark.el.querySelector('b'); cpMark.label = cpMark.el.querySelector('span');
+  const _cpv = new THREE.Vector3();
+  function cpTarget() {
+    // the editor rebuilds its triggers, so look again if the cached one is gone
+    const key = game.course + ':' + game.cp;
+    if (cpMark.key !== key || (cpMark.target && !world.triggers.includes(cpMark.target))) {
+      cpMark.key = key;
+      let next = null, end = null;
+      for (const t of world.triggers) {
+        if (t.course !== game.course) continue;
+        if (t.type === 'checkpoint' && t.idx > game.cp && (!next || t.idx < next.idx)) next = t;
+        else if (t.type === 'end') end = t;
+      }
+      cpMark.target = next || end;
+    }
+    const t = cpMark.target;
+    return t && { end: t.type === 'end', x: (t.min[0] + t.max[0]) / 2, y: t.min[1] + 64, z: (t.min[2] + t.max[2]) / 2 };
+  }
+  function updateCpMark() {
+    const t = settings.cpMarker && game.course && game.course !== 'tutorial' && game.finished === null && !ed.on && !replay.on
+      && (locked || !!game.demo) && cpTarget();
+    if (!t) { if (cpMark.shown) { cpMark.el.hidden = true; cpMark.shown = false; } return; }
+    const d = Math.hypot(t.x - player.pos[0], t.y - player.pos[1], t.z - player.pos[2]);
+    _cpv.set(t.x, t.y, t.z).applyMatrix4(camera.matrixWorldInverse);
+    const behind = _cpv.z > 0;
+    _cpv.applyMatrix4(camera.projectionMatrix);
+    let nx = _cpv.x, ny = _cpv.y;
+    if (behind) { nx = -nx; ny = -ny; }
+    const W = innerWidth, H = innerHeight, lx = 1 - 40 / (W / 2), ly = 1 - 60 / (H / 2);
+    let edge = behind || Math.abs(nx) > lx || Math.abs(ny) > ly, angle = 0;
+    if (edge) {
+      // push it out along its direction from the centre until it meets the inset frame
+      if (Math.abs(nx) < 1e-6 && Math.abs(ny) < 1e-6) ny = -1;
+      const k = Math.min(lx / Math.max(Math.abs(nx), 1e-6), ly / Math.max(Math.abs(ny), 1e-6));
+      if (behind || k < 1) { nx *= k; ny *= k; }
+      angle = Math.atan2(nx * W, ny * H);
+    }
+    const x = (nx + 1) / 2 * W;
+    let y = (1 - ny) / 2 * H;
+    // keep off the speed readout: sit on top of it, pointing down
+    const hz = settings.hudSize / 100, speedTop = H * 0.85 - 200 * hz;
+    if (Math.abs(x - W / 2) < 150 * hz && y > speedTop) { y = speedTop; edge = true; angle = Math.PI; }
+    // the arrow points at the checkpoint and the distance sits on the far side of the diamond
+    if (edge) cpMark.arrow.style.transform = 'rotate(' + angle.toFixed(3) + 'rad) translateY(-15px)';
+    const lx2 = edge ? -Math.sin(angle) * 30 : 0, ly2 = edge ? Math.cos(angle) * 22 : 18;
+    cpMark.label.style.transform = 'translate(-50%,-50%) translate(' + lx2.toFixed(1) + 'px,' + ly2.toFixed(1) + 'px)';
+    cpMark.el.style.transform = 'translate(' + x.toFixed(1) + 'px,' + y.toFixed(1) + 'px) translate(-8px,-8px)';
+    cpMark.el.classList.toggle('edge', edge);
+    cpMark.el.classList.toggle('end', t.end);
+    const text = Math.round(d * 0.0254) + ' m'; // Source units are inches
+    if (text !== cpMark.text) { cpMark.label.textContent = text; cpMark.text = text; }
+    if (!cpMark.shown) { cpMark.el.hidden = false; cpMark.shown = true; }
+  }
+
   let smoothSpeed = 0, lastShown = -1, trend = 0, hudYaw = 0, mouseTurn = 0, mouseHold = 0, turnStep = 0;
   function drawHud(dt) {
     const hs = player.hspeed();
@@ -9939,6 +10034,7 @@ body.touch #menu button, body.touch #drawer button { min-height: 40px; }
     // Runner Vision: route pieces glow and breathe
     MATS.paint.emissiveIntensity = 0.15 + Math.sin(ts * 2.4) * 0.06;
     camera.updateMatrixWorld();
+    updateCpMark();
     updateModelChunks();
     renderer.render(scene, camera);
     if (settings.body && (locked || game.demo) && !attract.active && !ed.on && !replay.on) body.render();
@@ -10735,7 +10831,8 @@ body.touch #menu button, body.touch #drawer button { min-height: 40px; }
   const pipHtml = (d, label) => '<span class="pips" aria-label="' + label + d + ' of ' + Math.max(5, d) + '">' +
     Array.from({ length: Math.max(5, d) }, (_, k) => '<i class="' + (k < d ? 'on' : '') + '"></i>').join('') + '</span>';
   const rowCourse = (name) => map.courses[name];
-  let selected = best.tutorial ? map.order[0] : 'tutorial';
+  const lastPlayed = load(LAST_KEY);
+  let selected = MENU_ROWS.some(r => r.name === lastPlayed) ? lastPlayed : best.tutorial ? map.order[0] : 'tutorial';
   // the hero always describes the selected level
   function showHero(name) {
     const c = rowCourse(name);
@@ -11138,6 +11235,11 @@ body.touch #menu button, body.touch #drawer button { min-height: 40px; }
   bindCheck('s-ghost', 'ghost');
   bindCheck('s-keys', 'keys', () => hud.keys.hidden = !settings.keys);
   bindCheck('s-strafe', 'strafeMeter');
+  bindCheck('s-cpmark', 'cpMarker');
+  const applyCrosshair = () => { $('crosshair').dataset.style = settings.crosshair; };
+  applyCrosshair();
+  $('s-xhair').value = settings.crosshair;
+  $('s-xhair').addEventListener('change', () => { settings.crosshair = $('s-xhair').value; applyCrosshair(); save(SETTINGS_KEY, settings); A.play('click'); });
   bindCheck('s-shadows', 'shadows', () => {
     renderer.shadowMap.enabled = settings.shadows;
     scene.traverse(o => { if (o.material) o.material.needsUpdate = true; });
