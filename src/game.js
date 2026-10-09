@@ -4567,6 +4567,7 @@ body.editing.playing #edhelp { display: block; }
   const cmLikeText = (L) => (L.liked ? 'Liked 👍 ' : 'Like 👍 ') + L.likes;
   function cmOpen() {
     const off = net.ok === false;
+    cm.token++; // drop a level still loading
     $('cm-off').hidden = !off;
     $('cm-listview').hidden = off;
     $('cm-detail').hidden = true;
@@ -4607,15 +4608,23 @@ body.editing.playing #edhelp { display: block; }
       li.appendChild(b); ol.appendChild(li);
     }
     $('cm-msg').textContent = cm.rows.length ? '' : cm.q ? 'No levels match "' + cm.q + '".' :
-      cm.sort === 'mine' ? 'You have not published a level yet.' : 'No levels yet. Build one in the Level editor and be the first to publish.';
+      cm.sort === 'mine' ? (net.id ? 'You have not published a level yet.' : 'Pick a name under Online, or publish from the editor, to see your levels here.') : 'No levels yet. Build one in the Level editor and be the first to publish.';
     $('cm-more').hidden = !cm.more;
   }
   async function cmShow(id) {
+    const token = ++cm.token;
     $('cm-listview').hidden = true; $('cm-detail').hidden = false;
     $('cm-name').textContent = 'Loading…';
     for (const k of ['cm-meta', 'cm-dmsg', 'cm-board', 'cm-boardmsg']) $(k).textContent = '';
-    $('cm-del').hidden = true;
-    try { cm.level = await api('/level?id=' + encodeURIComponent(id) + cmQuery()); } catch (e) { $('cm-name').textContent = ''; $('cm-dmsg').textContent = e.message; return; }
+    // no level until this one loads, so Play, Like and the rest can't act on the last one shown
+    cm.level = null;
+    $('cm-actions').hidden = $('cm-tools').hidden = true;
+    let L;
+    try { L = await api('/level?id=' + encodeURIComponent(id) + cmQuery()); }
+    catch (e) { if (token === cm.token) { $('cm-name').textContent = ''; $('cm-dmsg').textContent = e.message; } return; }
+    if (token !== cm.token || $('cm-detail').hidden) return; // went back, or opened another, while it loaded
+    cm.level = L;
+    $('cm-actions').hidden = $('cm-tools').hidden = false;
     cmRenderDetail();
     cmBoard();
     $('cm-play').focus({ preventScroll: true });
