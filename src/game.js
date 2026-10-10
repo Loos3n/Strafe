@@ -994,6 +994,7 @@
     ['jump', 'Jump', 'Space', []], ['duck', 'Crouch and slide', 'ShiftLeft', ['ShiftRight', 'KeyC']],
     ['restart', 'Restart level', 'KeyR', []], ['respawn', 'Last checkpoint', 'KeyF', []],
     ['practice', 'Practice mode', 'KeyP', []], ['psave', 'Practice save', 'KeyZ', []], ['pload', 'Practice load', 'KeyX', []],
+    ['pnext', 'Practice next checkpoint', 'KeyG', []], ['pprev', 'Practice previous checkpoint', 'KeyB', []],
     ['tutorial', 'Tutorial', 'KeyT', []], ['mute', 'Mute sound', 'KeyM', []],
   ];
   const DEFAULT_BINDS = Object.fromEntries(ACTIONS.map(a => [a[0], a[2]]));
@@ -1018,6 +1019,8 @@
     else if (act === 'practice') setPractice(!game.practice);
     else if (act === 'psave') practiceSave();
     else if (act === 'pload') practiceLoad();
+    else if (act === 'pnext') practiceJump(1);
+    else if (act === 'pprev') practiceJump(-1);
     else if (act === 'mute') { muted = !muted; A.setVolumes({ muted }); toast(muted ? 'Sound off' : 'Sound on'); }
     else if (!act && /^Digit[0-9]$/.test(code) && map.order[(+code.slice(5) + 9) % 10]) goCourse(map.order[(+code.slice(5) + 9) % 10]);
   }
@@ -1208,6 +1211,9 @@
       if (pitch < -89 * DEG) pitch = -89 * DEG;
       if (press(2)) respawn();
       if (press(8)) restartCourse();
+      if (game.practice && press(3)) practiceSave();
+      if (game.practice && press(15)) practiceJump(1);
+      if (game.practice && press(14)) practiceJump(-1);
       if (press(9)) { if (document.pointerLockElement) document.exitPointerLock(); else softLock(false); }
     } else {
       pad.fwd = pad.side = 0; pad.jump = pad.duck = false;
@@ -1244,6 +1250,7 @@ body.touch.playing:not(.complete) #touch { display: block; }
 #t-jump { width: 96px; height: 96px; right: max(24px, env(safe-area-inset-right)); bottom: max(24px, env(safe-area-inset-bottom)); }
 #t-duck { width: 64px; height: 64px; font-size: 11px; right: calc(max(24px, env(safe-area-inset-right)) + 30px); bottom: calc(max(24px, env(safe-area-inset-bottom)) + 112px); }
 #t-bar { position: absolute; top: max(8px, env(safe-area-inset-top)); right: max(10px, env(safe-area-inset-right)); display: flex; gap: 6px; }
+body:not(.practicing) #t-bar .t-prac { display: none; }
 #t-bar .t-btn { position: static; width: 42px; height: 42px; border-radius: 10px; font-size: 11px; }
 #t-rotate { position: fixed; inset: 0; z-index: 60; display: none; place-items: center; background: #0d1114; color: #f6f6f3; font: 700 22px/1.3 'Barlow Condensed', sans-serif; text-align: center; padding: 24px; }
 @media (orientation: portrait) { body.touch.playing #t-rotate { display: grid; } }
@@ -1265,6 +1272,8 @@ body.touch #menu button, body.touch #drawer button { min-height: 40px; }
       '<div id="t-hint">Left: move · Right: look · Hold Jump and drag to steer</div>' +
       '<button class="t-btn" id="t-duck" aria-label="Crouch">Crouch</button><button class="t-btn" id="t-jump" aria-label="Jump">Jump</button>' +
       '<div id="t-bar"><button class="t-btn" data-k="cp" aria-label="Back to checkpoint">CP</button>' +
+      '<button class="t-btn t-prac" data-k="psave" aria-label="Practice save">Save</button><button class="t-btn t-prac" data-k="pload" aria-label="Practice load">Load</button>' +
+      '<button class="t-btn t-prac" data-k="pnext" aria-label="Next checkpoint">CP+</button>' +
       '<button class="t-btn" data-k="restart" aria-label="Restart">Reset</button><button class="t-btn" data-k="pause" aria-label="Pause">II</button></div>';
     document.body.appendChild(root);
     const rot = document.createElement('div');
@@ -1329,6 +1338,9 @@ body.touch #menu button, body.touch #drawer button { min-height: 40px; }
       if (k === 'pause') { swallowUntil = performance.now() + 600; softLock(false); }
       else if (k === 'restart') restartCourse();
       else if (k === 'cp') respawn();
+      else if (k === 'psave') practiceSave();
+      else if (k === 'pload') practiceLoad();
+      else if (k === 'pnext') practiceJump(1);
     });
     // the tap that pauses would land as a click on whatever the menu puts
     // under the thumb (or the view, which resumes), so drop it
@@ -1345,6 +1357,7 @@ body.touch #menu button, body.touch #drawer button { min-height: 40px; }
   const game = {
     course: null, cp: 0, cpSpawn: null, running: false, inStart: false,
     startTick: 0, tick: 0, finished: null, mission: null, practice: false, save: null,
+    seg: null, segBest: {}, saves: 0,
   };
   const prev = { pos: player.pos.slice(), eye: player.viewOffset };
 
@@ -1364,7 +1377,8 @@ body.touch #menu button, body.touch #drawer button { min-height: 40px; }
   }
   function goCourse(name, mission = null) {
     const c = map.courses[name];
-    if (name !== game.course) game.save = null; // R keeps practice saves
+    if (name !== game.course) { game.save = null; game.segBest = {}; } // R keeps practice saves
+    game.seg = null;
     if (!ghost.remoteFor(name)) ghost.useRemote(null, null); // a raced ghost lasts until you change level
     game.course = name; game.cp = 0; game.cpSpawn = c.spawn; game.running = false; game.finished = null;
     if (!userCourse(name) && !game.demo) save(LAST_KEY, name);
@@ -1403,21 +1417,68 @@ body.touch #menu button, body.touch #drawer button { min-height: 40px; }
     ? Object.fromEntries(Object.entries(v).map(([k, x]) => [k, copyState(x)])) : v;
   const SAVED = ['pos', 'vel', 'approach', 'ducked', 'onGround', 'groundNormal', 'groundBrush', 'viewOffset', 'prevJump', 'prevDuck', 'jumpPressed',
     'slide', 'slideCooldown', 'wallrun', 'wallrunCooldown', 'lastWall', 'climb', 'climbAvailable', 'mantle', 'airTime'];
+  // In practice, checkpoints and the finish show segment times: from where
+  // you last started (a load, a checkpoint jump, the last checkpoint or the
+  // start) to here, against your best for that same stretch this session.
   function setPractice(on) {
     if (on === game.practice) return;
-    game.practice = on; game.save = null;
+    game.practice = on; game.save = null; game.seg = null; game.segBest = {};
     $('practice').hidden = !on;
-    if (on) toast('Practice on: Z saves, X loads. Runs are not recorded.', 2600);
+    document.body.classList.toggle('practicing', on);
+    if ($('m-practice-sub')) $('m-practice-sub').textContent = practiceSub();
+    if (on) toast('Practice on: ' + keyName(binds.psave) + ' saves, ' + keyName(binds.pload) + ' loads, ' + keyName(binds.pnext) + ' skips a checkpoint. Runs are not recorded.', 3200);
     else { toast('Practice off'); restartCourse(); }
   }
-  function practiceSave() {
-    if (!game.practice) { toast('Press P for practice mode to use save points'); return; }
+  const practiceSub = () => game.practice ? 'On' : 'Off';
+  function practiceSave(quiet) {
+    if (!game.practice) { toast('Press ' + keyName(binds.practice) + ' for practice mode to use save points'); return; }
     const st = {};
     for (const k of SAVED) st[k] = copyState(player[k]);
-    game.save = { st, yaw, pitch, cp: game.cp, cpSpawn: game.cpSpawn, running: game.running,
+    game.save = { id: ++game.saves, st, yaw, pitch, cp: game.cp, cpSpawn: game.cpSpawn, running: game.running,
       elapsed: game.running ? game.tick - game.startTick : 0, splits: game.run ? copyState(game.run.splits) : {} };
+    if (quiet === true) return;
     toast('Saved');
     A.play('checkpoint');
+  }
+  // the start and every checkpoint of the level, in order
+  function practiceCps() {
+    const c = map.courses[game.course], list = [{ idx: 0, spawn: c.spawn }];
+    for (const t of world.triggers) if (t.type === 'checkpoint' && t.course === game.course && t.spawn && !list.some(x => x.idx === t.idx)) list.push({ idx: t.idx, spawn: t.spawn });
+    return list.sort((a, b) => a.idx - b.idx);
+  }
+  // skip to the next or previous checkpoint (wrapping round to the start) and
+  // save there, so falls bring you back to the stretch you're drilling
+  function practiceJump(d) {
+    if (!game.course || replay.on) return;
+    if (!game.practice) setPractice(true);
+    const list = practiceCps();
+    let i = list.findIndex(x => x.idx === game.cp);
+    i = ((i < 0 ? 0 : i) + d + list.length) % list.length;
+    const to = list[i];
+    place(to.spawn);
+    game.cp = to.idx; game.cpSpawn = to.spawn; game.finished = null;
+    ghost.stop();
+    closeComplete();
+    if (to.idx === 0) { game.running = false; game.inStart = false; game.seg = null; }
+    else {
+      game.running = true; game.inStart = false; game.startTick = game.tick;
+      game.run = { top: 0, dist: 0, jumps: 0, splits: {} };
+      game.seg = { from: 'cp' + to.idx, tick: game.tick };
+    }
+    practiceSave(true);
+    if (to.idx) game.save.from = 'cp' + to.idx;
+    respawnFade();
+    A.play('teleport');
+    toast(to.idx === 0 ? 'Start' : 'Checkpoint ' + (to.idx + 1) + ' / ' + map.courses[game.course].stages);
+  }
+  const segName = (from) => from === 'cp0' ? 'Start' : from.startsWith('cp') ? 'CP ' + (+from.slice(2) + 1) : 'Save';
+  // a checkpoint or the finish reached in practice: time since the segment began
+  function practiceSplit(to, label) {
+    const seg = game.seg;
+    if (!seg) { showSplit(label, game.tick - game.startTick); return; }
+    const key = seg.from + '>' + to, ticks = game.tick - seg.tick, pb = game.segBest[key];
+    showSplit(segName(seg.from) + ' to ' + label, ticks, pb);
+    if (!pb || ticks < pb) game.segBest[key] = ticks;
   }
   function practiceLoad() {
     const sv = game.save;
@@ -1430,6 +1491,7 @@ body.touch #menu button, body.touch #drawer button { min-height: 40px; }
     game.cp = sv.cp; game.cpSpawn = sv.cpSpawn; game.finished = null;
     game.running = sv.running; game.inStart = false;
     if (sv.running) { game.startTick = game.tick - sv.elapsed; game.run = { top: 0, dist: 0, jumps: 0, splits: copyState(sv.splits) }; }
+    game.seg = { from: sv.from || 'save' + sv.id, tick: game.tick };
     ghost.stop();
     closeComplete();
     respawnFade();
@@ -1448,7 +1510,10 @@ body.touch #menu button, body.touch #drawer button { min-height: 40px; }
         game.cp = t.idx; game.cpSpawn = t.spawn;
         const c = map.courses[game.course];
         A.play('checkpoint');
-        if (game.running) {
+        if (game.running && game.practice) {
+          practiceSplit(t.idx, 'CP ' + (t.idx + 1));
+          game.seg = { from: 'cp' + t.idx, tick: game.tick };
+        } else if (game.running) {
           const ticks = game.tick - game.startTick;
           game.run.splits[t.idx] = ticks;
           const pb = bestSplits[game.course] && bestSplits[game.course][t.idx];
@@ -1457,7 +1522,8 @@ body.touch #menu button, body.touch #drawer button { min-height: 40px; }
       } else if (t.type === 'end' && game.running && game.practice) {
         game.running = false;
         const ticks = game.tick - game.startTick;
-        showSplit('Practice finish', ticks, best[game.course]);
+        practiceSplit('end', 'Finish');
+        game.seg = null;
         game.finished = ticks;
         ghost.stop();
         A.play('finish');
@@ -1476,6 +1542,7 @@ body.touch #menu button, body.touch #drawer button { min-height: 40px; }
         const runGhost = ghost.current();
         game.lastRun = runGhost && !userCourse(game.course) ? { course: game.course, ticks, g: runGhost, saved: false } : null;
         if (isBest || !ghost.has(game.course)) ghost.keep(game.course);
+        dailyFinish(game.course, ticks);
         lbSubmit(game.course, ticks, runGhost);
         raceFinish();
         ghost.stop();
@@ -1494,6 +1561,7 @@ body.touch #menu button, body.touch #drawer button { min-height: 40px; }
       game.running = true; game.startTick = game.tick;
       game.run = { top: 0, dist: 0, jumps: 0, splits: {} };
       if (!game.practice) careerCount('runs', game.course);
+      else game.seg = { from: 'cp0', tick: game.tick };
       ghost.start();
       A.play('start');
     }
@@ -2970,7 +3038,8 @@ body.touch #menu button, body.touch #drawer button { min-height: 40px; }
     const el = $('c-online'), l = net.last;
     const here = l && l.course === game.course;
     el.hidden = !here;
-    if (here) el.textContent = l.error ? 'Not posted: ' + l.error : l.mine ? 'Online rank #' + l.mine.rank + ' of ' + l.total : 'Posting…';
+    if (here) el.textContent = l.error ? 'Not posted: ' + l.error : l.mine ? 'Online rank #' + l.mine.rank + ' of ' + l.total +
+      (l.daily && l.daily.mine ? ' · Daily #' + l.daily.mine.rank + ' of ' + l.daily.total : '') : 'Posting…';
     $('c-post').hidden = !(net.pending && net.pending.course === game.course && !net.token);
   }
   async function netSubmit(course, ticks, run) {
@@ -2980,8 +3049,9 @@ body.touch #menu button, body.touch #drawer button { min-height: 40px; }
     netRenderComplete();
     try {
       const res = await api('/run', { course: lbKey(course), ticks, ghost: run });
-      net.last = { course, mine: res.mine, total: res.total };
+      net.last = { course, mine: res.mine, total: res.total, daily: res.daily };
       delete net.boards[lbKey(course)];
+      if (res.daily) daily.at = 0;
     } catch (e) {
       if (e.status === 401) { net.token = null; saveNet(); net.pending = { course, ticks, run }; net.last = null; }
       else net.last = { course, error: e.message };
@@ -3306,6 +3376,8 @@ body.touch #menu button, body.touch #drawer button { min-height: 40px; }
       net.ok = true;
     } catch (e) { net.ok = false; }
     lbRender();
+    if (net.ok) dailyLoad().catch(() => {});
+    dailySub();
     if (!drawer.hidden && !$('on-body').closest('[data-pane]').hidden) onlineOpen();
     if (!drawer.hidden && !$('cm-listview').closest('[data-pane]').hidden && $('cm-detail').hidden) cmOpen();
     // inside claude.ai, note whether the page could reach the server
@@ -3697,6 +3769,8 @@ body.touch #menu button, body.touch #drawer button { min-height: 40px; }
     const paused = game.started;
     $('m-resume').hidden = !paused;
     $('m-restart').hidden = !paused || !game.course;
+    $('m-practice').hidden = !paused || !game.course;
+    $('m-practice-sub').textContent = practiceSub();
     $('m-quit').hidden = !paused;
     let stars = 0, max = 0;
     STORY.forEach((job, i) => { if (job.stars) { stars += (storyProgress[i] || { stars: 0 }).stars; max += 3; } });
@@ -3707,6 +3781,7 @@ body.touch #menu button, body.touch #drawer button { min-height: 40px; }
     const all = SKINS.concat(TRAILS);
     $('m-cos-sub').textContent = all.filter(unlocked).length + ' / ' + all.length + ' unlocked';
     statsMenuSub();
+    dailySub();
   }
   function showScreen(which, focus = true) {
     screen = which;
@@ -3798,8 +3873,9 @@ body.touch #menu button, body.touch #drawer button { min-height: 40px; }
   function openDrawer(which) {
     A.play('click');
     drawer.hidden = false;
-    $('d-title').textContent = { settings: 'Settings', story: 'Story', cosmetics: 'Cosmetics', controls: 'Controls', online: 'Online', replays: 'Replays', stats: 'Stats', community: 'Community' }[which];
+    $('d-title').textContent = { settings: 'Settings', story: 'Story', cosmetics: 'Cosmetics', controls: 'Controls', online: 'Online', replays: 'Replays', stats: 'Stats', community: 'Community', daily: 'Daily challenge' }[which];
     if (which === 'online') onlineOpen();
+    if (which === 'daily') dailyOpen();
     if (which === 'community') cmOpen();
     if (which === 'stats') statsRender();
     if (which === 'replays') replaysRender();
@@ -4106,6 +4182,13 @@ body.touch #menu button, body.touch #drawer button { min-height: 40px; }
   for (const b of document.querySelectorAll('#mainnav .mbtn')) b.addEventListener('mouseenter', () => A.play('hover'));
   $('resume').addEventListener('click', () => { A.init(); A.play('click'); startPlay(); });
   $('restart').addEventListener('click', () => { A.init(); restartCourse(); startPlay(); });
+  $('m-practice').addEventListener('click', () => { A.init(); A.play('click'); setPractice(!game.practice); startPlay(); });
+  $('practice-play').addEventListener('click', () => {
+    A.init(); A.play('click');
+    if (!(game.started && game.course === selected)) goCourse(selected);
+    setPractice(true);
+    startPlay();
+  });
   canvas.addEventListener('click', () => { if (!locked && game.started) startPlay(); });
   document.addEventListener('pointerlockchange', () => { if (!locked) menuOnUnlock(); });
   // the editor and its test runs pause into the editor's own panel
@@ -4719,12 +4802,126 @@ body.editing.playing #edhelp { display: block; }
     catch (e) { $('cm-dmsg').textContent = e.message; }
   });
 
+  // ------------------------------------------------------------ daily challenge
+  // One level a day, the same for everyone, picked by the server from the
+  // built-in levels and the top rated community levels, with a board of its
+  // own that starts fresh at midnight UTC. Every run you finish on that level
+  // that day counts (the server files it on the daily board too). The streak
+  // is the days in a row you've finished it, kept on this device.
+  const DAILY_KEY = 'strafe.daily.v1';
+  const daily = { days: (load(DAILY_KEY) || {}).days || {}, data: null, at: 0, skew: 0, token: 0 };
+  const utcDay = (ms) => new Date(ms).toISOString().slice(0, 10);
+  const dailyNow = () => Date.now() + daily.skew;
+  const dailyLive = () => !!daily.data && dailyNow() < daily.data.ends;
+  // the game's name for the server's level: a built-in level, or "c:<id>"
+  const dailyCourse = (d) => !d ? null : isCommunity(d.course) ? d.course : LEVEL_ORDER.find(c => lbKey(c) === d.course) || null;
+  const dailyName = (d) => d.level ? d.level.name : dailyCourse(d) && !isCommunity(dailyCourse(d)) ? rowCourse(dailyCourse(d)).name : d.name || 'Community level';
+  async function dailyLoad(fresh) {
+    if (!fresh && dailyLive() && Date.now() - daily.at < 60000) return daily.data;
+    const d = await api('/daily' + (net.id ? '?me=' + encodeURIComponent(net.id) : ''));
+    Object.assign(daily, { data: d, at: Date.now(), skew: d.now - Date.now() });
+    dailySub();
+    return d;
+  }
+  function dailyStreak() {
+    let n = 0, t = dailyNow();
+    if (!daily.days[utcDay(t)]) t -= 86400000; // today isn't done yet: count up to yesterday
+    while (daily.days[utcDay(t)]) { n++; t -= 86400000; }
+    return n;
+  }
+  function dailySub() {
+    const el = $('m-daily-sub'), d = daily.data;
+    if (!el) return;
+    const n = dailyStreak();
+    el.textContent = net.ok === false ? 'Needs the Strafe server' : !d || !dailyLive() ? 'One level a day' :
+      (daily.days[d.day] ? 'Done today' : 'Today: ' + dailyName(d)) + (n > 1 ? ' · ' + n + ' day streak' : '');
+  }
+  function dailyFinish(course, ticks) {
+    const d = daily.data;
+    if (!dailyLive() || dailyCourse(d) !== course) return;
+    if (!daily.days[d.day] || ticks < daily.days[d.day]) {
+      daily.days[d.day] = ticks;
+      const keep = Object.keys(daily.days).sort().slice(-120); // a few months is plenty for a streak
+      daily.days = Object.fromEntries(keep.map(k => [k, daily.days[k]]));
+      save(DAILY_KEY, { days: daily.days });
+    }
+    if (dailyStreak() > 1) setTimeout(() => toast('Daily done · ' + dailyStreak() + ' day streak', 2400), 1200);
+    dailySub();
+  }
+  async function dailyOpen() {
+    const off = net.ok === false;
+    $('dy-off').hidden = !off;
+    $('dy-body').hidden = off;
+    if (off) return;
+    const token = ++daily.token;
+    $('dy-msg').textContent = '';
+    if (daily.data) dailyRender(); else { $('dy-name').textContent = 'Loading…'; $('dy-play').disabled = true; }
+    $('dy-boardmsg').textContent = 'Loading…';
+    try { await dailyLoad(true); } catch (e) { if (token === daily.token) $('dy-boardmsg').textContent = 'Could not load today\'s challenge.'; return; }
+    if (token !== daily.token) return;
+    dailyRender();
+  }
+  function dailyLeft() {
+    const ms = Math.max(0, daily.data.ends - dailyNow()), h = Math.floor(ms / 3600000), m = Math.floor(ms / 60000) % 60;
+    return h ? h + 'h ' + m + 'm' : m ? m + 'm' : '<1m';
+  }
+  function dailyRender() {
+    const d = daily.data, c = dailyCourse(d), local = daily.days[d.day];
+    $('dy-date').textContent = new Date(d.ends - 43200000).toLocaleDateString(undefined, { weekday: 'long', day: 'numeric', month: 'long', timeZone: 'UTC' });
+    $('dy-name').textContent = dailyName(d);
+    $('dy-meta').textContent = d.level ? 'Community level by ' + d.level.author + ' · 👍 ' + d.level.likes + ' · ' + d.level.pieces + ' pieces' :
+      c ? 'Built-in level · ' + rowCourse(c).stages + (rowCourse(c).stages === 1 ? ' stage' : ' stages') + (best[c] ? ' · your best ever ' + fmt(best[c]) : '') : 'This level isn\'t in your version of the game yet.';
+    $('dy-play').disabled = !c || (isCommunity(c) && !d.level);
+    $('dy-mine').textContent = d.mine ? fmt(d.mine.ticks) + ' · #' + d.mine.rank : local ? fmt(local) : 'No run yet';
+    const n = dailyStreak();
+    $('dy-streak').textContent = n + (n === 1 ? ' day' : ' days');
+    $('dy-left').textContent = dailyLeft();
+    const ol = $('dy-board');
+    ol.textContent = '';
+    for (const r of d.rows) {
+      const btns = document.createElement('span');
+      btns.className = 'rowbtns';
+      if (r.ghost && r.id !== net.id && c) {
+        const b = document.createElement('button'); b.className = 'ghost small'; b.textContent = 'Race'; b.title = 'Race this ghost';
+        b.addEventListener('click', async () => {
+          try {
+            const g = await api('/ghost?course=' + encodeURIComponent('d:' + d.day) + '&id=' + encodeURIComponent(r.id));
+            if (await dailyPlay(g.ghost)) toast('Racing ' + r.name + "'s ghost (" + fmt(g.ticks) + ')', 2600);
+          } catch (e) { $('dy-boardmsg').textContent = 'Could not load that ghost.'; }
+        });
+        btns.appendChild(b);
+      }
+      ol.appendChild(boardRow(r, net.id, btns));
+    }
+    $('dy-boardmsg').textContent = !d.total ? 'No times yet today. Set the first.' :
+      (d.mine && d.mine.rank > d.rows.length ? 'You are #' + d.mine.rank + ' of ' + d.total + '. ' : d.total + (d.total === 1 ? ' runner' : ' runners') + ' today. ') +
+      (!canPost() ? 'Your air acceleration is not ' + LB_AA + ', so your runs are not posted.' : !net.token ? 'Pick a name under Online to post your time.' : '');
+  }
+  // start today's level, optionally racing a ghost from its board
+  async function dailyPlay(raceWith) {
+    const d = daily.data, c = dailyCourse(d);
+    if (!c || !dailyLive()) { $('dy-msg').textContent = 'That challenge is over. Here is today\'s.'; dailyOpen(); return false; }
+    if (game.practice) setPractice(false); // practice runs don't count
+    if (isCommunity(c)) {
+      if (!d.level || !(await cmPlay(d.level, raceWith))) { $('dy-msg').textContent = 'This level did not load.'; return false; }
+      return true;
+    }
+    if (ed.on || ed.testing) exitEditor();
+    ghost.useRemote(raceWith ? c : null, raceWith || null);
+    selected = c;
+    if (game.course === c) goCourse(c); // start it fresh rather than resume
+    playSelected();
+    return true;
+  }
+  $('dy-play').addEventListener('click', () => { A.init(); A.play('click'); dailyPlay(); });
+  setInterval(() => { if (daily.data && !$('dy-body').closest('[data-pane]').hidden && !drawer.hidden) $('dy-left').textContent = dailyLeft(); }, 15000);
+
   // ------------------------------------------------------------ boot
   goIdle();
   previewCourse(map.order[0]);
   showMenuState();
   if (location.hash === '#demo') game.demo = true; // headless screenshot mode
-  window.__strafe = { courses: map.courses, mats: MATS, lights: { hemi, sun }, setNight, player, game, keys, eff, faceInsets, practice: { set: setPractice, save: practiceSave, load: practiceLoad }, goCourse, place, attract, previewCourse, body, ghost, cosmetics, preview, step, modelChunks, renderer, setView: (y, p) => { yaw = y; pitch = p; }, editor: { ed, enter: enterEditor, test: edTest, back: edBack, code: edCode, decode: edDecode, publish: edPublish }, community: { cm, open: cmOpen, show: cmShow, play: cmPlay },
+  window.__strafe = { courses: map.courses, mats: MATS, lights: { hemi, sun }, setNight, player, game, keys, eff, faceInsets, practice: { set: setPractice, save: practiceSave, load: practiceLoad }, goCourse, place, attract, previewCourse, body, ghost, cosmetics, preview, step, modelChunks, renderer, setView: (y, p) => { yaw = y; pitch = p; }, editor: { ed, enter: enterEditor, test: edTest, back: edBack, code: edCode, decode: edDecode, publish: edPublish }, community: { cm, open: cmOpen, show: cmShow, play: cmPlay }, daily: { daily, open: dailyOpen, play: dailyPlay, load: dailyLoad, finish: dailyFinish }, practiceJump,
     online: { net, race, submit: netSubmit, raceFinish, showComplete, openDrawer },
     replay: { state: replay, open: replayOpen, close: replayClose, watchBest }, career, binds: { binds, set: (id, code) => { rebinding = id; setBind(code); }, keyName }, settings, applyColors, saved: { save: saveLastRun, render: replaysRender } };
   requestAnimationFrame((t) => { last = t; frame(t); });

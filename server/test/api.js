@@ -43,6 +43,18 @@ check('board order', mine.length === 2 && mine[0].name === 'Ana ' + tag && mine[
 const gh = await call('/api/ghost?course=' + run.key + '&id=' + a.body.id);
 check('ghost download', gh.status === 200 && gh.body.ghost.s.length === s.length && gh.body.name === 'Ana ' + tag);
 
+// the daily challenge (a local server run with --var DAILY_FORCE:g1_v2 pins it to this run's level)
+const dl = await call('/api/daily?me=' + a.body.id);
+check('daily', dl.status === 200 && /^\d{4}-\d\d-\d\d$/.test(dl.body.day) && typeof dl.body.course === 'string' && dl.body.ends > dl.body.now && Array.isArray(dl.body.rows), JSON.stringify(dl.body).slice(0, 200));
+check('daily stays put', (await call('/api/daily')).body.course === dl.body.course);
+if (dl.body.course === run.key) {
+  check('run counts on the daily board', r1.body.daily && r1.body.daily.mine.ticks === run.ticks && dl.body.mine.ticks === run.ticks, JSON.stringify(r1.body.daily));
+  const db = await call('/api/board?course=d:' + dl.body.day);
+  check('daily board', db.status === 200 && db.body.rows.some(r => r.id === a.body.id));
+  check('daily ghost', (await call('/api/ghost?course=d:' + dl.body.day + '&id=' + a.body.id)).status === 200);
+} else check('other levels skip the daily board', r1.body.daily === null, JSON.stringify(r1.body.daily));
+check('no posting to the daily board directly', (await call('/api/run', { course: 'd:' + dl.body.day, ticks: run.ticks, ghost: g }, a.body.token)).status === 400);
+
 // rename and import
 check('rename', (await call('/api/name', { name: 'Anna ' + tag }, a.body.token)).body.name === 'Anna ' + tag);
 check('rename to taken', (await call('/api/name', { name: 'ben ' + tag }, a.body.token)).status === 409);

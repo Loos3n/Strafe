@@ -38,6 +38,9 @@ const token = (n) => hex(crypto.getRandomValues(new Uint8Array(n)));
 const LEVEL_ID = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 const levelId = () => [...crypto.getRandomValues(new Uint8Array(6))].map(b => LEVEL_ID[b % 32]).join('');
 const PAGE = 30;
+const DAILY_LIKES = 2, DAILY_COMMUNITY = 10;
+const dayOf = (ms) => new Date(ms).toISOString().slice(0, 10);
+const dayHash = (day) => { let h = 2166136261; for (const c of day) h = Math.imul(h ^ c.charCodeAt(0), 16777619) >>> 0; return h; };
 
 export class Board extends DurableObject {
   constructor(ctx, env) {
@@ -54,7 +57,9 @@ export class Board extends DurableObject {
       CREATE INDEX IF NOT EXISTS levels_new ON levels (created DESC);
       CREATE INDEX IF NOT EXISTS levels_author ON levels (author);
       CREATE TABLE IF NOT EXISTS likes (level TEXT NOT NULL, player TEXT NOT NULL, PRIMARY KEY (level, player));
+      CREATE TABLE IF NOT EXISTS daily (day TEXT PRIMARY KEY, course TEXT NOT NULL);
     `);
+    this.force = env && env.DAILY_FORCE; // local tests pin the daily level
     this.checks = new Map(); // community level run checks, parsed once
     this.hits = new Map(); // rate limits, kept in memory
     // once: clear the test players posted while setting the server up
@@ -85,6 +90,8 @@ export class Board extends DurableObject {
   levelFor(course) {
     if (typeof course !== 'string') return null;
     if (LEVELS[course]) return LEVELS[course];
+    const d = course.match(/^d:(\d{4}-\d\d-\d\d)$/);
+    if (d) { const r = this.one('SELECT course FROM daily WHERE day = ?', d[1]); return r ? this.levelFor(r.course) : null; }
     if (!/^c:[A-Z0-9]{6}$/.test(course)) return null;
     if (!this.checks.has(course)) {
       const r = this.one('SELECT chk FROM levels WHERE id = ?', course.slice(2));
@@ -102,7 +109,39 @@ export class Board extends DurableObject {
       FROM levels l JOIN players p ON p.id = l.author ${where} ORDER BY ${order} LIMIT ? OFFSET ?`, me || '', ...args, limit, offset).toArray()
       .map(r => Object.assign(r, { liked: !!r.liked }));
   }
+  // The daily challenge: one level per UTC day, the same for everyone, with
+  // its own board under "d:<day>". It's picked the first time anyone asks
+  // that day, from the built-in levels and the top rated community levels,
+  // by a hash of the date (never the same level two days running), then kept.
+  dailyFor(day) {
+    const have = this.one('SELECT course FROM daily WHERE day = ?', day);
+    if (have) return have.course;
+    const pool = Object.keys(LEVELS).filter(k => k !== 'tutorial')
+      .concat(this.sql.exec('SELECT id FROM levels WHERE likes >= ? ORDER BY likes DESC, plays DESC, created LIMIT ?', DAILY_LIKES, DAILY_COMMUNITY).toArray().map(r => 'c:' + r.id));
+    const prev = this.one('SELECT course FROM daily WHERE day = ?', dayOf(Date.parse(day) - 86400000));
+    let i = dayHash(day) % pool.length;
+    if (prev && pool[i] === prev.course) i = (i + 1) % pool.length;
+    const course = this.force && this.levelFor(this.force) ? this.force : pool[i];
+    this.sql.exec('INSERT INTO daily (day, course) VALUES (?, ?)', day, course);
+    return course;
+  }
+  // a run on today's daily level also goes on the daily board
+  dailyRun(course, player, ticks, ghost) {
+    const day = dayOf(Date.now());
+    if (this.dailyFor(day) !== course) return null;
+    const key = 'd:' + day, cur = this.one('SELECT ticks FROM times WHERE course = ? AND player = ?', key, player);
+    if (!cur || ticks < cur.ticks) {
+      this.sql.exec('INSERT OR REPLACE INTO times (course, player, ticks, at, legacy) VALUES (?, ?, ?, ?, 0)', key, player, ticks, Date.now());
+      this.sql.exec('INSERT OR REPLACE INTO ghosts (course, player, data) VALUES (?, ?, ?)', key, player, JSON.stringify({ e: ghost.e, s: ghost.s }));
+    }
+    return { day, best: !cur || ticks < cur.ticks, total: this.total(key), mine: this.standing(key, player) };
+  }
   dropLevel(id) {
+    // a daily that was this level goes too, so today's gets picked again
+    for (const r of this.sql.exec('SELECT day FROM daily WHERE course = ?', 'c:' + id).toArray()) {
+      for (const q of ['DELETE FROM times WHERE course = ?', 'DELETE FROM ghosts WHERE course = ?']) this.sql.exec(q, 'd:' + r.day);
+      this.sql.exec('DELETE FROM daily WHERE day = ?', r.day);
+    }
     for (const q of ['DELETE FROM times WHERE course = ?', 'DELETE FROM ghosts WHERE course = ?']) this.sql.exec(q, 'c:' + id);
     this.sql.exec('DELETE FROM likes WHERE level = ?', id);
     this.sql.exec('DELETE FROM levels WHERE id = ?', id);
@@ -162,6 +201,23 @@ export class Board extends DurableObject {
       row.code = this.one('SELECT code FROM levels WHERE id = ?', id).code;
       return json(row);
     }
+    // today's daily challenge with its board
+    if (path === '/daily' && req.method === 'GET') {
+      const now = Date.now(), day = dayOf(now), course = this.dailyFor(day), key = 'd:' + day;
+      const out = { day, course, ends: Date.parse(day) + 86400000, now };
+      if (course.startsWith('c:')) {
+        const [row] = this.levelRows('WHERE l.id = ?', [course.slice(2)], 'l.id', 1, 0, url.searchParams.get('me'));
+        if (row) { row.code = this.one('SELECT code FROM levels WHERE id = ?', row.id).code; out.level = row; }
+      } else out.name = LEVELS[course].name;
+      const me = url.searchParams.get('me');
+      out.rows = this.sql.exec(`SELECT t.player AS id, p.name, t.ticks, g.player IS NOT NULL AS ghost
+        FROM times t JOIN players p ON p.id = t.player LEFT JOIN ghosts g ON g.course = t.course AND g.player = t.player
+        WHERE t.course = ? ORDER BY t.ticks, t.at LIMIT 50`, key).toArray()
+        .map((r, i) => ({ rank: i + 1, id: r.id, name: r.name, ticks: r.ticks, ghost: !!r.ghost }));
+      out.total = this.total(key);
+      out.mine = me ? this.standing(key, me) : null;
+      return json(out);
+    }
     if (path === '/register' && req.method === 'POST') {
       const name = cleanName(body.name);
       if (!name) return fail('Names are 2 to 16 letters, numbers, spaces, dots, dashes or underscores.');
@@ -190,6 +246,7 @@ export class Board extends DurableObject {
     if (path === '/run' && req.method === 'POST') {
       const { course, ticks, ghost } = body;
       if (this.limited('run:' + me.id, 30, 60000)) return fail('slow down', 429);
+      if (typeof course === 'string' && course.startsWith('d:')) return fail('Post the level, not the daily board.');
       const err = checkRun(this.levelFor(course), ticks, ghost);
       if (err) return fail('Run not accepted: ' + err + '.', 422);
       const cur = this.one('SELECT ticks, legacy FROM times WHERE course = ? AND player = ?', course, me.id);
@@ -198,7 +255,7 @@ export class Board extends DurableObject {
         this.sql.exec('INSERT OR REPLACE INTO times (course, player, ticks, at, legacy) VALUES (?, ?, ?, ?, 0)', course, me.id, ticks, Date.now());
         this.sql.exec('INSERT OR REPLACE INTO ghosts (course, player, data) VALUES (?, ?, ?)', course, me.id, JSON.stringify({ e: ghost.e, s: ghost.s }));
       }
-      return json({ best: better, total: this.total(course), mine: this.standing(course, me.id) });
+      return json({ best: better, total: this.total(course), mine: this.standing(course, me.id), daily: this.dailyRun(course, me.id, ticks, ghost) });
     }
     // once per player: bring over best times set before the online board
     // existed, which have no replay to check. They show as older times.

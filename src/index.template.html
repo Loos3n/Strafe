@@ -320,8 +320,10 @@ table.controls { width: 100%; border-collapse: collapse; font-size: 14px; margin
 .back:focus-visible { outline: 2px solid var(--red); outline-offset: 2px; }
 #menu.paused .tagline, #menu.paused .tsfoot { display: none; }
 #menu.paused .mark.big { font-size: clamp(48px, min(8vw, 11vh), 110px); }
-#menu.paused .mbtn span { font-size: clamp(20px, min(3.2vw, 4vh), 36px); }
-#menu.paused .mbtn { padding-top: 4px; padding-bottom: 4px; }
+#menu.paused .mbtn span { font-size: clamp(18px, min(3.2vw, 3.4vh), 36px); }
+#menu.paused .mbtn { padding-top: 3px; padding-bottom: 3px; }
+/* the pause menu has the most entries: on shorter screens it drops the logo to fit */
+@media (max-height: 900px) { #menu.paused .logo { display: none; } }
 @media (max-height: 640px) { .tsfoot { display: none; } .ts { gap: 10px; } }
 @media (max-width: 720px) {
   #menu[data-screen="title"]::before { background: linear-gradient(to right, rgba(8,10,13,.88), rgba(8,10,13,.7)); }
@@ -407,6 +409,10 @@ body[data-colors=contrast] { --ahead: #5cf2ff; --behind: #ff4df0; }
 .raceplayers .r, .onboard .r { font-family: var(--display); font-weight: 700; color: rgba(236,240,244,.6); text-align: right; }
 .raceplayers .n, .onboard .n { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .raceplayers .t, .onboard .t { font-family: var(--display); font-weight: 700; font-variant-numeric: tabular-nums; }
+.dystats { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; margin: 12px 0 4px; }
+.dystats div { background: rgba(255,255,255,.05); padding: 8px 10px; }
+.dystats dt { font-size: 11px; letter-spacing: .14em; text-transform: uppercase; color: rgba(236,240,244,.6); }
+.dystats dd { margin: 2px 0 0; font-family: var(--display); font-weight: 700; font-size: 18px; font-variant-numeric: tabular-nums; }
 .onboard .old { font-size: 11px; color: rgba(236,240,244,.5); }
 /* community levels */
 .cmtabs { display: flex; gap: 6px; margin: 4px 0 8px; }
@@ -446,7 +452,7 @@ body.touch #racehud { top: calc(56px + env(safe-area-inset-top, 0px)); left: 10p
 <div class="hud" id="top">
   <div id="timer"></div>
   <div id="courseline"><span id="course"></span><span id="stage"></span><span id="best"></span></div>
-  <div id="practice" hidden>Practice <b>Z</b> save <b>X</b> load <b>P</b> off</div>
+  <div id="practice" hidden>Practice <b data-key="psave">Z</b> save <b data-key="pload">X</b> load <b data-key="pnext">G</b> next CP <b data-key="practice">P</b> off</div>
   <div id="ghostgap"></div>
   <div id="split" aria-live="polite"><span id="split-label"></span><span id="split-time"></span><span id="split-delta"></span></div>
 </div>
@@ -489,8 +495,10 @@ body.touch #racehud { top: calc(56px + env(safe-area-inset-top, 0px)); left: 10p
     <nav class="mainnav" id="mainnav" aria-label="Main menu">
       <button class="mbtn primary" id="m-resume" hidden><span>Resume</span></button>
       <button class="mbtn" id="m-restart" hidden><span>Restart level</span></button>
+      <button class="mbtn" id="m-practice" hidden><span>Practice mode</span><small id="m-practice-sub"></small></button>
       <button class="mbtn" data-open="story" aria-expanded="false" aria-controls="drawer"><span>Story</span><small id="m-story-sub"></small></button>
       <button class="mbtn" id="m-play"><span>Play</span><small id="m-play-sub"></small></button>
+      <button class="mbtn" data-open="daily" aria-expanded="false" aria-controls="drawer"><span>Daily challenge</span><small id="m-daily-sub">One level a day</small></button>
       <button class="mbtn" id="m-tutorial"><span>Tutorial</span><small id="m-tut-sub"></small></button>
       <button class="mbtn" data-open="online" aria-expanded="false" aria-controls="drawer"><span>Online</span><small id="m-online-sub">Top times and races</small></button>
       <button class="mbtn" data-open="replays" aria-expanded="false" aria-controls="drawer"><span>Replays</span><small>Saved runs and bests</small></button>
@@ -527,6 +535,7 @@ body.touch #racehud { top: calc(56px + env(safe-area-inset-top, 0px)); left: 10p
       <button id="play">Play <kbd>Enter</kbd></button>
       <button class="ghost" id="resume" hidden>Resume</button>
       <button class="ghost" id="restart" hidden>Restart</button>
+      <button class="ghost" id="practice-play">Practice</button>
       <button class="ghost" id="watch" hidden>Watch best run</button>
           </div>
   </section>
@@ -712,6 +721,27 @@ body.touch #racehud { top: calc(56px + env(safe-area-inset-top, 0px)); left: 10p
         </div>
       </div>
     </div>
+    <div data-pane="daily" hidden>
+      <div class="group" id="dy-off" hidden><p class="onmsg">Can't reach the Strafe server from here, so the daily challenge is off. You can play it at <a href="https://strafe-online.strafe-game.workers.dev" target="_blank" rel="noopener">strafe-online.strafe-game.workers.dev</a>.</p></div>
+      <div id="dy-body">
+        <p class="label" id="dy-date"></p>
+        <h3 class="cmname" id="dy-name"></h3>
+        <p class="onmsg" id="dy-meta"></p>
+        <div class="onrow"><button class="cprimary" id="dy-play">Play today's level</button></div>
+        <p class="onmsg" id="dy-msg"></p>
+        <dl class="dystats">
+          <div><dt>Your time</dt><dd id="dy-mine"></dd></div>
+          <div><dt>Streak</dt><dd id="dy-streak"></dd></div>
+          <div><dt>Next level in</dt><dd id="dy-left"></dd></div>
+        </dl>
+        <div class="group">
+          <p class="label">Today's board</p>
+          <ol class="onboard" id="dy-board"></ol>
+          <p class="onmsg" id="dy-boardmsg"></p>
+        </div>
+        <p class="onmsg">Everyone gets the same level, picked from the built-in levels and the top rated community levels. Every run you finish on it today counts, and your best stays on the board. A new level comes up at midnight UTC. Your streak counts the days in a row you've finished it.</p>
+      </div>
+    </div>
     <div data-pane="community" hidden>
       <div class="group" id="cm-off" hidden><p class="onmsg">Can't reach the Strafe server from here, so community levels are off. You can play them at <a href="https://strafe-online.strafe-game.workers.dev" target="_blank" rel="noopener">strafe-online.strafe-game.workers.dev</a>.</p></div>
       <div id="cm-listview">
@@ -753,8 +783,9 @@ body.touch #racehud { top: calc(56px + env(safe-area-inset-top, 0px)); left: 10p
           <tr><td>Crouch on landing</td><td>Roll out of a big drop.</td></tr>
           <tr><td><span data-key="restart">R</span> / <span data-key="respawn">F</span></td><td>Restart level, last checkpoint.</td></tr>
           <tr><td data-key="practice">P</td><td>Practice mode. <span data-key="psave">Z</span> saves your exact spot and speed, <span data-key="pload">X</span> (or <span data-key="respawn">F</span>, or falling) puts you back. Practice runs are not recorded.</td></tr>
+          <tr><td><span data-key="pprev">B</span> / <span data-key="pnext">G</span></td><td>Practice: jump to the previous or next checkpoint and save there. Checkpoints show the time for that stretch against your best this session.</td></tr>
           <tr><td><span data-key="mute">M</span> / Esc</td><td>Mute sound. Open this menu. In the menu, arrow keys pick a level and Enter plays it.</td></tr>
-          <tr><td>Controller</td><td>Left stick moves, right stick looks. A or LB jumps (hold to hop), B, LT or right stick click crouches. X back to checkpoint, View restarts, Menu pauses. In menus, D-pad moves, A picks, B goes back. Auto strafe (Settings) presses A or D in the air as you turn.</td></tr>
+          <tr><td>Controller</td><td>Left stick moves, right stick looks. A or LB jumps (hold to hop), B, LT or right stick click crouches. X back to checkpoint, View restarts, Menu pauses. In practice mode (pause menu), Y saves, X loads and D-pad left and right skip between checkpoints. In menus, D-pad moves, A picks, B goes back. Auto strafe (Settings) presses A or D in the air as you turn.</td></tr>
         </table>
       </div>
   </div>
