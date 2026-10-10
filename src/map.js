@@ -1190,5 +1190,28 @@
     return { world, courses, order, gauntlet: gauntletOrder, night: nightOrder, hubSpawn, COLORS };
   }
 
-  root.StrafeMap = { buildMap };
+  // Falling off. For any spot, the lowest a rider can be while still on the course near it:
+  // a coarse grid holding, per cell, the lowest piece within REACH of it. Flat pieces count
+  // from just under their top and sloped ones (surf ramps) from their bottom edge. Skyline
+  // buildings, streets and pools don't count: they are scenery, so landing on one is a fall too.
+  // at(x, z) is null away from every piece.
+  const isScenery = (props) => !!(props.far || props.nonsolid || props.kind === 'street');
+  function fallGrid(brushes) {
+    const CELL = 500, REACH = 1500, cells = new Map();
+    const key = (i, j) => i * 4096 + j; // j stays well inside +-2048 cells (+-1M units)
+    for (const b of brushes) {
+      if (isScenery(b.props)) continue;
+      const sloped = b.faces.some(f => Math.abs(f.n[1]) > 0.05 && Math.abs(f.n[1]) < 0.95);
+      const low = sloped ? b.min[1] : Math.max(b.min[1], b.max[1] - 400);
+      const i0 = Math.floor((b.min[0] - REACH) / CELL), i1 = Math.floor((b.max[0] + REACH) / CELL);
+      const j0 = Math.floor((b.min[2] - REACH) / CELL), j1 = Math.floor((b.max[2] + REACH) / CELL);
+      for (let i = i0; i <= i1; i++) for (let j = j0; j <= j1; j++) {
+        const k = key(i, j), v = cells.get(k);
+        if (v === undefined || low < v) cells.set(k, low);
+      }
+    }
+    return { at(x, z) { const v = cells.get(key(Math.floor(x / CELL), Math.floor(z / CELL))); return v === undefined ? null : v; } };
+  }
+
+  root.StrafeMap = { buildMap, fallGrid, isScenery };
 })(typeof window !== 'undefined' ? window : globalThis);

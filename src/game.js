@@ -1363,6 +1363,7 @@ body.touch #menu button, body.touch #drawer button { min-height: 40px; }
 
   function place(spawn) {
     player.reset(spawn.pos, spawn.yaw);
+    game.fallY = null;
     yaw = spawn.yaw; pitch = 0; turnLeft = 0;
     prev.pos = player.pos.slice(); prev.eye = player.viewOffset;
     cam.dip = 0; cam.roll = 0;
@@ -1434,7 +1435,7 @@ body.touch #menu button, body.touch #drawer button { min-height: 40px; }
     if (!game.practice) { toast('Press ' + keyName(binds.practice) + ' for practice mode to use save points'); return; }
     const st = {};
     for (const k of SAVED) st[k] = copyState(player[k]);
-    game.save = { id: ++game.saves, st, yaw, pitch, cp: game.cp, cpSpawn: game.cpSpawn, running: game.running,
+    game.save = { id: ++game.saves, st, yaw, pitch, cp: game.cp, fallY: game.fallY, cpSpawn: game.cpSpawn, running: game.running,
       elapsed: game.running ? game.tick - game.startTick : 0, splits: game.run ? copyState(game.run.splits) : {} };
     if (quiet === true) return;
     toast('Saved');
@@ -1488,7 +1489,7 @@ body.touch #menu button, body.touch #drawer button { min-height: 40px; }
     player.yaw = yaw; player.pitch = pitch;
     prev.pos = player.pos.slice(); prev.eye = player.viewOffset;
     cam.dip = 0; cam.dipVel = 0; cam.roll = 0;
-    game.cp = sv.cp; game.cpSpawn = sv.cpSpawn; game.finished = null;
+    game.cp = sv.cp; game.fallY = sv.fallY; game.cpSpawn = sv.cpSpawn; game.finished = null;
     game.running = sv.running; game.inStart = false;
     if (sv.running) { game.startTick = game.tick - sv.elapsed; game.run = { top: 0, dist: 0, jumps: 0, splits: copyState(sv.splits) }; }
     game.seg = { from: sv.from || 'save' + sv.id, tick: game.tick };
@@ -1498,7 +1499,25 @@ body.touch #menu button, body.touch #drawer button { min-height: 40px; }
     A.play('respawn');
   }
 
+  // Falling off: once you're FALL_DROP below the course pieces around you, or, off the side
+  // of the course, below the last ones you were near, or standing on the scenery (a street, a
+  // skyline roof). The kill volumes under each level only reach so far, so a fall past their
+  // edge used to drop forever or land on the scenery and stay there.
+  const FALL_DROP = 700;
+  const fallBuiltIn = window.StrafeMap.fallGrid(world.brushes);
+  let fallUser = null; // the loaded player-made level's, rebuilt with it
+  function fellOff() {
+    const p = player.pos;
+    let f = fallBuiltIn.at(p[0], p[2]);
+    const u = fallUser ? fallUser.at(p[0], p[2]) : null;
+    if (u !== null && (f === null || u < f)) f = u;
+    if (f !== null) game.fallY = f;
+    if (player.onGround && player.groundBrush && window.StrafeMap.isScenery(player.groundBrush.props)) return true;
+    return game.fallY != null && p[1] < game.fallY - FALL_DROP;
+  }
+
   function handleTriggers() {
+    if (game.course && fellOff()) { careerCount('falls'); respawn(); return; }
     let inStart = false;
     for (const t of player.triggersTouching()) {
       if (t.type === 'teleport') { goCourse(t.course); return; }
@@ -4287,6 +4306,7 @@ body.touch #menu button, body.touch #drawer button { min-height: 40px; }
         else world.addTrigger(tmin, tmax, { type: 'end', course: id, custom: true });
       }
     });
+    fallUser = window.StrafeMap.fallGrid(world.brushes.filter(b => b.props.custom));
     if (L.pieces.length) world.addTrigger([box[0] - 20000, lowY - 4000, box[1] - 20000], [box[2] + 20000, lowY - 1500, box[3] + 20000], { type: 'kill', custom: true });
     map.courses[id] = { name: L.name || 'Custom level', spawn: start || { pos: [EDO[0], EDO[1] + 200, EDO[2]], yaw: 0 }, stages: cps + 1, color: 0xe5533d, custom: true, hasStart: !!start,
       hasEnd: L.pieces.some(p => p.t === 'finish') };
