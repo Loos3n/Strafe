@@ -79,7 +79,8 @@
   // which is the platinum (shown as Author).
   const MEDALS = [{ k: 'plat', n: 'Platinum' }, { k: 'gold', n: 'Gold' }, { k: 'silver', n: 'Silver' }, { k: 'bronze', n: 'Bronze' }];
   const MEDAL_PAR = { surf: 62.4, bhop: 55.3, roofs: 76.3, canyon: 62.7, stairway: 53.4, crossover: 65.1, downtown: 77.5, cascade: 25.3, spire: 62.0, freerun: 62.3,
-    g1: 24.8, g2: 32.4, g3: 48.4, g4: 49.6, g5: 58.7, g6: 74.0, n1: 31.9, n2: 33.9, n3: 45.0, n4: 44.6, n5: 71.2, n6: 79.6 };
+    g1: 24.8, g2: 32.4, g3: 48.4, g4: 49.6, g5: 58.7, g6: 74.0, n1: 31.9, n2: 33.9, n3: 45.0, n4: 44.6, n5: 71.2, n6: 79.6,
+    h1: 59.3, h2: 59.3, h3: 53.1, h4: 58.6, h5: 69.8, h6: 74.2 };
   const communityAuthor = {}; // community course -> its maker's time, from the server
   // [platinum, gold, silver, bronze] in ticks, or null for levels without medals
   function medalTimes(course) {
@@ -152,10 +153,10 @@
     new THREE.ShaderMaterial({
       side: THREE.BackSide, depthWrite: false, fog: false,
       uniforms: { sun: { value: sunDir }, zenith: { value: new THREE.Color(0x3d8fd6) }, horizon: { value: HORIZON }, ground: { value: new THREE.Color(0xb9c9d3) },
-        cloud: { value: new THREE.Color(0xfffdf7) }, night: { value: 0 } },
+        cloud: { value: new THREE.Color(0xfffdf7) }, night: { value: 0 }, dusk: { value: 0 } },
       vertexShader: 'varying vec3 vDir; void main(){ vDir = normalize(position); gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); }',
       fragmentShader: [
-        'uniform vec3 sun; uniform vec3 zenith; uniform vec3 horizon; uniform vec3 ground; uniform vec3 cloud; uniform float night; varying vec3 vDir;',
+        'uniform vec3 sun; uniform vec3 zenith; uniform vec3 horizon; uniform vec3 ground; uniform vec3 cloud; uniform float night; uniform float dusk; varying vec3 vDir;',
         'void main(){ float h = vDir.y;',
         ' vec3 c = h > 0.0 ? mix(horizon, zenith, pow(h, 0.55)) : mix(horizon, ground, pow(-h, 0.4));',
         ' float s = max(dot(vDir, sun), 0.0);',
@@ -166,7 +167,10 @@
         // at night: stars on a fine grid, faded out low down and behind the clouds
         '   if (night > 0.0) { vec3 g = floor(vDir * 420.0); float r = fract(sin(dot(g, vec3(12.9898, 78.233, 37.719))) * 43758.5453);',
         '     c += vec3(0.9, 0.95, 1.0) * step(0.9965, r) * (r - 0.9965) * 300.0 * smoothstep(0.05, 0.35, h) * (1.0 - cl) * night; }',
-        '   c = mix(c, cloud, cl * 0.85); }',
+        // at dusk the clouds catch the low sun on the side facing it
+        '   c = mix(c, cloud * (1.0 + dusk * 0.5 * pow(s, 3.0)), cl * 0.85); }',
+        // and a wide warm glow spreads round the sun
+        ' c += vec3(1.0, 0.5, 0.22) * (pow(s, 5.0) * 0.45 + pow(s, 40.0) * 0.6) * dusk;',
         ' c += mix(vec3(1.0,0.95,0.85), vec3(0.85,0.9,1.0), night) * (pow(s, 900.0) * 1.4 + pow(s, 12.0) * 0.18 * (1.0 - night * 0.6));',
         ' gl_FragColor = vec4(c, 1.0); }',
       ].join('\n'),
@@ -396,26 +400,35 @@
     return 'concrete';
   }
 
-  // ------------------------------------------------------------ night
+  // ------------------------------------------------------------ night and dusk
   // The Night City levels swap the daylight for a dark sky with stars, a
-  // moon where the sun was, dim blue light, lit windows and neon.
+  // moon where the sun was, dim blue light, lit windows and neon. The Harbor
+  // levels are at dusk: a low orange sun, a purple sky, long shadows and the
+  // first windows lit.
   const DAY = { fog: 0xcfe3ef, near: 4000, far: 26000, zen: 0x3d8fd6, hor: 0xcfe3ef, gnd: 0xb9c9d3, cloud: 0xfffdf7, hs: 0xe6f2ff, hg: 0x8a8f99, hi: 0.72, sc: 0xfff6e8, si: 0.95, exp: 0.98 };
   const NIGHT = { fog: 0x0c1124, near: 2500, far: 21000, zen: 0x01030a, hor: 0x1b1f3d, gnd: 0x080a12, cloud: 0x161b30, hs: 0x5b6cab, hg: 0x2a1c34, hi: 0.2, sc: 0x9fb2ff, si: 0.12, exp: 1.0 };
-  let nightOn = false;
+  const DUSK = { fog: 0xd99a7c, near: 3500, far: 26000, zen: 0x27336e, hor: 0xf3a271, gnd: 0x4a3a46, cloud: 0xf7b18e, hs: 0xffcfae, hg: 0x5a4050, hi: 0.55, sc: 0xffa461, si: 1.15, exp: 1.0 };
+  const THEMES = { day: { L: DAY, env: 1, win: 0x000000, glass: 0x000000, sun: [0.45, 0.8, 0.35] },
+    night: { L: NIGHT, env: 0.12, win: 0xb3b3b3, glass: 0x999999, sun: [0.45, 0.8, 0.35] },
+    dusk: { L: DUSK, env: 0.55, win: 0x4d4d4d, glass: 0x3a3a3a, sun: [-0.62, 0.17, -0.77] } };
+  let theme = 'day';
   const envDay = new Map(Object.values(MATS).map(m => [m, m.envMapIntensity]));
-  function setNight(on) {
-    nightOn = on;
-    const L = on ? NIGHT : DAY, u = sky.material.uniforms;
+  function setTheme(name) {
+    theme = name;
+    const T = THEMES[name], L = T.L, u = sky.material.uniforms;
     scene.fog.color.set(L.fog); scene.fog.near = L.near; scene.fog.far = L.far;
-    u.zenith.value.set(L.zen); u.horizon.value.set(L.hor); u.ground.value.set(L.gnd); u.cloud.value.set(L.cloud); u.night.value = on ? 1 : 0;
+    u.zenith.value.set(L.zen); u.horizon.value.set(L.hor); u.ground.value.set(L.gnd); u.cloud.value.set(L.cloud);
+    u.night.value = name === 'night' ? 1 : 0; u.dusk.value = name === 'dusk' ? 1 : 0;
+    sunDir.set(T.sun[0], T.sun[1], T.sun[2]).normalize();
     hemi.color.set(L.hs); hemi.groundColor.set(L.hg); hemi.intensity = L.hi;
     sun.color.set(L.sc); sun.intensity = L.si;
     renderer.toneMappingExposure = L.exp;
-    for (const [m, v] of envDay) m.envMapIntensity = v * (on ? 0.12 : 1);
-    MATS.facade.emissive.set(on ? 0xb3b3b3 : 0x000000); MATS.glass.emissive.set(on ? 0x999999 : 0x000000);
+    for (const [m, v] of envDay) m.envMapIntensity = v * T.env;
+    MATS.facade.emissive.set(T.win); MATS.glass.emissive.set(T.glass);
     if (animated.lava) { animated.lava.uniforms.fogColor.value.set(L.fog); animated.lava.uniforms.fogNear.value = L.near; animated.lava.uniforms.fogFar.value = L.far; }
-    if (body.setNight) body.setNight(on);
+    if (body.setNight) body.setNight(name);
   }
+  const setNight = (on) => setTheme(on ? 'night' : 'day');
 
   // ------------------------------------------------------------ grounding
   // Visual only: nothing here collides. Every level stands on something. A
@@ -606,7 +619,8 @@
   const animated = { water: null, lava: null };
   {
     // the low city's plain blocks are drawn as models instead (see models below)
-    const solid = buildGeometry(b => !b.props.nonsolid && !b.props.door && !b.props.lowcity, bucketFor);
+    // (deco: visual-only dressing such as the harbor's cranes and railings, drawn but never collided with)
+    const solid = buildGeometry(b => (!b.props.nonsolid || b.props.deco) && !b.props.door && !b.props.lowcity, bucketFor);
     const edgeMat = new THREE.LineBasicMaterial({ color: 0x1b2530, transparent: true, opacity: 0.1 });
     for (const [name, part] of Object.entries(solid)) {
       const mesh = new THREE.Mesh(part.g, MATS[name]);
@@ -2331,7 +2345,12 @@ body.touch #menu button, body.touch #drawer button { min-height: 40px; }
     }
     function setAccent(c) { red.color.copy(lin(c)); shoe.color.copy(lin(c)); if (fp) fp.mats.joints.color.copy(lin(c)); }
     // night levels: moonlight with a little city glow
-    const setNight = (on) => { vHemi.color.set(on ? 0x8a9ad0 : 0xeef6ff); vHemi.groundColor.set(on ? 0x4a2a55 : 0x6f747d); vHemi.intensity = on ? 0.38 : 0.85; vSun.color.set(on ? 0xa8b8ff : 0xfff3e2); vSun.intensity = on ? 0.22 : 0.85; };
+    // (dusk: warm low light)
+    const setNight = (th) => {
+      const on = th === 'night' || th === true, dk = th === 'dusk';
+      vHemi.color.set(on ? 0x8a9ad0 : dk ? 0xffd7bd : 0xeef6ff); vHemi.groundColor.set(on ? 0x4a2a55 : dk ? 0x5a3f52 : 0x6f747d); vHemi.intensity = on ? 0.38 : dk ? 0.7 : 0.85;
+      vSun.color.set(on ? 0xa8b8ff : dk ? 0xffb27a : 0xfff3e2); vSun.intensity = on ? 0.22 : dk ? 0.8 : 0.85;
+    };
     return { update, render, resize, act, st, armsRoot, hips, setSkin, setAccent, setNight };
   })();
   cosmetics.apply();
@@ -2532,7 +2551,7 @@ body.touch #menu button, body.touch #drawer button { min-height: 40px; }
   }
 
   // ------------------------------------------------------------ level complete
-  const LEVEL_ORDER = ['tutorial'].concat(map.order, map.gauntlet, map.night);
+  const LEVEL_ORDER = ['tutorial'].concat(map.order, map.gauntlet, map.night, map.harbor);
   const completeEl = $('complete');
   let completeTimer = 0;
   function nextLevel(name) {
@@ -2924,8 +2943,9 @@ body.touch #menu button, body.touch #drawer button { min-height: 40px; }
     sky.position.copy(camera.position);
     // the Night City levels light the world for night
     const viewing = !locked && !game.demo && attract.active ? attract.course : game.course;
-    const wantNight = !!(viewing && map.courses[viewing] && map.courses[viewing].set === 'night');
-    if (wantNight !== nightOn) setNight(wantNight);
+    const vset = viewing && map.courses[viewing] && map.courses[viewing].set;
+    const want = vset === 'night' ? 'night' : vset === 'harbor' ? 'dusk' : 'day';
+    if (want !== theme) setTheme(want);
 
     const cp = camera.position;
     sun.position.set(cp.x + sunDir.x * 5000, cp.y + sunDir.y * 5000, cp.z + sunDir.z * 5000);
@@ -3741,8 +3761,9 @@ body.touch #menu button, body.touch #drawer button { min-height: 40px; }
   const attract = { active: true, course: map.order[0], hover: null, t0: 0, cycle: 0 };
   const flashEl = $('flash');
   const MENU_ROWS = [{ name: 'tutorial', key: 'T' }].concat(map.order.map((name, i) => ({ name, key: String((i + 1) % 10) })),
-    map.gauntlet.map((name, i) => ({ name, key: 'G' + (i + 1) })), map.night.map((name, i) => ({ name, key: 'N' + (i + 1) })));
-  const ALL_LEVELS = map.order.concat(map.gauntlet, map.night);
+    map.gauntlet.map((name, i) => ({ name, key: 'G' + (i + 1) })), map.night.map((name, i) => ({ name, key: 'N' + (i + 1) })),
+    map.harbor.map((name, i) => ({ name, key: 'H' + (i + 1) })));
+  const ALL_LEVELS = map.order.concat(map.gauntlet, map.night, map.harbor);
   // difficulty pips: five, or more for levels off the scale
   const pipHtml = (d, label) => '<span class="pips" aria-label="' + label + d + ' of ' + Math.max(5, d) + '">' +
     Array.from({ length: Math.max(5, d) }, (_, k) => '<i class="' + (k < d ? 'on' : '') + '"></i>').join('') + '</span>';
@@ -3754,7 +3775,7 @@ body.touch #menu button, body.touch #drawer button { min-height: 40px; }
     const c = rowCourse(name);
     const tutorial = name === 'tutorial';
     $('h-type').innerHTML = '<span class="chip" style="--c:' + hex(c.color) + '">' + c.type + '</span>' +
-      (tutorial ? 'Start here' : c.set === 'gauntlet' ? 'Gauntlet ' + (map.gauntlet.indexOf(name) + 1) + ' of 6' : c.set === 'night' ? 'Night City ' + (map.night.indexOf(name) + 1) + ' of 6' : map.order.indexOf(name) >= 6 ? 'Advanced' : 'Level ' + (map.order.indexOf(name) + 1));
+      (tutorial ? 'Start here' : c.set === 'gauntlet' ? 'Gauntlet ' + (map.gauntlet.indexOf(name) + 1) + ' of 6' : c.set === 'night' ? 'Night City ' + (map.night.indexOf(name) + 1) + ' of 6' : c.set === 'harbor' ? 'Harbor ' + (map.harbor.indexOf(name) + 1) + ' of 6' : map.order.indexOf(name) >= 6 ? 'Advanced' : 'Level ' + (map.order.indexOf(name) + 1));
     $('h-name').textContent = c.name;
     $('h-desc').textContent = c.desc;
     $('h-diff').innerHTML = c.difficulty ? pipHtml(c.difficulty, '') : (tutorial ? 'Easy' : 'None');
@@ -3816,14 +3837,14 @@ body.touch #menu button, body.touch #drawer button { min-height: 40px; }
     ol.textContent = '';
     MENU_ROWS.forEach((r, i) => {
       const c = rowCourse(r.name);
-      if (i === 7 || i === 11 || i === 17) { const sep = document.createElement('li'); sep.className = 'sep'; sep.setAttribute('aria-hidden', 'true'); ol.appendChild(sep); }
+      if (i === 7 || i === 11 || i === 17 || i === 23) { const sep = document.createElement('li'); sep.className = 'sep'; sep.setAttribute('aria-hidden', 'true'); ol.appendChild(sep); }
       const li = document.createElement('li');
       const b = document.createElement('button');
       b.className = 'card'; b.dataset.course = r.name;
       b.style.setProperty('--c', hex(c.color));
       const pips = c.difficulty ? pipHtml(c.difficulty, 'Difficulty ') : '<span>' + c.type + '</span>';
       const bt = best[r.name] ? fmt(best[r.name]) : '';
-      const adv = c.set === 'gauntlet' ? '<span class="adv">GAUNTLET</span>' : c.set === 'night' ? '<span class="adv">NIGHT</span>' : map.order.indexOf(r.name) >= 6 ? '<span class="adv">ADV</span>' : '';
+      const adv = c.set === 'gauntlet' ? '<span class="adv">GAUNTLET</span>' : c.set === 'night' ? '<span class="adv">NIGHT</span>' : c.set === 'harbor' ? '<span class="adv">HARBOR</span>' : map.order.indexOf(r.name) >= 6 ? '<span class="adv">ADV</span>' : '';
       b.innerHTML = '<span class="ck"><span>' + r.key + '</span>' + adv + '</span><span class="cn">' + c.name + '</span>' +
         '<span class="cm">' + pips + '<span>' + medalDot(r.name, medalOf(r.name, best[r.name])) + bt + '</span></span>';
       b.addEventListener('mouseenter', () => { A.play('hover'); previewLevel(r.name); });
@@ -5212,7 +5233,7 @@ body.editing.playing #edhelp { display: block; }
   previewCourse(map.order[0]);
   showMenuState();
   if (location.hash === '#demo') game.demo = true; // headless screenshot mode
-  window.__strafe = { courses: map.courses, mats: MATS, lights: { hemi, sun }, setNight, player, game, keys, eff, faceInsets, practice: { set: setPractice, save: practiceSave, load: practiceLoad }, goCourse, place, attract, previewCourse, body, ghost, cosmetics, preview, step, modelChunks, renderer, setView: (y, p) => { yaw = y; pitch = p; }, editor: { ed, enter: enterEditor, test: edTest, back: edBack, code: edCode, decode: edDecode, publish: edPublish }, community: { cm, open: cmOpen, show: cmShow, play: cmPlay }, daily: { daily, open: dailyOpen, play: dailyPlay, load: dailyLoad, finish: dailyFinish }, practiceJump,
+  window.__strafe = { courses: map.courses, mats: MATS, lights: { hemi, sun }, setNight, setTheme, player, game, keys, eff, faceInsets, practice: { set: setPractice, save: practiceSave, load: practiceLoad }, goCourse, place, attract, previewCourse, body, ghost, cosmetics, preview, step, modelChunks, renderer, setView: (y, p) => { yaw = y; pitch = p; }, editor: { ed, enter: enterEditor, test: edTest, back: edBack, code: edCode, decode: edDecode, publish: edPublish }, community: { cm, open: cmOpen, show: cmShow, play: cmPlay }, daily: { daily, open: dailyOpen, play: dailyPlay, load: dailyLoad, finish: dailyFinish }, practiceJump,
     online: { net, race, submit: netSubmit, raceFinish, showComplete, openDrawer },
     replay: { state: replay, open: replayOpen, close: replayClose, watchBest }, career, binds: { binds, set: (id, code) => { rebinding = id; setBind(code); }, keyName }, settings, applyColors, saved: { save: saveLastRun, render: replaysRender } };
   requestAnimationFrame((t) => { last = t; frame(t); });

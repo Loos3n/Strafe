@@ -937,6 +937,7 @@
         // (the night city stands on the ground itself: a street slab just above it would flicker)
         if (!def.night) world.addBox([bx0 - 3000, def.base - 20, bz0 - 3000], [bx1 + 3000, def.base, bz1 + 3000], { color: COLORS.street, kind: 'street' });
       }
+      if (def.harbor) harborDetails(legs, def, lo);
       courses[name] = Object.assign({ spawn, stages: cp + 1, legs: legs.map(lg => ({ ox: lg.ox, oz: lg.oz, h: lg.h, items: lg.items, curveIn: !!lg.curveIn })),
         preview: { pos: (() => { const p = legs[0].at(0, 400); return [p[0], top, p[1]]; })(), yaw: legs[0].yaw } },
         { name: def.name, type: def.type, difficulty: def.difficulty, color: def.color, desc: def.desc, route: true, set: def.set });
@@ -1175,6 +1176,205 @@
         { t: 'pad', len: 3000, w: 1400, end: true },
       ] });
 
+    // ------------------------------------------------------------ harbor
+    // Six hard levels over a container port at dusk, each harder than the
+    // last. The route is the same kit, dressed for the docks: railings and
+    // hazard posts on every pad, lamps on every ramp ridge, gantry cranes
+    // and container stacks round the route and a lighthouse on the breakwater.
+    // All of the dressing is visual only (deco: drawn, never collided with).
+    const DECO = (color, kind, extra) => Object.assign({ color, kind: kind || 'crane', nonsolid: true, deco: true }, extra);
+    const CONTAINERS = [0xc0392b, 0x2471a3, 0x1e8449, 0xd68910, 0x7d3c98, 0xa04000, 0x5d6d7e, 0x117a65];
+    function harborDetails(legs, def, lo) {
+      let sd = def.skyline.seed * 7 + 3;
+      const rnd = () => ((sd = (sd * 16807) % 2147483647) / 2147483647);
+      const steel = 0x2b3038, rail = 0xe8b923;
+      for (const lg of legs) {
+        const W3 = (x, y, z) => { const p = lg.at(x, z); return [p[0], y, p[1]]; };
+        const dbox = (x0, x1, y0, y1, z0, z1, props) => {
+          const a = lg.at(x0, z0), b = lg.at(x1, z1);
+          world.addBox([Math.min(a[0], b[0]), y0, Math.min(a[1], b[1])], [Math.max(a[0], b[0]), y1, Math.max(a[1], b[1])], props);
+        };
+        for (const it of lg.items) {
+          if ((it.t === 'pad' || it.t === 'lane') && !it.corner) {
+            // a railing down both long sides (posts and a top rail) and a dark kerb
+            const len = it.z0 - it.z1;
+            for (const sx of [-1, 1]) {
+              const ex = it.x + sx * (it.w / 2 + 14);
+              dbox(ex - 6, ex + 6, it.y - 60, it.y + 4, it.z1, it.z0, DECO(steel, 'wall'));
+              if (it.t === 'lane' || len < 500) continue;
+              const n = Math.max(2, Math.round(len / 320));
+              for (let k = 0; k <= n; k++) { const zz = it.z0 - 30 - (len - 60) * k / n; dbox(ex - 4, ex + 4, it.y, it.y + 96, zz - 4, zz + 4, DECO(steel)); }
+              dbox(ex - 5, ex + 5, it.y + 92, it.y + 104, it.z1 + 26, it.z0 - 26, DECO(rail, 'block'));
+            }
+            // hazard bollards at the front corners
+            for (const sx of [-1, 1]) { const ex = it.x + sx * (it.w / 2 - 24); dbox(ex - 7, ex + 7, it.y, it.y + 34, it.z1 + 17, it.z1 + 31, DECO(rail, 'block')); }
+          } else if (it.t === 'ramp' && !it.bank) {
+            // a warm lamp at each end of the ridge
+            for (const [zz, yy] of [[it.z0, it.apex], [it.z1, it.apex - it.drop]]) {
+              const p = W3(it.cx, yy, zz);
+              world.addBox([p[0] - 9, yy + 2, p[2] - 9], [p[0] + 9, yy + 20, p[2] + 9], { color: 0xffb347, nonsolid: true, glow: true });
+            }
+          } else if (it.t === 'block') {
+            // a thin dark kerb under each block, so the line reads against the water
+            dbox(it.x - it.w / 2 - 6, it.x + it.w / 2 + 6, it.y - 70, it.y - 58, it.z1 - 6, it.z0 + 6, DECO(steel, 'wall'));
+          }
+        }
+        // a gantry crane beside the first big pad of the leg, its boom over the route
+        const big = lg.items.find(it => it.t === 'pad' && it.w >= 900 && !it.corner);
+        if (big) {
+          const side = rnd() < 0.5 ? -1 : 1, lx = big.x + side * (big.w / 2 + 900), zc = (big.z0 + big.z1) / 2, base = def.base;
+          const top = big.y + 1700, col = [0xd35400, 0xc0392b, 0xf1c40f][(rnd() * 3) | 0];
+          for (const dz of [-500, 500]) for (const dx of [-260, 260]) dbox(lx + dx - 40, lx + dx + 40, base, top, zc + dz - 40, zc + dz + 40, DECO(col));
+          for (const dz of [-500, 500]) dbox(lx - 300, lx + 300, top - 80, top, zc + dz - 50, zc + dz + 50, DECO(col));
+          dbox(lx - 300, lx + 300, top - 260, top - 200, zc - 500, zc + 500, DECO(col));
+          // the boom reaches out over the route and back behind the crane
+          const b0 = Math.min(lx - side * 2600, lx + side * 1600), b1 = Math.max(lx - side * 2600, lx + side * 1600);
+          dbox(b0, b1, top, top + 120, zc - 70, zc + 70, DECO(col));
+          dbox(lx - 90, lx + 90, top + 120, top + 520, zc - 90, zc + 90, DECO(col));
+          // a cab and a hanging spreader with a container
+          const cx = lx - side * 1500;
+          dbox(cx - 110, cx + 110, top - 160, top, zc - 110, zc + 110, DECO(0x1c2833));
+          dbox(cx - 8, cx + 8, top - 500, top - 160, zc - 8, zc + 8, DECO(steel));
+          dbox(cx - 130, cx + 130, top - 760, top - 500, zc - 300, zc + 300, DECO(CONTAINERS[(rnd() * CONTAINERS.length) | 0], 'building'));
+        }
+      }
+      // the breakwater lighthouse, out past the start
+      if (def.lighthouse) {
+        const lg = legs[0], [lx, lz] = def.lighthouse, p = lg.at(lx, lz), base = def.base;
+        world.addBox([p[0] - 260, base, p[1] - 260], [p[0] + 260, base + 600, p[1] + 260], DECO(0x6e6259, 'cliff'));
+        for (let k = 0; k < 6; k++) {
+          const r = 200 - k * 18, y0 = base + 600 + k * 520;
+          world.addBox([p[0] - r, y0, p[1] - r], [p[0] + r, y0 + 520, p[1] + r], DECO(k % 2 ? 0xc0392b : 0xf4f1ea, 'building'));
+        }
+        const yt = base + 600 + 6 * 520;
+        world.addBox([p[0] - 120, yt, p[1] - 120], [p[0] + 120, yt + 200, p[1] + 120], { color: 0xfff1b8, nonsolid: true, glow: true });
+        world.addBox([p[0] - 150, yt + 200, p[1] - 150], [p[0] + 150, yt + 260, p[1] + 150], DECO(0x1c2833));
+      }
+    }
+    const HARBOR = { harbor: true, set: 'harbor', base: 0, pool: 'water', padColor: 0x5b6470 };
+    const HRAMP = [0x1f8fb3, 0x2bb39a, 0x3b6fd1, 0x17a589], HBLOCK = [0xe67e22, 0xc0392b, 0xf1c40f, 0x8e44ad];
+    const harbor = (name, ox, oz, top, def) => routeKit(name, ox, oz, top, Object.assign({}, HARBOR, def,
+      { skyline: Object.assign({ lo: 0, hi: top + 2500, step: 1300, size: 560 }, def.skyline) }));
+    harbor('h1', 200000, -100000, 9000, {
+      name: 'Dockside', type: 'Mixed', difficulty: 5, color: 0xe67e22, palette: [HBLOCK[0], HRAMP[0], HRAMP[1], HBLOCK[1]],
+      skyline: { seed: 211 }, lighthouse: [-2600, 1800],
+      desc: 'Harbor 2. Zigzag blocks off the quay, two narrow ramps with a wide transfer, a bend round the cranes, climbing blocks and a wallrun.',
+      segs: [
+        { t: 'pad', len: 600, w: 700 },
+        { t: 'bhop', gap: 76, n: 10, size: 112, step: 285, zig: 85 },
+        { t: 'pad', gap: 120, len: 600, w: 700 },
+        { t: 'surf', face: 65, len: 3000, drop: 450 },
+        { t: 'surf', face: 65, len: 3000, drop: 450, dx: 470, gap: 1000 },
+        { t: 'pad', len: 3000, w: 1400, cp: true }, { t: 'turn', dir: 1 },
+        { t: 'curve', dir: -1, face: 65, R: 3200, drop: 550 },
+        { t: 'surf', face: 65, len: 3000, drop: 450, dx: -480, gap: 1000, fall: 600 },
+        { t: 'pad', len: 3000, w: 1400, cp: true },
+        { t: 'bhop', gap: 72, n: 10, size: 104, step: 290, dy: 12, lat: [0, 90, -90, 40, -40] },
+        { t: 'pad', gap: 130, len: 800, w: 900 },
+        { t: 'wall', side: 1, len: 700, gap: 550 },
+        { t: 'pad', rise: 120, len: 900, w: 900, lip: true, end: true },
+      ] });
+    harbor('h2', 260000, -100000, 10000, {
+      name: 'Gantry', type: 'Mixed', difficulty: 5, color: 0xc0392b, palette: [HRAMP[2], HBLOCK[1], HRAMP[0], HBLOCK[2]],
+      skyline: { seed: 223 },
+      desc: 'Harbor 1. Slide a roof into a hairpin, transfer off its end, hop small blocks to a speed lane, long jump, then a falling line and a wallrun.',
+      segs: [
+        { t: 'pad', len: 700, w: 900 },
+        { t: 'slide', len: 1500, drop: 400, base: 0 },
+        { t: 'curve', dir: 1, face: 65, R: 3000, drop: 500 },
+        { t: 'curve', dir: 1, face: 65, R: 3000, drop: 500, join: true },
+        { t: 'surf', face: 65, len: 3000, drop: 450, dx: 520, gap: 1100, fall: 600 },
+        { t: 'pad', len: 3000, w: 1400, cp: true },
+        { t: 'bhop', gap: 82, n: 11, size: 104, step: 295, zig: 100 },
+        { t: 'lane', gap: 120, len: 2400, w: 224 },
+        { t: 'pad', gap: 420, rise: -300, len: 700, w: 600, cp: true }, { t: 'turn', dir: -1 },
+        { t: 'bhop', gap: 82, n: 10, size: 104, step: 300, dy: -14, lat: [0, 100, -100, 60, -60] },
+        { t: 'pad', gap: 130, len: 800, w: 900 },
+        { t: 'wall', side: -1, len: 700, gap: 550 },
+        { t: 'pad', rise: 120, len: 900, w: 900, lip: true, end: true },
+      ] });
+    harbor('h3', 320000, -100000, 13000, {
+      name: 'Breakwater', type: 'Surf', difficulty: 6, color: 0x2bb39a, palette: [HRAMP[1], HRAMP[3], HRAMP[0], HRAMP[2]], gorge: 520,
+      skyline: { seed: 227 },
+      desc: 'Harbor 3. A cut through the breakwater: five steep banks that swap sides with long gaps, then blocks, a slide and two opposite bends.',
+      segs: [
+        { t: 'pad', len: 600 },
+        { t: 'bank', side: -1, face: 65, len: 3400, drop: 400 },
+        { t: 'bank', side: 1, face: 65, len: 3200, drop: 400, gap: 1000 },
+        { t: 'bank', side: -1, face: 65, len: 3200, drop: 400, gap: 1000 },
+        { t: 'bank', side: 1, face: 65, len: 3200, drop: 400, gap: 1050 },
+        { t: 'bank', side: -1, face: 65, len: 3000, drop: 400, gap: 1050 },
+        { t: 'pad', len: 4200, w: 1400, cp: true, x: 0 },
+        { t: 'bhop', gap: 84, n: 10, size: 100, step: 300, zig: 95 },
+        { t: 'pad', gap: 130, len: 800, w: 800 }, { t: 'turn', dir: 1 },
+        { t: 'slide', len: 1500, drop: 400, base: 0 },
+        { t: 'curve', dir: 1, face: 65, R: 3200, drop: 550 },
+        { t: 'curve', dir: -1, face: 65, R: 3200, drop: 550, gap: 900, fall: 700, dx: 400 },
+        { t: 'pad', len: 3000, w: 1400, end: true },
+      ] });
+    harbor('h4', 200000, -160000, 12000, {
+      name: 'Tideline', type: 'Surf', difficulty: 6, color: 0x3b6fd1, palette: [HRAMP[2], HRAMP[0], HRAMP[3], HRAMP[1]],
+      skyline: { seed: 229 },
+      desc: 'Harbor 4. Surf with nowhere to rest: four narrow ramps with wide transfers both ways, a hairpin and a climbing ramp, then the smallest blocks.',
+      segs: [
+        { t: 'pad', len: 600 },
+        { t: 'surf', face: 60, len: 3000, drop: 450 },
+        { t: 'surf', face: 60, len: 3000, drop: 450, dx: 440, gap: 1000 },
+        { t: 'surf', face: 65, len: 3000, drop: 450, dx: -510, gap: 1050 },
+        { t: 'surf', face: 65, len: 2800, drop: 450, dx: 520, gap: 1100 },
+        { t: 'pad', len: 3000, w: 1400, cp: true }, { t: 'turn', dir: -1 },
+        { t: 'curve', dir: -1, face: 65, R: 3000, drop: 500 },
+        { t: 'curve', dir: -1, face: 65, R: 3000, drop: 500, join: true },
+        { t: 'surf', face: 65, len: 3000, drop: -200, dx: -450, gap: 900, fall: 500 },
+        { t: 'pad', len: 3000, w: 1400, cp: true },
+        { t: 'bhop', gap: 78, n: 13, size: 96, step: 300, zig: 105 },
+        { t: 'pad', gap: 130, len: 600, w: 700, end: true },
+      ] });
+    harbor('h5', 260000, -160000, 11000, {
+      name: 'Lighthouse', type: 'Bhop', difficulty: 7, color: 0xf1c40f, palette: [HBLOCK[2], HBLOCK[0], HBLOCK[3], HBLOCK[1]],
+      skyline: { seed: 233 }, lighthouse: [2400, -2400],
+      desc: 'Harbor 5. Climb to the light: rising lines of the smallest blocks round three corners, wallruns between them, then one ramp down.',
+      segs: [
+        { t: 'pad', len: 500, w: 500 },
+        { t: 'bhop', gap: 74, n: 10, size: 104, step: 290, dy: 16, zig: 90 },
+        { t: 'pad', gap: 130, len: 400, w: 400 }, { t: 'turn', dir: 1 },
+        { t: 'bhop', gap: 78, n: 10, size: 96, step: 300, dy: 14, lat: [0, 100, -100, 50, -50] },
+        { t: 'pad', gap: 130, len: 800, w: 900, cp: true },
+        { t: 'wall', side: 1, len: 700, gap: 550 },
+        { t: 'pad', rise: 120, len: 600, w: 700, lip: true }, { t: 'turn', dir: -1 },
+        { t: 'bhop', gap: 76, n: 11, size: 96, step: 300, dy: 15, zig: 95 },
+        { t: 'pad', gap: 130, len: 400, w: 400 }, { t: 'turn', dir: -1 },
+        { t: 'bhop', gap: 80, n: 10, size: 96, step: 300, dy: 12, lat: [0, 110, -110, 60, -60] },
+        { t: 'pad', gap: 130, len: 800, w: 900 },
+        { t: 'wall', side: -1, len: 700, gap: 550 },
+        { t: 'pad', rise: 120, len: 900, w: 900, lip: true },
+        { t: 'surf', face: 65, len: 3000, drop: 900 },
+        { t: 'pad', len: 1400, w: 1200, end: true },
+      ] });
+    harbor('h6', 320000, -160000, 13000, {
+      name: 'Riptide', type: 'Mixed', difficulty: 7, color: 0x8e44ad, palette: [HBLOCK[3], HRAMP[0], HBLOCK[1], HRAMP[2]],
+      skyline: { seed: 239 },
+      desc: 'Harbor 6. The hardest run in the game, with one checkpoint: tiny blocks into a hairpin, wide transfers, an opposite bend, a wallrun and a last climbing ramp.',
+      segs: [
+        { t: 'pad', len: 600 },
+        { t: 'bhop', gap: 86, n: 12, size: 96, step: 305, zig: 105 },
+        { t: 'pad', gap: 120, len: 500, w: 600 },
+        { t: 'slide', len: 1500, drop: 400, base: 0 },
+        { t: 'curve', dir: 1, face: 65, R: 3000, drop: 500 },
+        { t: 'curve', dir: 1, face: 65, R: 3000, drop: 500, join: true },
+        { t: 'surf', face: 65, len: 3000, drop: 450, dx: 540, gap: 1150, fall: 600 },
+        { t: 'surf', face: 65, len: 3000, drop: 450, dx: -560, gap: 1150 },
+        { t: 'pad', len: 3000, w: 1400, cp: true },
+        { t: 'bhop', gap: 86, n: 12, size: 96, step: 310, lat: [0, 90, -90, 50, -50] },
+        { t: 'pad', gap: 130, len: 800, w: 900 },
+        { t: 'wall', side: 1, len: 700, gap: 550 },
+        { t: 'pad', rise: 120, len: 1100, w: 1100, lip: true }, { t: 'turn', dir: -1 },
+        { t: 'surf', face: 65, len: 2600, drop: 800 },
+        { t: 'curve', dir: -1, face: 65, R: 3200, drop: 600, gap: 950, fall: 700, dx: 400 },
+        { t: 'surf', face: 65, len: 3000, drop: -250, dx: -480, gap: 950, fall: 500 },
+        { t: 'pad', len: 3000, w: 1400, end: true },
+      ] });
+
     // ------------------------------------------------------------ level order and keys
     const order = ['surf', 'bhop', 'roofs', 'canyon', 'stairway', 'crossover', 'downtown', 'cascade', 'spire', 'freerun'];
     order.forEach((name, i) => { courses[name].key = String((i + 1) % 10); }); // the tenth level is on 0
@@ -1186,8 +1386,10 @@
     gauntletOrder.forEach((name, i) => { courses[name].key = 'G' + (i + 1); });
     const nightOrder = ['n1', 'n2', 'n3', 'n4', 'n5', 'n6'];
     nightOrder.forEach((name, i) => { courses[name].key = 'N' + (i + 1); });
+    const harborOrder = ['h2', 'h1', 'h3', 'h4', 'h5', 'h6']; // Gantry plays easier than Dockside, so it opens the set
+    harborOrder.forEach((name, i) => { courses[name].key = 'H' + (i + 1); });
 
-    return { world, courses, order, gauntlet: gauntletOrder, night: nightOrder, hubSpawn, COLORS };
+    return { world, courses, order, gauntlet: gauntletOrder, night: nightOrder, harbor: harborOrder, hubSpawn, COLORS };
   }
 
   // Falling off. For any spot, the lowest a rider can be while still on the course near it:

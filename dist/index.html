@@ -7078,6 +7078,7 @@ window.STRAFE_ASSETS = {"city":"Z2xURgIAAABU+ggAYFIAAEpTT057ImFzc2V0Ijp7ImdlbmVy
         // (the night city stands on the ground itself: a street slab just above it would flicker)
         if (!def.night) world.addBox([bx0 - 3000, def.base - 20, bz0 - 3000], [bx1 + 3000, def.base, bz1 + 3000], { color: COLORS.street, kind: 'street' });
       }
+      if (def.harbor) harborDetails(legs, def, lo);
       courses[name] = Object.assign({ spawn, stages: cp + 1, legs: legs.map(lg => ({ ox: lg.ox, oz: lg.oz, h: lg.h, items: lg.items, curveIn: !!lg.curveIn })),
         preview: { pos: (() => { const p = legs[0].at(0, 400); return [p[0], top, p[1]]; })(), yaw: legs[0].yaw } },
         { name: def.name, type: def.type, difficulty: def.difficulty, color: def.color, desc: def.desc, route: true, set: def.set });
@@ -7316,6 +7317,205 @@ window.STRAFE_ASSETS = {"city":"Z2xURgIAAABU+ggAYFIAAEpTT057ImFzc2V0Ijp7ImdlbmVy
         { t: 'pad', len: 3000, w: 1400, end: true },
       ] });
 
+    // ------------------------------------------------------------ harbor
+    // Six hard levels over a container port at dusk, each harder than the
+    // last. The route is the same kit, dressed for the docks: railings and
+    // hazard posts on every pad, lamps on every ramp ridge, gantry cranes
+    // and container stacks round the route and a lighthouse on the breakwater.
+    // All of the dressing is visual only (deco: drawn, never collided with).
+    const DECO = (color, kind, extra) => Object.assign({ color, kind: kind || 'crane', nonsolid: true, deco: true }, extra);
+    const CONTAINERS = [0xc0392b, 0x2471a3, 0x1e8449, 0xd68910, 0x7d3c98, 0xa04000, 0x5d6d7e, 0x117a65];
+    function harborDetails(legs, def, lo) {
+      let sd = def.skyline.seed * 7 + 3;
+      const rnd = () => ((sd = (sd * 16807) % 2147483647) / 2147483647);
+      const steel = 0x2b3038, rail = 0xe8b923;
+      for (const lg of legs) {
+        const W3 = (x, y, z) => { const p = lg.at(x, z); return [p[0], y, p[1]]; };
+        const dbox = (x0, x1, y0, y1, z0, z1, props) => {
+          const a = lg.at(x0, z0), b = lg.at(x1, z1);
+          world.addBox([Math.min(a[0], b[0]), y0, Math.min(a[1], b[1])], [Math.max(a[0], b[0]), y1, Math.max(a[1], b[1])], props);
+        };
+        for (const it of lg.items) {
+          if ((it.t === 'pad' || it.t === 'lane') && !it.corner) {
+            // a railing down both long sides (posts and a top rail) and a dark kerb
+            const len = it.z0 - it.z1;
+            for (const sx of [-1, 1]) {
+              const ex = it.x + sx * (it.w / 2 + 14);
+              dbox(ex - 6, ex + 6, it.y - 60, it.y + 4, it.z1, it.z0, DECO(steel, 'wall'));
+              if (it.t === 'lane' || len < 500) continue;
+              const n = Math.max(2, Math.round(len / 320));
+              for (let k = 0; k <= n; k++) { const zz = it.z0 - 30 - (len - 60) * k / n; dbox(ex - 4, ex + 4, it.y, it.y + 96, zz - 4, zz + 4, DECO(steel)); }
+              dbox(ex - 5, ex + 5, it.y + 92, it.y + 104, it.z1 + 26, it.z0 - 26, DECO(rail, 'block'));
+            }
+            // hazard bollards at the front corners
+            for (const sx of [-1, 1]) { const ex = it.x + sx * (it.w / 2 - 24); dbox(ex - 7, ex + 7, it.y, it.y + 34, it.z1 + 17, it.z1 + 31, DECO(rail, 'block')); }
+          } else if (it.t === 'ramp' && !it.bank) {
+            // a warm lamp at each end of the ridge
+            for (const [zz, yy] of [[it.z0, it.apex], [it.z1, it.apex - it.drop]]) {
+              const p = W3(it.cx, yy, zz);
+              world.addBox([p[0] - 9, yy + 2, p[2] - 9], [p[0] + 9, yy + 20, p[2] + 9], { color: 0xffb347, nonsolid: true, glow: true });
+            }
+          } else if (it.t === 'block') {
+            // a thin dark kerb under each block, so the line reads against the water
+            dbox(it.x - it.w / 2 - 6, it.x + it.w / 2 + 6, it.y - 70, it.y - 58, it.z1 - 6, it.z0 + 6, DECO(steel, 'wall'));
+          }
+        }
+        // a gantry crane beside the first big pad of the leg, its boom over the route
+        const big = lg.items.find(it => it.t === 'pad' && it.w >= 900 && !it.corner);
+        if (big) {
+          const side = rnd() < 0.5 ? -1 : 1, lx = big.x + side * (big.w / 2 + 900), zc = (big.z0 + big.z1) / 2, base = def.base;
+          const top = big.y + 1700, col = [0xd35400, 0xc0392b, 0xf1c40f][(rnd() * 3) | 0];
+          for (const dz of [-500, 500]) for (const dx of [-260, 260]) dbox(lx + dx - 40, lx + dx + 40, base, top, zc + dz - 40, zc + dz + 40, DECO(col));
+          for (const dz of [-500, 500]) dbox(lx - 300, lx + 300, top - 80, top, zc + dz - 50, zc + dz + 50, DECO(col));
+          dbox(lx - 300, lx + 300, top - 260, top - 200, zc - 500, zc + 500, DECO(col));
+          // the boom reaches out over the route and back behind the crane
+          const b0 = Math.min(lx - side * 2600, lx + side * 1600), b1 = Math.max(lx - side * 2600, lx + side * 1600);
+          dbox(b0, b1, top, top + 120, zc - 70, zc + 70, DECO(col));
+          dbox(lx - 90, lx + 90, top + 120, top + 520, zc - 90, zc + 90, DECO(col));
+          // a cab and a hanging spreader with a container
+          const cx = lx - side * 1500;
+          dbox(cx - 110, cx + 110, top - 160, top, zc - 110, zc + 110, DECO(0x1c2833));
+          dbox(cx - 8, cx + 8, top - 500, top - 160, zc - 8, zc + 8, DECO(steel));
+          dbox(cx - 130, cx + 130, top - 760, top - 500, zc - 300, zc + 300, DECO(CONTAINERS[(rnd() * CONTAINERS.length) | 0], 'building'));
+        }
+      }
+      // the breakwater lighthouse, out past the start
+      if (def.lighthouse) {
+        const lg = legs[0], [lx, lz] = def.lighthouse, p = lg.at(lx, lz), base = def.base;
+        world.addBox([p[0] - 260, base, p[1] - 260], [p[0] + 260, base + 600, p[1] + 260], DECO(0x6e6259, 'cliff'));
+        for (let k = 0; k < 6; k++) {
+          const r = 200 - k * 18, y0 = base + 600 + k * 520;
+          world.addBox([p[0] - r, y0, p[1] - r], [p[0] + r, y0 + 520, p[1] + r], DECO(k % 2 ? 0xc0392b : 0xf4f1ea, 'building'));
+        }
+        const yt = base + 600 + 6 * 520;
+        world.addBox([p[0] - 120, yt, p[1] - 120], [p[0] + 120, yt + 200, p[1] + 120], { color: 0xfff1b8, nonsolid: true, glow: true });
+        world.addBox([p[0] - 150, yt + 200, p[1] - 150], [p[0] + 150, yt + 260, p[1] + 150], DECO(0x1c2833));
+      }
+    }
+    const HARBOR = { harbor: true, set: 'harbor', base: 0, pool: 'water', padColor: 0x5b6470 };
+    const HRAMP = [0x1f8fb3, 0x2bb39a, 0x3b6fd1, 0x17a589], HBLOCK = [0xe67e22, 0xc0392b, 0xf1c40f, 0x8e44ad];
+    const harbor = (name, ox, oz, top, def) => routeKit(name, ox, oz, top, Object.assign({}, HARBOR, def,
+      { skyline: Object.assign({ lo: 0, hi: top + 2500, step: 1300, size: 560 }, def.skyline) }));
+    harbor('h1', 200000, -100000, 9000, {
+      name: 'Dockside', type: 'Mixed', difficulty: 5, color: 0xe67e22, palette: [HBLOCK[0], HRAMP[0], HRAMP[1], HBLOCK[1]],
+      skyline: { seed: 211 }, lighthouse: [-2600, 1800],
+      desc: 'Harbor 2. Zigzag blocks off the quay, two narrow ramps with a wide transfer, a bend round the cranes, climbing blocks and a wallrun.',
+      segs: [
+        { t: 'pad', len: 600, w: 700 },
+        { t: 'bhop', gap: 76, n: 10, size: 112, step: 285, zig: 85 },
+        { t: 'pad', gap: 120, len: 600, w: 700 },
+        { t: 'surf', face: 65, len: 3000, drop: 450 },
+        { t: 'surf', face: 65, len: 3000, drop: 450, dx: 470, gap: 1000 },
+        { t: 'pad', len: 3000, w: 1400, cp: true }, { t: 'turn', dir: 1 },
+        { t: 'curve', dir: -1, face: 65, R: 3200, drop: 550 },
+        { t: 'surf', face: 65, len: 3000, drop: 450, dx: -480, gap: 1000, fall: 600 },
+        { t: 'pad', len: 3000, w: 1400, cp: true },
+        { t: 'bhop', gap: 72, n: 10, size: 104, step: 290, dy: 12, lat: [0, 90, -90, 40, -40] },
+        { t: 'pad', gap: 130, len: 800, w: 900 },
+        { t: 'wall', side: 1, len: 700, gap: 550 },
+        { t: 'pad', rise: 120, len: 900, w: 900, lip: true, end: true },
+      ] });
+    harbor('h2', 260000, -100000, 10000, {
+      name: 'Gantry', type: 'Mixed', difficulty: 5, color: 0xc0392b, palette: [HRAMP[2], HBLOCK[1], HRAMP[0], HBLOCK[2]],
+      skyline: { seed: 223 },
+      desc: 'Harbor 1. Slide a roof into a hairpin, transfer off its end, hop small blocks to a speed lane, long jump, then a falling line and a wallrun.',
+      segs: [
+        { t: 'pad', len: 700, w: 900 },
+        { t: 'slide', len: 1500, drop: 400, base: 0 },
+        { t: 'curve', dir: 1, face: 65, R: 3000, drop: 500 },
+        { t: 'curve', dir: 1, face: 65, R: 3000, drop: 500, join: true },
+        { t: 'surf', face: 65, len: 3000, drop: 450, dx: 520, gap: 1100, fall: 600 },
+        { t: 'pad', len: 3000, w: 1400, cp: true },
+        { t: 'bhop', gap: 82, n: 11, size: 104, step: 295, zig: 100 },
+        { t: 'lane', gap: 120, len: 2400, w: 224 },
+        { t: 'pad', gap: 420, rise: -300, len: 700, w: 600, cp: true }, { t: 'turn', dir: -1 },
+        { t: 'bhop', gap: 82, n: 10, size: 104, step: 300, dy: -14, lat: [0, 100, -100, 60, -60] },
+        { t: 'pad', gap: 130, len: 800, w: 900 },
+        { t: 'wall', side: -1, len: 700, gap: 550 },
+        { t: 'pad', rise: 120, len: 900, w: 900, lip: true, end: true },
+      ] });
+    harbor('h3', 320000, -100000, 13000, {
+      name: 'Breakwater', type: 'Surf', difficulty: 6, color: 0x2bb39a, palette: [HRAMP[1], HRAMP[3], HRAMP[0], HRAMP[2]], gorge: 520,
+      skyline: { seed: 227 },
+      desc: 'Harbor 3. A cut through the breakwater: five steep banks that swap sides with long gaps, then blocks, a slide and two opposite bends.',
+      segs: [
+        { t: 'pad', len: 600 },
+        { t: 'bank', side: -1, face: 65, len: 3400, drop: 400 },
+        { t: 'bank', side: 1, face: 65, len: 3200, drop: 400, gap: 1000 },
+        { t: 'bank', side: -1, face: 65, len: 3200, drop: 400, gap: 1000 },
+        { t: 'bank', side: 1, face: 65, len: 3200, drop: 400, gap: 1050 },
+        { t: 'bank', side: -1, face: 65, len: 3000, drop: 400, gap: 1050 },
+        { t: 'pad', len: 4200, w: 1400, cp: true, x: 0 },
+        { t: 'bhop', gap: 84, n: 10, size: 100, step: 300, zig: 95 },
+        { t: 'pad', gap: 130, len: 800, w: 800 }, { t: 'turn', dir: 1 },
+        { t: 'slide', len: 1500, drop: 400, base: 0 },
+        { t: 'curve', dir: 1, face: 65, R: 3200, drop: 550 },
+        { t: 'curve', dir: -1, face: 65, R: 3200, drop: 550, gap: 900, fall: 700, dx: 400 },
+        { t: 'pad', len: 3000, w: 1400, end: true },
+      ] });
+    harbor('h4', 200000, -160000, 12000, {
+      name: 'Tideline', type: 'Surf', difficulty: 6, color: 0x3b6fd1, palette: [HRAMP[2], HRAMP[0], HRAMP[3], HRAMP[1]],
+      skyline: { seed: 229 },
+      desc: 'Harbor 4. Surf with nowhere to rest: four narrow ramps with wide transfers both ways, a hairpin and a climbing ramp, then the smallest blocks.',
+      segs: [
+        { t: 'pad', len: 600 },
+        { t: 'surf', face: 60, len: 3000, drop: 450 },
+        { t: 'surf', face: 60, len: 3000, drop: 450, dx: 440, gap: 1000 },
+        { t: 'surf', face: 65, len: 3000, drop: 450, dx: -510, gap: 1050 },
+        { t: 'surf', face: 65, len: 2800, drop: 450, dx: 520, gap: 1100 },
+        { t: 'pad', len: 3000, w: 1400, cp: true }, { t: 'turn', dir: -1 },
+        { t: 'curve', dir: -1, face: 65, R: 3000, drop: 500 },
+        { t: 'curve', dir: -1, face: 65, R: 3000, drop: 500, join: true },
+        { t: 'surf', face: 65, len: 3000, drop: -200, dx: -450, gap: 900, fall: 500 },
+        { t: 'pad', len: 3000, w: 1400, cp: true },
+        { t: 'bhop', gap: 78, n: 13, size: 96, step: 300, zig: 105 },
+        { t: 'pad', gap: 130, len: 600, w: 700, end: true },
+      ] });
+    harbor('h5', 260000, -160000, 11000, {
+      name: 'Lighthouse', type: 'Bhop', difficulty: 7, color: 0xf1c40f, palette: [HBLOCK[2], HBLOCK[0], HBLOCK[3], HBLOCK[1]],
+      skyline: { seed: 233 }, lighthouse: [2400, -2400],
+      desc: 'Harbor 5. Climb to the light: rising lines of the smallest blocks round three corners, wallruns between them, then one ramp down.',
+      segs: [
+        { t: 'pad', len: 500, w: 500 },
+        { t: 'bhop', gap: 74, n: 10, size: 104, step: 290, dy: 16, zig: 90 },
+        { t: 'pad', gap: 130, len: 400, w: 400 }, { t: 'turn', dir: 1 },
+        { t: 'bhop', gap: 78, n: 10, size: 96, step: 300, dy: 14, lat: [0, 100, -100, 50, -50] },
+        { t: 'pad', gap: 130, len: 800, w: 900, cp: true },
+        { t: 'wall', side: 1, len: 700, gap: 550 },
+        { t: 'pad', rise: 120, len: 600, w: 700, lip: true }, { t: 'turn', dir: -1 },
+        { t: 'bhop', gap: 76, n: 11, size: 96, step: 300, dy: 15, zig: 95 },
+        { t: 'pad', gap: 130, len: 400, w: 400 }, { t: 'turn', dir: -1 },
+        { t: 'bhop', gap: 80, n: 10, size: 96, step: 300, dy: 12, lat: [0, 110, -110, 60, -60] },
+        { t: 'pad', gap: 130, len: 800, w: 900 },
+        { t: 'wall', side: -1, len: 700, gap: 550 },
+        { t: 'pad', rise: 120, len: 900, w: 900, lip: true },
+        { t: 'surf', face: 65, len: 3000, drop: 900 },
+        { t: 'pad', len: 1400, w: 1200, end: true },
+      ] });
+    harbor('h6', 320000, -160000, 13000, {
+      name: 'Riptide', type: 'Mixed', difficulty: 7, color: 0x8e44ad, palette: [HBLOCK[3], HRAMP[0], HBLOCK[1], HRAMP[2]],
+      skyline: { seed: 239 },
+      desc: 'Harbor 6. The hardest run in the game, with one checkpoint: tiny blocks into a hairpin, wide transfers, an opposite bend, a wallrun and a last climbing ramp.',
+      segs: [
+        { t: 'pad', len: 600 },
+        { t: 'bhop', gap: 86, n: 12, size: 96, step: 305, zig: 105 },
+        { t: 'pad', gap: 120, len: 500, w: 600 },
+        { t: 'slide', len: 1500, drop: 400, base: 0 },
+        { t: 'curve', dir: 1, face: 65, R: 3000, drop: 500 },
+        { t: 'curve', dir: 1, face: 65, R: 3000, drop: 500, join: true },
+        { t: 'surf', face: 65, len: 3000, drop: 450, dx: 540, gap: 1150, fall: 600 },
+        { t: 'surf', face: 65, len: 3000, drop: 450, dx: -560, gap: 1150 },
+        { t: 'pad', len: 3000, w: 1400, cp: true },
+        { t: 'bhop', gap: 86, n: 12, size: 96, step: 310, lat: [0, 90, -90, 50, -50] },
+        { t: 'pad', gap: 130, len: 800, w: 900 },
+        { t: 'wall', side: 1, len: 700, gap: 550 },
+        { t: 'pad', rise: 120, len: 1100, w: 1100, lip: true }, { t: 'turn', dir: -1 },
+        { t: 'surf', face: 65, len: 2600, drop: 800 },
+        { t: 'curve', dir: -1, face: 65, R: 3200, drop: 600, gap: 950, fall: 700, dx: 400 },
+        { t: 'surf', face: 65, len: 3000, drop: -250, dx: -480, gap: 950, fall: 500 },
+        { t: 'pad', len: 3000, w: 1400, end: true },
+      ] });
+
     // ------------------------------------------------------------ level order and keys
     const order = ['surf', 'bhop', 'roofs', 'canyon', 'stairway', 'crossover', 'downtown', 'cascade', 'spire', 'freerun'];
     order.forEach((name, i) => { courses[name].key = String((i + 1) % 10); }); // the tenth level is on 0
@@ -7327,8 +7527,10 @@ window.STRAFE_ASSETS = {"city":"Z2xURgIAAABU+ggAYFIAAEpTT057ImFzc2V0Ijp7ImdlbmVy
     gauntletOrder.forEach((name, i) => { courses[name].key = 'G' + (i + 1); });
     const nightOrder = ['n1', 'n2', 'n3', 'n4', 'n5', 'n6'];
     nightOrder.forEach((name, i) => { courses[name].key = 'N' + (i + 1); });
+    const harborOrder = ['h2', 'h1', 'h3', 'h4', 'h5', 'h6']; // Gantry plays easier than Dockside, so it opens the set
+    harborOrder.forEach((name, i) => { courses[name].key = 'H' + (i + 1); });
 
-    return { world, courses, order, gauntlet: gauntletOrder, night: nightOrder, hubSpawn, COLORS };
+    return { world, courses, order, gauntlet: gauntletOrder, night: nightOrder, harbor: harborOrder, hubSpawn, COLORS };
   }
 
   // Falling off. For any spot, the lowest a rider can be while still on the course near it:
@@ -7440,7 +7642,8 @@ window.STRAFE_ASSETS = {"city":"Z2xURgIAAABU+ggAYFIAAEpTT057ImFzc2V0Ijp7ImdlbmVy
   // which is the platinum (shown as Author).
   const MEDALS = [{ k: 'plat', n: 'Platinum' }, { k: 'gold', n: 'Gold' }, { k: 'silver', n: 'Silver' }, { k: 'bronze', n: 'Bronze' }];
   const MEDAL_PAR = { surf: 62.4, bhop: 55.3, roofs: 76.3, canyon: 62.7, stairway: 53.4, crossover: 65.1, downtown: 77.5, cascade: 25.3, spire: 62.0, freerun: 62.3,
-    g1: 24.8, g2: 32.4, g3: 48.4, g4: 49.6, g5: 58.7, g6: 74.0, n1: 31.9, n2: 33.9, n3: 45.0, n4: 44.6, n5: 71.2, n6: 79.6 };
+    g1: 24.8, g2: 32.4, g3: 48.4, g4: 49.6, g5: 58.7, g6: 74.0, n1: 31.9, n2: 33.9, n3: 45.0, n4: 44.6, n5: 71.2, n6: 79.6,
+    h1: 59.3, h2: 59.3, h3: 53.1, h4: 58.6, h5: 69.8, h6: 74.2 };
   const communityAuthor = {}; // community course -> its maker's time, from the server
   // [platinum, gold, silver, bronze] in ticks, or null for levels without medals
   function medalTimes(course) {
@@ -7513,10 +7716,10 @@ window.STRAFE_ASSETS = {"city":"Z2xURgIAAABU+ggAYFIAAEpTT057ImFzc2V0Ijp7ImdlbmVy
     new THREE.ShaderMaterial({
       side: THREE.BackSide, depthWrite: false, fog: false,
       uniforms: { sun: { value: sunDir }, zenith: { value: new THREE.Color(0x3d8fd6) }, horizon: { value: HORIZON }, ground: { value: new THREE.Color(0xb9c9d3) },
-        cloud: { value: new THREE.Color(0xfffdf7) }, night: { value: 0 } },
+        cloud: { value: new THREE.Color(0xfffdf7) }, night: { value: 0 }, dusk: { value: 0 } },
       vertexShader: 'varying vec3 vDir; void main(){ vDir = normalize(position); gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); }',
       fragmentShader: [
-        'uniform vec3 sun; uniform vec3 zenith; uniform vec3 horizon; uniform vec3 ground; uniform vec3 cloud; uniform float night; varying vec3 vDir;',
+        'uniform vec3 sun; uniform vec3 zenith; uniform vec3 horizon; uniform vec3 ground; uniform vec3 cloud; uniform float night; uniform float dusk; varying vec3 vDir;',
         'void main(){ float h = vDir.y;',
         ' vec3 c = h > 0.0 ? mix(horizon, zenith, pow(h, 0.55)) : mix(horizon, ground, pow(-h, 0.4));',
         ' float s = max(dot(vDir, sun), 0.0);',
@@ -7527,7 +7730,10 @@ window.STRAFE_ASSETS = {"city":"Z2xURgIAAABU+ggAYFIAAEpTT057ImFzc2V0Ijp7ImdlbmVy
         // at night: stars on a fine grid, faded out low down and behind the clouds
         '   if (night > 0.0) { vec3 g = floor(vDir * 420.0); float r = fract(sin(dot(g, vec3(12.9898, 78.233, 37.719))) * 43758.5453);',
         '     c += vec3(0.9, 0.95, 1.0) * step(0.9965, r) * (r - 0.9965) * 300.0 * smoothstep(0.05, 0.35, h) * (1.0 - cl) * night; }',
-        '   c = mix(c, cloud, cl * 0.85); }',
+        // at dusk the clouds catch the low sun on the side facing it
+        '   c = mix(c, cloud * (1.0 + dusk * 0.5 * pow(s, 3.0)), cl * 0.85); }',
+        // and a wide warm glow spreads round the sun
+        ' c += vec3(1.0, 0.5, 0.22) * (pow(s, 5.0) * 0.45 + pow(s, 40.0) * 0.6) * dusk;',
         ' c += mix(vec3(1.0,0.95,0.85), vec3(0.85,0.9,1.0), night) * (pow(s, 900.0) * 1.4 + pow(s, 12.0) * 0.18 * (1.0 - night * 0.6));',
         ' gl_FragColor = vec4(c, 1.0); }',
       ].join('\n'),
@@ -7757,26 +7963,35 @@ window.STRAFE_ASSETS = {"city":"Z2xURgIAAABU+ggAYFIAAEpTT057ImFzc2V0Ijp7ImdlbmVy
     return 'concrete';
   }
 
-  // ------------------------------------------------------------ night
+  // ------------------------------------------------------------ night and dusk
   // The Night City levels swap the daylight for a dark sky with stars, a
-  // moon where the sun was, dim blue light, lit windows and neon.
+  // moon where the sun was, dim blue light, lit windows and neon. The Harbor
+  // levels are at dusk: a low orange sun, a purple sky, long shadows and the
+  // first windows lit.
   const DAY = { fog: 0xcfe3ef, near: 4000, far: 26000, zen: 0x3d8fd6, hor: 0xcfe3ef, gnd: 0xb9c9d3, cloud: 0xfffdf7, hs: 0xe6f2ff, hg: 0x8a8f99, hi: 0.72, sc: 0xfff6e8, si: 0.95, exp: 0.98 };
   const NIGHT = { fog: 0x0c1124, near: 2500, far: 21000, zen: 0x01030a, hor: 0x1b1f3d, gnd: 0x080a12, cloud: 0x161b30, hs: 0x5b6cab, hg: 0x2a1c34, hi: 0.2, sc: 0x9fb2ff, si: 0.12, exp: 1.0 };
-  let nightOn = false;
+  const DUSK = { fog: 0xd99a7c, near: 3500, far: 26000, zen: 0x27336e, hor: 0xf3a271, gnd: 0x4a3a46, cloud: 0xf7b18e, hs: 0xffcfae, hg: 0x5a4050, hi: 0.55, sc: 0xffa461, si: 1.15, exp: 1.0 };
+  const THEMES = { day: { L: DAY, env: 1, win: 0x000000, glass: 0x000000, sun: [0.45, 0.8, 0.35] },
+    night: { L: NIGHT, env: 0.12, win: 0xb3b3b3, glass: 0x999999, sun: [0.45, 0.8, 0.35] },
+    dusk: { L: DUSK, env: 0.55, win: 0x4d4d4d, glass: 0x3a3a3a, sun: [-0.62, 0.17, -0.77] } };
+  let theme = 'day';
   const envDay = new Map(Object.values(MATS).map(m => [m, m.envMapIntensity]));
-  function setNight(on) {
-    nightOn = on;
-    const L = on ? NIGHT : DAY, u = sky.material.uniforms;
+  function setTheme(name) {
+    theme = name;
+    const T = THEMES[name], L = T.L, u = sky.material.uniforms;
     scene.fog.color.set(L.fog); scene.fog.near = L.near; scene.fog.far = L.far;
-    u.zenith.value.set(L.zen); u.horizon.value.set(L.hor); u.ground.value.set(L.gnd); u.cloud.value.set(L.cloud); u.night.value = on ? 1 : 0;
+    u.zenith.value.set(L.zen); u.horizon.value.set(L.hor); u.ground.value.set(L.gnd); u.cloud.value.set(L.cloud);
+    u.night.value = name === 'night' ? 1 : 0; u.dusk.value = name === 'dusk' ? 1 : 0;
+    sunDir.set(T.sun[0], T.sun[1], T.sun[2]).normalize();
     hemi.color.set(L.hs); hemi.groundColor.set(L.hg); hemi.intensity = L.hi;
     sun.color.set(L.sc); sun.intensity = L.si;
     renderer.toneMappingExposure = L.exp;
-    for (const [m, v] of envDay) m.envMapIntensity = v * (on ? 0.12 : 1);
-    MATS.facade.emissive.set(on ? 0xb3b3b3 : 0x000000); MATS.glass.emissive.set(on ? 0x999999 : 0x000000);
+    for (const [m, v] of envDay) m.envMapIntensity = v * T.env;
+    MATS.facade.emissive.set(T.win); MATS.glass.emissive.set(T.glass);
     if (animated.lava) { animated.lava.uniforms.fogColor.value.set(L.fog); animated.lava.uniforms.fogNear.value = L.near; animated.lava.uniforms.fogFar.value = L.far; }
-    if (body.setNight) body.setNight(on);
+    if (body.setNight) body.setNight(name);
   }
+  const setNight = (on) => setTheme(on ? 'night' : 'day');
 
   // ------------------------------------------------------------ grounding
   // Visual only: nothing here collides. Every level stands on something. A
@@ -7967,7 +8182,8 @@ window.STRAFE_ASSETS = {"city":"Z2xURgIAAABU+ggAYFIAAEpTT057ImFzc2V0Ijp7ImdlbmVy
   const animated = { water: null, lava: null };
   {
     // the low city's plain blocks are drawn as models instead (see models below)
-    const solid = buildGeometry(b => !b.props.nonsolid && !b.props.door && !b.props.lowcity, bucketFor);
+    // (deco: visual-only dressing such as the harbor's cranes and railings, drawn but never collided with)
+    const solid = buildGeometry(b => (!b.props.nonsolid || b.props.deco) && !b.props.door && !b.props.lowcity, bucketFor);
     const edgeMat = new THREE.LineBasicMaterial({ color: 0x1b2530, transparent: true, opacity: 0.1 });
     for (const [name, part] of Object.entries(solid)) {
       const mesh = new THREE.Mesh(part.g, MATS[name]);
@@ -9692,7 +9908,12 @@ body.touch #menu button, body.touch #drawer button { min-height: 40px; }
     }
     function setAccent(c) { red.color.copy(lin(c)); shoe.color.copy(lin(c)); if (fp) fp.mats.joints.color.copy(lin(c)); }
     // night levels: moonlight with a little city glow
-    const setNight = (on) => { vHemi.color.set(on ? 0x8a9ad0 : 0xeef6ff); vHemi.groundColor.set(on ? 0x4a2a55 : 0x6f747d); vHemi.intensity = on ? 0.38 : 0.85; vSun.color.set(on ? 0xa8b8ff : 0xfff3e2); vSun.intensity = on ? 0.22 : 0.85; };
+    // (dusk: warm low light)
+    const setNight = (th) => {
+      const on = th === 'night' || th === true, dk = th === 'dusk';
+      vHemi.color.set(on ? 0x8a9ad0 : dk ? 0xffd7bd : 0xeef6ff); vHemi.groundColor.set(on ? 0x4a2a55 : dk ? 0x5a3f52 : 0x6f747d); vHemi.intensity = on ? 0.38 : dk ? 0.7 : 0.85;
+      vSun.color.set(on ? 0xa8b8ff : dk ? 0xffb27a : 0xfff3e2); vSun.intensity = on ? 0.22 : dk ? 0.8 : 0.85;
+    };
     return { update, render, resize, act, st, armsRoot, hips, setSkin, setAccent, setNight };
   })();
   cosmetics.apply();
@@ -9893,7 +10114,7 @@ body.touch #menu button, body.touch #drawer button { min-height: 40px; }
   }
 
   // ------------------------------------------------------------ level complete
-  const LEVEL_ORDER = ['tutorial'].concat(map.order, map.gauntlet, map.night);
+  const LEVEL_ORDER = ['tutorial'].concat(map.order, map.gauntlet, map.night, map.harbor);
   const completeEl = $('complete');
   let completeTimer = 0;
   function nextLevel(name) {
@@ -10285,8 +10506,9 @@ body.touch #menu button, body.touch #drawer button { min-height: 40px; }
     sky.position.copy(camera.position);
     // the Night City levels light the world for night
     const viewing = !locked && !game.demo && attract.active ? attract.course : game.course;
-    const wantNight = !!(viewing && map.courses[viewing] && map.courses[viewing].set === 'night');
-    if (wantNight !== nightOn) setNight(wantNight);
+    const vset = viewing && map.courses[viewing] && map.courses[viewing].set;
+    const want = vset === 'night' ? 'night' : vset === 'harbor' ? 'dusk' : 'day';
+    if (want !== theme) setTheme(want);
 
     const cp = camera.position;
     sun.position.set(cp.x + sunDir.x * 5000, cp.y + sunDir.y * 5000, cp.z + sunDir.z * 5000);
@@ -11102,8 +11324,9 @@ body.touch #menu button, body.touch #drawer button { min-height: 40px; }
   const attract = { active: true, course: map.order[0], hover: null, t0: 0, cycle: 0 };
   const flashEl = $('flash');
   const MENU_ROWS = [{ name: 'tutorial', key: 'T' }].concat(map.order.map((name, i) => ({ name, key: String((i + 1) % 10) })),
-    map.gauntlet.map((name, i) => ({ name, key: 'G' + (i + 1) })), map.night.map((name, i) => ({ name, key: 'N' + (i + 1) })));
-  const ALL_LEVELS = map.order.concat(map.gauntlet, map.night);
+    map.gauntlet.map((name, i) => ({ name, key: 'G' + (i + 1) })), map.night.map((name, i) => ({ name, key: 'N' + (i + 1) })),
+    map.harbor.map((name, i) => ({ name, key: 'H' + (i + 1) })));
+  const ALL_LEVELS = map.order.concat(map.gauntlet, map.night, map.harbor);
   // difficulty pips: five, or more for levels off the scale
   const pipHtml = (d, label) => '<span class="pips" aria-label="' + label + d + ' of ' + Math.max(5, d) + '">' +
     Array.from({ length: Math.max(5, d) }, (_, k) => '<i class="' + (k < d ? 'on' : '') + '"></i>').join('') + '</span>';
@@ -11115,7 +11338,7 @@ body.touch #menu button, body.touch #drawer button { min-height: 40px; }
     const c = rowCourse(name);
     const tutorial = name === 'tutorial';
     $('h-type').innerHTML = '<span class="chip" style="--c:' + hex(c.color) + '">' + c.type + '</span>' +
-      (tutorial ? 'Start here' : c.set === 'gauntlet' ? 'Gauntlet ' + (map.gauntlet.indexOf(name) + 1) + ' of 6' : c.set === 'night' ? 'Night City ' + (map.night.indexOf(name) + 1) + ' of 6' : map.order.indexOf(name) >= 6 ? 'Advanced' : 'Level ' + (map.order.indexOf(name) + 1));
+      (tutorial ? 'Start here' : c.set === 'gauntlet' ? 'Gauntlet ' + (map.gauntlet.indexOf(name) + 1) + ' of 6' : c.set === 'night' ? 'Night City ' + (map.night.indexOf(name) + 1) + ' of 6' : c.set === 'harbor' ? 'Harbor ' + (map.harbor.indexOf(name) + 1) + ' of 6' : map.order.indexOf(name) >= 6 ? 'Advanced' : 'Level ' + (map.order.indexOf(name) + 1));
     $('h-name').textContent = c.name;
     $('h-desc').textContent = c.desc;
     $('h-diff').innerHTML = c.difficulty ? pipHtml(c.difficulty, '') : (tutorial ? 'Easy' : 'None');
@@ -11177,14 +11400,14 @@ body.touch #menu button, body.touch #drawer button { min-height: 40px; }
     ol.textContent = '';
     MENU_ROWS.forEach((r, i) => {
       const c = rowCourse(r.name);
-      if (i === 7 || i === 11 || i === 17) { const sep = document.createElement('li'); sep.className = 'sep'; sep.setAttribute('aria-hidden', 'true'); ol.appendChild(sep); }
+      if (i === 7 || i === 11 || i === 17 || i === 23) { const sep = document.createElement('li'); sep.className = 'sep'; sep.setAttribute('aria-hidden', 'true'); ol.appendChild(sep); }
       const li = document.createElement('li');
       const b = document.createElement('button');
       b.className = 'card'; b.dataset.course = r.name;
       b.style.setProperty('--c', hex(c.color));
       const pips = c.difficulty ? pipHtml(c.difficulty, 'Difficulty ') : '<span>' + c.type + '</span>';
       const bt = best[r.name] ? fmt(best[r.name]) : '';
-      const adv = c.set === 'gauntlet' ? '<span class="adv">GAUNTLET</span>' : c.set === 'night' ? '<span class="adv">NIGHT</span>' : map.order.indexOf(r.name) >= 6 ? '<span class="adv">ADV</span>' : '';
+      const adv = c.set === 'gauntlet' ? '<span class="adv">GAUNTLET</span>' : c.set === 'night' ? '<span class="adv">NIGHT</span>' : c.set === 'harbor' ? '<span class="adv">HARBOR</span>' : map.order.indexOf(r.name) >= 6 ? '<span class="adv">ADV</span>' : '';
       b.innerHTML = '<span class="ck"><span>' + r.key + '</span>' + adv + '</span><span class="cn">' + c.name + '</span>' +
         '<span class="cm">' + pips + '<span>' + medalDot(r.name, medalOf(r.name, best[r.name])) + bt + '</span></span>';
       b.addEventListener('mouseenter', () => { A.play('hover'); previewLevel(r.name); });
@@ -12573,7 +12796,7 @@ body.editing.playing #edhelp { display: block; }
   previewCourse(map.order[0]);
   showMenuState();
   if (location.hash === '#demo') game.demo = true; // headless screenshot mode
-  window.__strafe = { courses: map.courses, mats: MATS, lights: { hemi, sun }, setNight, player, game, keys, eff, faceInsets, practice: { set: setPractice, save: practiceSave, load: practiceLoad }, goCourse, place, attract, previewCourse, body, ghost, cosmetics, preview, step, modelChunks, renderer, setView: (y, p) => { yaw = y; pitch = p; }, editor: { ed, enter: enterEditor, test: edTest, back: edBack, code: edCode, decode: edDecode, publish: edPublish }, community: { cm, open: cmOpen, show: cmShow, play: cmPlay }, daily: { daily, open: dailyOpen, play: dailyPlay, load: dailyLoad, finish: dailyFinish }, practiceJump,
+  window.__strafe = { courses: map.courses, mats: MATS, lights: { hemi, sun }, setNight, setTheme, player, game, keys, eff, faceInsets, practice: { set: setPractice, save: practiceSave, load: practiceLoad }, goCourse, place, attract, previewCourse, body, ghost, cosmetics, preview, step, modelChunks, renderer, setView: (y, p) => { yaw = y; pitch = p; }, editor: { ed, enter: enterEditor, test: edTest, back: edBack, code: edCode, decode: edDecode, publish: edPublish }, community: { cm, open: cmOpen, show: cmShow, play: cmPlay }, daily: { daily, open: dailyOpen, play: dailyPlay, load: dailyLoad, finish: dailyFinish }, practiceJump,
     online: { net, race, submit: netSubmit, raceFinish, showComplete, openDrawer },
     replay: { state: replay, open: replayOpen, close: replayClose, watchBest }, career, binds: { binds, set: (id, code) => { rebinding = id; setBind(code); }, keyName }, settings, applyColors, saved: { save: saveLastRun, render: replaysRender } };
   requestAnimationFrame((t) => { last = t; frame(t); });

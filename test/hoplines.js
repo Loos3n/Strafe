@@ -114,7 +114,7 @@ function windowOf(L) {
 module.exports = { linesOf, windowOf, itemsOf, P };
 if (require.main === module) {
   const only = process.argv[2];
-  const names = ['bhop', 'stairway', 'crossover', 'spire'].concat(M.gauntlet, M.night);
+  const names = ['bhop', 'stairway', 'crossover', 'spire'].concat(M.gauntlet, M.night, M.harbor);
   for (const name of names) {
     if (only && !only.split(',').includes(name)) continue;
     linesOf(name).forEach((L, i) => {

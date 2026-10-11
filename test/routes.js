@@ -8,7 +8,7 @@ const noisy = require('./noise.js')();
 const P = globalThis.StrafePhysics; const { world, courses } = globalThis.StrafeMap.buildMap(P);
 const DIRS = [[0, -1], [1, 0], [0, 1], [-1, 0]];
 const wrap = a => Math.atan2(Math.sin(a), Math.cos(a));
-const LEVELS = ['surf', 'bhop', 'canyon', 'stairway', 'crossover'].concat(globalThis.StrafeMap.buildMap(P).night);
+const LEVELS = ['surf', 'bhop', 'canyon', 'stairway', 'crossover'].concat(globalThis.StrafeMap.buildMap(P).night, globalThis.StrafeMap.buildMap(P).harbor);
 
 function frameOf(lg) {
   const f = DIRS[lg.h], r = DIRS[(lg.h + 1) % 4];
