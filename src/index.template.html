@@ -119,6 +119,19 @@ body.complete #menu { display: none; }
 #c-time { font-family: var(--display); font-weight: 700; font-style: italic; font-size: clamp(48px, 9vw, 84px); line-height: 1; font-variant-numeric: tabular-nums; color: var(--ink); }
 #c-best { font-family: var(--display); font-weight: 700; font-size: 15px; letter-spacing: .12em; text-transform: uppercase; color: var(--muted); }
 #c-best.new { color: #fff; background: #1f8a4c; padding: 3px 10px; }
+.medal { display: inline-block; width: .85em; height: .85em; border-radius: 50%; vertical-align: -.08em; margin-right: .4em; box-shadow: inset 0 0 0 1.5px rgba(0,0,0,.22), 0 1px 2px rgba(0,0,0,.25); flex: none; }
+.m-plat { background: radial-gradient(circle at 35% 30%, #ffffff, #9fefff 40%, #36a3c4); }
+.m-gold { background: radial-gradient(circle at 35% 30%, #fff7cc, #f4c430 42%, #b07d00); }
+.m-silver { background: radial-gradient(circle at 35% 30%, #ffffff, #cfd6dc 42%, #85919b); }
+.m-bronze { background: radial-gradient(circle at 35% 30%, #ffe0c4, #cd803d 42%, #84471a); }
+.mrow { display: flex; flex-wrap: wrap; gap: 4px 14px; margin: 10px 0 0; font-family: var(--display); font-weight: 600; font-size: 13px; letter-spacing: .1em; text-transform: uppercase; font-variant-numeric: tabular-nums; }
+.mrow:empty { display: none; }
+.mrow .mt { opacity: .5; white-space: nowrap; }
+.mrow .mt.got { opacity: 1; }
+#c-medal { margin: 10px 0 0; font-family: var(--display); font-weight: 700; font-size: 18px; letter-spacing: .1em; text-transform: uppercase; }
+#c-medal .medal { font-size: 22px; }
+#c-medal small { font-weight: 600; font-size: 14px; color: var(--muted); margin-left: 8px; }
+#c-medal b { color: #fff; background: #1f8a4c; padding: 2px 8px; margin-left: 8px; font-size: 13px; }
 .cstats { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; margin: 22px 0 0; padding-top: 14px; border-top: 2px solid var(--ink); }
 .cstats div { min-width: 0; }
 .cstats dt { font-family: var(--display); font-weight: 600; font-size: 12px; letter-spacing: .18em; text-transform: uppercase; color: var(--muted); }
@@ -530,7 +543,9 @@ body.touch #racehud { top: calc(56px + env(safe-area-inset-top, 0px)); left: 10p
       <div><dt>Difficulty</dt><dd id="h-diff"></dd></div>
       <div><dt>Stages</dt><dd id="h-stages"></dd></div>
       <div><dt>Your best</dt><dd id="h-best"></dd></div>
+      <div id="h-medalbox"><dt>Medal</dt><dd id="h-medal"></dd></div>
     </dl>
+    <p class="mrow" id="h-medals"></p>
     <div class="hact">
       <button id="play">Play <kbd>Enter</kbd></button>
       <button class="ghost" id="resume" hidden>Resume</button>
@@ -686,7 +701,7 @@ body.touch #racehud { top: calc(56px + env(safe-area-inset-top, 0px)); left: 10p
       <dl class="sttiles" id="st-tiles"></dl>
       <div class="group">
         <p class="label">Levels</p>
-        <table class="stlevels"><thead><tr><th>Level</th><th>Best</th><th>Finished</th><th>Tries</th><th>Played</th></tr></thead><tbody id="st-levels"></tbody></table>
+        <table class="stlevels"><thead><tr><th>Level</th><th>Best</th><th>Medal</th><th>Finished</th><th>Tries</th><th>Played</th></tr></thead><tbody id="st-levels"></tbody></table>
       </div>
       <p class="onmsg" id="st-since"></p>
     </div>
@@ -756,6 +771,7 @@ body.touch #racehud { top: calc(56px + env(safe-area-inset-top, 0px)); left: 10p
         <button class="ghost small" id="cm-back">&larr; All levels</button>
         <h3 class="cmname" id="cm-name"></h3>
         <p class="onmsg" id="cm-meta"></p>
+        <p class="mrow" id="cm-medals"></p>
         <div class="onrow" id="cm-actions"><button class="cprimary" id="cm-play">Play</button><button class="ghost" id="cm-like"></button></div>
         <div class="onrow" id="cm-tools"><button class="ghost small" id="cm-edit">Open in editor</button><button class="ghost small" id="cm-copy">Copy level code</button><button class="ghost small" id="cm-del" hidden>Take down</button></div>
         <p class="onmsg" id="cm-dmsg"></p>
@@ -810,6 +826,7 @@ body.touch #racehud { top: calc(56px + env(safe-area-inset-top, 0px)); left: 10p
     <p class="clabel" id="c-label">Level complete</p>
     <h2 id="c-name"></h2>
     <div class="ctime"><span id="c-time"></span><span id="c-best"></span></div>
+    <div id="c-medalbox" hidden><p id="c-medal"></p><p class="mrow" id="c-medals"></p></div>
     <p id="c-online" hidden></p>
     <form id="c-post" hidden><p>Post this time to the online board? Pick a name.</p><div class="onrow"><input id="c-postname" maxlength="16" placeholder="Your name" autocomplete="off" spellcheck="false"><button class="ghost" id="c-postgo">Post</button></div><p class="onmsg" id="c-postmsg"></p></form>
     <div id="c-story" hidden><p class="cstars" id="c-stars"></p><p class="cdebrief" id="c-debrief"></p><p class="cunlock" id="c-unlock" hidden></p></div>

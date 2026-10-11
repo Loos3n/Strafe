@@ -118,12 +118,17 @@ check('publish bad name', (await call('/api/levels/publish', { name: '<b>', code
 const pub = await call('/api/levels/publish', { name: 'Test ' + tag, code, ticks: lticks, ghost: lrun }, a.body.token);
 check('publish', pub.status === 200 && /^[A-Z0-9]{6}$/.test(pub.body.id), JSON.stringify(pub.body));
 const lid = pub.body.id, lkey = 'c:' + lid;
+// the newer editor pieces (curved ramp, lava, launch pad) read on the server too
+const rows2 = rows.concat([[9, 0, 400, -600, 0, 448, 1600, 0, 60, 90], [16, 900, 0, -600, 0, 512, 512, 32], [17, -900, 24, -600, 0, 256, 256, 0, 45, 900]]);
+const pub2 = await call('/api/levels/publish', { name: 'Pieces ' + tag, code: S0('Pieces ' + tag, rows2), ticks: lticks, ghost: lrun }, a.body.token);
+check('publish with new pieces', pub2.status === 200, JSON.stringify(pub2.body));
+if (pub2.status === 200) await call('/api/levels/delete', { id: pub2.body.id }, a.body.token);
 check('publish same level twice', (await call('/api/levels/publish', { name: 'Again ' + tag, code: S0('Other', rows), ticks: lticks, ghost: lrun }, a.body.token)).status === 409);
 const found = await call('/api/levels?sort=new&q=' + encodeURIComponent('test ' + tag) + '&me=' + b.body.id);
 check('browse finds it', found.body.levels.length === 1 && found.body.levels[0].id === lid && found.body.levels[0].author === 'Anna ' + tag && found.body.levels[0].runners === 1, JSON.stringify(found.body));
 check('search by author', (await call('/api/levels?by=' + a.body.id)).body.levels.some(l => l.id === lid));
 const got = await call('/api/level?id=' + lid + '&play=1');
-check('level with code and a play', got.body.code === code && got.body.plays === 1 && got.body.best === lticks, JSON.stringify(Object.assign({}, got.body, { code: undefined })));
+check('level with code and a play', got.body.code === code && got.body.plays === 1 && got.body.best === lticks && got.body.authorTicks === lticks, JSON.stringify(Object.assign({}, got.body, { code: undefined })));
 check('own like refused', (await call('/api/levels/like', { id: lid, on: true }, a.body.token)).status === 403);
 const lk = await call('/api/levels/like', { id: lid, on: true }, b.body.token);
 check('like', lk.body.likes === 1 && lk.body.liked, JSON.stringify(lk.body));

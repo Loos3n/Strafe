@@ -105,6 +105,7 @@ export class Board extends DurableObject {
     return this.sql.exec(`SELECT l.id, l.name, l.author AS authorId, p.name AS author, l.likes, l.plays, l.created, l.pieces,
         (SELECT COUNT(*) FROM times t WHERE t.course = 'c:' || l.id) AS runners,
         (SELECT MIN(ticks) FROM times t WHERE t.course = 'c:' || l.id) AS best,
+        (SELECT ticks FROM times t WHERE t.course = 'c:' || l.id AND t.player = l.author) AS authorTicks,
         EXISTS (SELECT 1 FROM likes k WHERE k.level = l.id AND k.player = ?) AS liked
       FROM levels l JOIN players p ON p.id = l.author ${where} ORDER BY ${order} LIMIT ? OFFSET ?`, me || '', ...args, limit, offset).toArray()
       .map(r => Object.assign(r, { liked: !!r.liked }));

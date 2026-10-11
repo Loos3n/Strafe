@@ -3,7 +3,8 @@
 // checkpoint and finish pads, so runs on it are checked like any other level.
 // This mirrors edDecode and edFaces in src/game.js: keep them in step.
 export const EDO = [600000, 0, 0];
-const TYPES = ['block', 'floor', 'ramp', 'wall', 'start', 'checkpoint', 'finish'];
+const TYPES = ['block', 'floor', 'ramp', 'wall', 'start', 'checkpoint', 'finish',
+  'slope', 'half', 'curve', 'line', 'stairs', 'pillar', 'runwall', 'tunnel', 'beam', 'lava', 'boost'];
 const KEYS = ['t', 'x', 'y', 'z', 'r', 'w', 'l', 'h', 'a', 'd'];
 const DEG = Math.PI / 180;
 

@@ -72,6 +72,42 @@
   // levels players build: the editor's own ('custom') and community ones ('c:<id>')
   const isCommunity = (c) => typeof c === 'string' && c.startsWith('c:');
   const userCourse = (c) => c === 'custom' || isCommunity(c);
+  // Medals: bronze, silver, gold and platinum times on every level. Story
+  // levels use their star targets for gold and silver; the rest scale from the
+  // time the test bots take (MEDAL_PAR, seconds: re-time a level when it is
+  // rebuilt). A community level's medals scale from its maker's best time,
+  // which is the platinum (shown as Author).
+  const MEDALS = [{ k: 'plat', n: 'Platinum' }, { k: 'gold', n: 'Gold' }, { k: 'silver', n: 'Silver' }, { k: 'bronze', n: 'Bronze' }];
+  const MEDAL_PAR = { surf: 62.4, bhop: 55.3, roofs: 76.3, canyon: 62.7, stairway: 53.4, crossover: 65.1, downtown: 77.5, cascade: 25.3, spire: 62.0, freerun: 62.3,
+    g1: 24.8, g2: 32.4, g3: 48.4, g4: 49.6, g5: 58.7, g6: 74.0, n1: 31.9, n2: 33.9, n3: 45.0, n4: 44.6, n5: 71.2, n6: 79.6 };
+  const communityAuthor = {}; // community course -> its maker's time, from the server
+  // [platinum, gold, silver, bronze] in ticks, or null for levels without medals
+  function medalTimes(course) {
+    if (isCommunity(course)) {
+      const A = communityAuthor[course];
+      return A ? [A, Math.round(A * 1.15), Math.round(A * 1.4), Math.round(A * 2)] : null;
+    }
+    const job = STORY.find(j => j.course === course && j.stars);
+    let gold, silver;
+    if (job) [gold, silver] = job.stars;
+    else if (MEDAL_PAR[course]) { gold = Math.round(MEDAL_PAR[course] * 0.9); silver = Math.round(MEDAL_PAR[course] * 1.3); }
+    else return null;
+    return [Math.round(gold * 0.88), gold, silver, Math.round(silver * 1.5)].map(t => t * 100);
+  }
+  // the best medal a time earns: 0 platinum to 3 bronze, -1 none
+  function medalOf(course, ticks) {
+    const m = ticks && medalTimes(course);
+    return m ? m.findIndex(t => ticks <= t) : -1;
+  }
+  const medalName = (course, i) => i === 0 && isCommunity(course) ? 'Author' : MEDALS[i].n;
+  const medalDot = (course, i) => i < 0 ? '' : '<span class="medal m-' + MEDALS[i].k + '" title="' + medalName(course, i) + ' medal" aria-label="' + medalName(course, i) + ' medal"></span>';
+  const medalClock = (ticks) => fmt(ticks).replace(/\.00$/, '');
+  // every medal time, with the ones a time has earned marked
+  function medalRow(course, ticks) {
+    const m = medalTimes(course), got = medalOf(course, ticks);
+    if (!m) return '';
+    return m.map((t, i) => '<span class="mt' + (got >= 0 && i >= got ? ' got' : '') + '">' + medalDot(course, i) + medalName(course, i) + ' ' + medalClock(t) + '</span>').join('');
+  }
   const RESETS = [['strafe.rebuild.v2', ['surf', 'bhop', 'canyon', 'stairway', 'crossover']],
     ['strafe.rebuild.v3', ['surf', 'canyon', 'crossover', 'cascade']], ['strafe.rebuild.v4', ['cascade']], ['strafe.rebuild.v5', ['cascade']], ['strafe.rebuild.v6', ['cascade']],
     ['strafe.rebuild.v7', ['bhop', 'stairway', 'crossover', 'g1', 'g2', 'g3', 'g4', 'g5', 'g6', 'n1', 'n2', 'n3', 'n4', 'n5', 'n6']]];
@@ -1516,8 +1552,31 @@ body.touch #menu button, body.touch #drawer button { min-height: 40px; }
     return game.fallY != null && p[1] < game.fallY - FALL_DROP;
   }
 
+  // Lava and launch pads in player-made levels act on what you stand on (or
+  // just left: a bunnyhop only touches the ground for a tick), so they follow
+  // the piece's real shape instead of a trigger box round it.
+  const UNDER = [0, 0, 0];
+  let boostSound = 0;
+  function userHazards() {
+    const p = player.pos;
+    UNDER[0] = p[0]; UNDER[1] = p[1] - 6; UNDER[2] = p[2];
+    const tr = player.trace(p, UNDER), b = tr.fraction < 1 && tr.brush;
+    if (!b || !b.props.custom) return false;
+    if (b.props.edLava) { careerCount('falls'); respawn(); return true; }
+    const bo = b.props.boost;
+    if (bo) {
+      const v = player.vel, flat = bo.power * Math.cos(bo.a), along = v[0] * bo.dir[0] + v[2] * bo.dir[1];
+      if (along < flat) { v[0] += bo.dir[0] * (flat - along); v[2] += bo.dir[1] * (flat - along); }
+      const up = bo.power * Math.sin(bo.a);
+      if (up > 1 && v[1] < up) { v[1] = up; player.onGround = false; player.groundNormal = null; }
+      if (game.tick - boostSound > 40) { boostSound = game.tick; A.play('whoosh'); }
+    }
+    return false;
+  }
+
   function handleTriggers() {
     if (game.course && fellOff()) { careerCount('falls'); respawn(); return; }
+    if (game.course && userCourse(game.course) && userHazards()) return;
     let inStart = false;
     for (const t of player.triggersTouching()) {
       if (t.type === 'teleport') { goCourse(t.course); return; }
@@ -2489,6 +2548,16 @@ body.touch #menu button, body.touch #drawer button { min-height: 40px; }
     const badge = $('c-best');
     badge.classList.toggle('new', isBest);
     badge.textContent = isBest ? (prevBest ? 'New best, -' + ((prevBest - ticks) * TICK).toFixed(2) + 's' : 'First clear') : 'Best ' + fmt(prevBest) + '  (+' + (((ticks - prevBest) * TICK).toFixed(2)) + 's)';
+    // medals: what this run earned, whether it's a step up, and the next one to chase
+    const mt = medalTimes(game.course);
+    $('c-medalbox').hidden = !mt;
+    if (mt) {
+      const now = medalOf(game.course, ticks), before = medalOf(game.course, prevBest), have = before < 0 ? now : now < 0 ? before : Math.min(now, before);
+      const next = have === 0 ? -1 : have < 0 ? 3 : have - 1;
+      $('c-medal').innerHTML = (now >= 0 ? medalDot(game.course, now) + medalName(game.course, now) + ' medal' + (before < 0 || now < before ? '<b>New</b>' : '') : 'No medal') +
+        (next >= 0 ? '<small>' + medalName(game.course, next) + ' under ' + medalClock(mt[next]) + '</small>' : have === 0 ? '<small>Top medal</small>' : '');
+      $('c-medals').innerHTML = medalRow(game.course, Math.min(ticks, prevBest || Infinity));
+    }
     $('c-top').textContent = Math.round(r.top);
     $('c-avg').textContent = Math.round(r.dist / Math.max(secs, 0.01));
     $('c-jumps').textContent = r.jumps;
@@ -3691,6 +3760,10 @@ body.touch #menu button, body.touch #drawer button { min-height: 40px; }
     $('h-diff').innerHTML = c.difficulty ? pipHtml(c.difficulty, '') : (tutorial ? 'Easy' : 'None');
     $('h-stages').textContent = c.stages ? String(c.stages) : '—';
     $('h-best').textContent = best[name] ? fmt(best[name]) : '—';
+    const mi = medalOf(name, best[name]);
+    $('h-medalbox').hidden = !medalTimes(name);
+    $('h-medal').innerHTML = mi >= 0 ? medalDot(name, mi) + medalName(name, mi) : '—';
+    $('h-medals').innerHTML = medalRow(name, best[name]);
     updatePlayButtons();
     lbRender();
   }
@@ -3752,7 +3825,7 @@ body.touch #menu button, body.touch #drawer button { min-height: 40px; }
       const bt = best[r.name] ? fmt(best[r.name]) : '';
       const adv = c.set === 'gauntlet' ? '<span class="adv">GAUNTLET</span>' : c.set === 'night' ? '<span class="adv">NIGHT</span>' : map.order.indexOf(r.name) >= 6 ? '<span class="adv">ADV</span>' : '';
       b.innerHTML = '<span class="ck"><span>' + r.key + '</span>' + adv + '</span><span class="cn">' + c.name + '</span>' +
-        '<span class="cm">' + pips + '<span>' + bt + '</span></span>';
+        '<span class="cm">' + pips + '<span>' + medalDot(r.name, medalOf(r.name, best[r.name])) + bt + '</span></span>';
       b.addEventListener('mouseenter', () => { A.play('hover'); previewLevel(r.name); });
       b.addEventListener('mouseleave', () => previewLevel(selected));
       // a press only plays a card that was already selected before it; focus from that press selects it first
@@ -3860,6 +3933,8 @@ body.touch #menu button, body.touch #drawer button { min-height: 40px; }
       ['Time played', playTime(career.time)], ['Jumps', thousands(career.jumps)],
       ['Top speed', thousands(career.top) + ' u/s'], ['Distance', (career.dist * 0.0254 / 1000).toFixed(1) + ' km'],
       ['Levels beaten', beaten + ' / ' + ALL_LEVELS.length], ['Story stars', stars + ' / ' + maxStars],
+      ['Platinum medals', ALL_LEVELS.filter(n => medalOf(n, best[n]) === 0).length + ' / ' + ALL_LEVELS.length],
+      ['Gold or better', ALL_LEVELS.filter(n => { const m = medalOf(n, best[n]); return m >= 0 && m <= 1; }).length + ' / ' + ALL_LEVELS.length],
       ['Runs finished', thousands(career.finishes)], ['Runs started', thousands(career.runs)],
       ['Personal bests set', thousands(career.pbs)], ['Falls', thousands(career.falls)],
       ['Wallruns', thousands(career.wallruns)], ['Wall jumps', thousands(career.walljumps)],
@@ -3878,9 +3953,11 @@ body.touch #menu button, body.touch #drawer button { min-height: 40px; }
     for (const n of courses) {
       const L = career.levels[n] || { runs: 0, finishes: 0, time: 0 };
       const tr = document.createElement('tr');
-      for (const v of [rowCourse(n).name, best[n] ? fmt(best[n]) : '—', L.finishes, L.runs, L.time >= 1 ? playTime(L.time) : '—']) {
+      const mi = medalOf(n, best[n]);
+      for (const v of [rowCourse(n).name, best[n] ? fmt(best[n]) : '—', mi >= 0 ? MEDALS[mi].n : '—', L.finishes, L.runs, L.time >= 1 ? playTime(L.time) : '—']) {
         const td = document.createElement('td'); td.textContent = v; tr.appendChild(td);
       }
+      if (mi >= 0) tr.children[2].insertAdjacentHTML('afterbegin', medalDot(n, mi));
       if (!best[n]) tr.className = 'none';
       body.appendChild(tr);
     }
@@ -4249,13 +4326,54 @@ body.touch #menu button, body.touch #drawer button { min-height: 40px; }
   // share it as a code. Custom levels live far off the main map (EDO) and
   // never post to the online board. Keyboard and mouse only.
   const EDO = [600000, 0, 0];
-  const ED_TYPES = ['block', 'floor', 'ramp', 'wall', 'start', 'checkpoint', 'finish'];
-  const ED_NAMES = { block: 'Block', floor: 'Floor', ramp: 'Surf ramp', wall: 'Wall', start: 'Start', checkpoint: 'Checkpoint', finish: 'Finish' };
-  const ED_DEF = {
-    block: { w: 160, l: 160, h: 64 }, floor: { w: 512, l: 512, h: 64 }, ramp: { w: 448, l: 2400, a: 60, d: 400 },
-    wall: { w: 32, l: 800, h: 384 }, start: { w: 384, l: 384, h: 48 }, checkpoint: { w: 384, l: 384, h: 48 }, finish: { w: 384, l: 384, h: 48 },
+  // Every piece type, in share-code order (a code stores the index, so new
+  // types only ever go on the end). Each piece is t, x, y, z, r, w, l, h, a, d;
+  // what w, l, h, a and d mean depends on the type. The controls say which
+  // field a key changes: rf is R/F, br is [ ], cp is , and ., wh is the wheel
+  // and sw is Shift+wheel, each as [field, step, min, max].
+  const ED_TYPES = ['block', 'floor', 'ramp', 'wall', 'start', 'checkpoint', 'finish',
+    'slope', 'half', 'curve', 'line', 'stairs', 'pillar', 'runwall', 'tunnel', 'beam', 'lava', 'boost'];
+  const BOX_KEYS = { rf: ['h', 16, 16, 4096], wh: ['l', 32, 16, 12000], sw: ['w', 16, 16, 4096] };
+  const RAMP_KEYS = { rf: ['a', 5, 35, 80], br: ['d', 100, -1000, 4000], wh: ['l', 200, 16, 12000], sw: ['w', 32, 16, 4096] };
+  const ED = {
+    block: Object.assign({ n: 'Block', c: 0x4f74ee, k: 'block', def: { w: 160, l: 160, h: 64 } }, BOX_KEYS),
+    floor: Object.assign({ n: 'Floor', c: 0xb9c0c6, k: 'pad', def: { w: 512, l: 512, h: 64 } }, BOX_KEYS),
+    ramp: Object.assign({ n: 'Surf ramp', c: 0x2bd1a8, k: 'ramp', def: { w: 448, l: 2400, a: 60, d: 400 } }, RAMP_KEYS),
+    wall: Object.assign({ n: 'Wall', c: 0xe4e2db, k: 'wall', foot: true, def: { w: 32, l: 800, h: 384 } }, BOX_KEYS),
+    start: Object.assign({ n: 'Start', c: 0x43e07f, k: 'pad', def: { w: 384, l: 384, h: 48 } }, BOX_KEYS),
+    checkpoint: Object.assign({ n: 'Checkpoint', c: 0xffb340, k: 'pad', def: { w: 384, l: 384, h: 48 } }, BOX_KEYS),
+    finish: Object.assign({ n: 'Finish', c: 0xe5533d, k: 'pad', def: { w: 384, l: 384, h: 48 } }, BOX_KEYS),
+    slope: Object.assign({ n: 'Slope', c: 0xa9b2ba, k: 'floor', def: { w: 384, l: 768, h: 192 } }, BOX_KEYS, { rf: ['h', 16, 16, 2048] }),
+    half: Object.assign({ n: 'Half ramp', c: 0x27b9d6, k: 'ramp', def: { w: 256, l: 2400, a: 60, d: 400 } }, RAMP_KEYS),
+    curve: Object.assign({ n: 'Curved ramp', c: 0x2bd1a8, k: 'ramp', def: { w: 448, l: 1600, a: 60, d: 90, h: 0 } }, RAMP_KEYS,
+      { br: ['d', 15, -180, 180], cp: ['h', 100, 0, 4000], wh: ['l', 100, 400, 8000] }),
+    line: Object.assign({ n: 'Bhop line', c: 0x4f74ee, k: 'block', def: { w: 128, l: 1600, h: 64, d: 192 } }, BOX_KEYS, { br: ['d', 16, 0, 2000] }),
+    stairs: Object.assign({ n: 'Stairs', c: 0xb9c0c6, k: 'pad', def: { w: 384, l: 768, h: 256, d: 8 } }, BOX_KEYS, { br: ['d', 1, 2, 64] }),
+    pillar: { n: 'Pillar', c: 0xd9d6cf, k: 'wall', def: { w: 192, h: 512 }, rf: ['h', 32, 32, 8000], wh: ['w', 16, 32, 4096], sw: ['w', 16, 32, 4096] },
+    runwall: Object.assign({ n: 'Runner wall', c: 0xffffff, k: 'route', foot: true, def: { w: 32, l: 1024, h: 448 } }, BOX_KEYS),
+    tunnel: Object.assign({ n: 'Tunnel', c: 0xe4e2db, k: 'wall', foot: true, def: { w: 320, l: 1024, h: 320 } }, BOX_KEYS, { sw: ['w', 16, 96, 4096], rf: ['h', 16, 96, 4096] }),
+    beam: Object.assign({ n: 'Beam', c: 0xffffff, k: 'route', def: { w: 32, l: 1024, h: 32 } }, BOX_KEYS),
+    lava: Object.assign({ n: 'Lava', c: 0xff5a1f, k: 'lava', def: { w: 1024, l: 1024, h: 32 } }, BOX_KEYS),
+    boost: { n: 'Launch pad', c: 0xffc21a, k: 'pad', def: { w: 256, l: 256, a: 45, d: 900 },
+      rf: ['a', 5, 0, 80], br: ['d', 100, 200, 3000], wh: ['l', 32, 64, 4096], sw: ['w', 32, 64, 4096] },
   };
-  const ED_COLOR = { block: 0x4f74ee, floor: 0xb9c0c6, ramp: 0x2bd1a8, wall: 0xe4e2db, start: 0x43e07f, checkpoint: 0xffb340, finish: 0xe5533d };
+  const ED_NAMES = {}, ED_COLOR = {}, ED_DEF = {};
+  for (const t of ED_TYPES) { ED_NAMES[t] = ED[t].n; ED_COLOR[t] = ED[t].c; ED_DEF[t] = ED[t].def; }
+  const ED_PAD = 24; // a launch pad's thickness
+  // piece -> what a click stands it on: its base. Pieces store their top (a
+  // ramp its ridge); walls, runner walls and tunnels store their foot.
+  const edRampH = (pc) => (pc.t === 'half' ? pc.w : pc.w / 2) * Math.tan(pc.a * DEG);
+  // keep a piece's fields in range (a pasted code can hold anything)
+  const edNum = (x, lo, hi) => Math.max(lo, Math.min(hi, +x || 0));
+  function edClamp(p) {
+    p.w = edNum(p.w, 16, 8000); p.l = edNum(p.l, 16, 20000); p.h = edNum(p.h, 0, 8000);
+    const T = ED[p.t];
+    if (p.t === 'ramp') { p.a = edNum(p.a, 30, 80); p.d = edNum(p.d, -6000, 6000); }
+    else if (ED_TYPES.indexOf(p.t) >= 7) for (const key of ['rf', 'br', 'cp']) if (T[key]) { const [f, , lo, hi] = T[key]; p[f] = edNum(p[f], lo, hi); }
+    if (!('a' in T.def)) delete p.a;
+    if (!('d' in T.def)) delete p.d;
+    return p;
+  }
   const ED_LEVEL_KEY = 'strafe.editor.v1', ED_SAVES_KEY = 'strafe.levels.v1';
   const edBlank = () => ({ name: 'My level', pieces: [
     { t: 'start', x: 0, y: 0, z: 0, r: 0, w: 384, l: 384, h: 48 },
@@ -4265,23 +4383,138 @@ body.touch #menu button, body.touch #drawer button { min-height: 40px; }
   Object.assign(ed, { level: load(ED_LEVEL_KEY) || edBlank(), type: 'block', params: JSON.parse(JSON.stringify(ED_DEF)), rot: 0, plane: 0,
     cam: [0, 400, 900], undo: [], aim: null, preview: null, previewKey: '', meshes: [], grid: null, course: null });
 
-  // piece -> faces (vertex loops) in world space
-  function edFaces(pc) {
+  // the faces of the convex hull round a handful of points: every plane
+  // through three of them with all the rest behind it (as in map.js)
+  function hullFaces(pts) {
+    const sub = (a, b) => [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
+    const cross = (a, b) => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
+    const dot = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+    const faces = [], planes = [];
+    for (let i = 0; i < pts.length; i++) for (let j = i + 1; j < pts.length; j++) for (let k = j + 1; k < pts.length; k++) {
+      let n = cross(sub(pts[j], pts[i]), sub(pts[k], pts[i]));
+      const l = Math.hypot(n[0], n[1], n[2]);
+      if (l < 1e-6) continue;
+      n = n.map(v => v / l);
+      let d = dot(n, pts[i]), pos = 0, neg = 0;
+      for (const q of pts) { const e = dot(n, q) - d; if (e > 0.01) pos++; else if (e < -0.01) neg++; }
+      if (pos && neg) continue;
+      if (pos) { n = n.map(v => -v); d = -d; }
+      if (planes.some(q => dot(q.n, n) > 0.999999 && Math.abs(q.d - d) < 0.05)) continue;
+      planes.push({ n, d });
+      const on = pts.filter(q => Math.abs(dot(n, q) - d) < 0.05);
+      const c = [0, 1, 2].map(a => on.reduce((t, q) => t + q[a], 0) / on.length);
+      const u0 = sub(on[0], c), ul = Math.hypot(...u0), u = u0.map(v => v / ul), v = cross(n, u);
+      on.sort((a, b) => Math.atan2(dot(sub(a, c), v), dot(sub(a, c), u)) - Math.atan2(dot(sub(b, c), v), dot(sub(b, c), u)));
+      faces.push(on);
+    }
+    return faces;
+  }
+  // piece -> its solid parts: [{ f: faces (vertex loops) in world space, k: kind }]
+  function edHulls(pc) {
     const c = Math.cos(pc.r * DEG), s = Math.sin(pc.r * DEG);
     const P = (lx, y, lz) => [EDO[0] + pc.x + lx * c + lz * s, EDO[1] + y, EDO[2] + pc.z - lx * s + lz * c];
-    if (pc.t === 'ramp') {
-      const hw = pc.w / 2, H = hw * Math.tan(pc.a * DEG), hl = pc.l / 2, top = pc.y, d = pc.d || 0;
-      const nL = P(-hw, top - H, hl), nR = P(hw, top - H, hl), nA = P(0, top, hl);
-      const fL = P(-hw, top - H - d, -hl), fR = P(hw, top - H - d, -hl), fA = P(0, top - d, -hl);
-      return [[nL, nR, nA], [fL, fA, fR], [nL, fL, fR, nR], [nL, nA, fA, fL], [nR, fR, fA, nA]];
+    const T = ED[pc.t] || ED.block, out = [];
+    // a convex prism from a bottom and a top loop of local [x, y, z] points
+    const prism = (lo, hi, k, map) => {
+      const m = map || ((v) => P(v[0], v[1], v[2]));
+      const L = lo.map(m), H = hi.map(m), f = [L, H.slice().reverse()];
+      for (let i = 0; i < L.length; i++) { const j = (i + 1) % L.length; f.push([L[i], L[j], H[j], H[i]]); }
+      out.push({ f, k: k || T.k });
+    };
+    const box = (x0, x1, y0, y1, z0, z1, k, map) => prism(
+      [[x0, y0, z0], [x1, y0, z0], [x1, y0, z1], [x0, y0, z1]], [[x0, y1, z0], [x1, y1, z0], [x1, y1, z1], [x0, y1, z1]], k, map);
+    // a surf ramp's faces: ridge on the centre line, both faces (or one) down to the sides
+    const ramp = (m, hw, H, hl, topN, topF, half) => {
+      const xl = -hw, xr = hw;
+      if (half) {
+        // one face: from the high back edge at +hw down to -hw, with a straight back
+        const nB = m(xr, topN - H, hl), nT = m(xr, topN, hl), nL = m(xl, topN - H, hl);
+        const fB = m(xr, topF - H, -hl), fT = m(xr, topF, -hl), fL = m(xl, topF - H, -hl);
+        out.push({ f: [[nB, nT, nL], [fB, fL, fT], [nL, nT, fT, fL], [nB, fB, fT, nT], [nL, fL, fB, nB]], k: 'ramp' });
+        return;
+      }
+      const nL = m(xl, topN - H, hl), nR = m(xr, topN - H, hl), nA = m(0, topN, hl);
+      const fL = m(xl, topF - H, -hl), fR = m(xr, topF - H, -hl), fA = m(0, topF, -hl);
+      out.push({ f: [[nL, nR, nA], [fL, fA, fR], [nL, fL, fR, nR], [nL, nA, fA, fL], [nR, fR, fA, nA]], k: 'ramp' });
+    };
+    const hw = pc.w / 2, hl = pc.l / 2, top = pc.y;
+    switch (pc.t) {
+      case 'ramp': ramp(P, hw, edRampH(pc), hl, top, top - (pc.d || 0)); break;
+      case 'half': ramp(P, hw, edRampH(pc), hl, top, top - (pc.d || 0), true); break;
+      case 'curve': {
+        // the centre line starts at the piece and bends left (d > 0) or right
+        // round a circle of radius l, like the Night City curves: short pieces
+        // between sections square to the bend, each run 40 units into the next
+        // so the joins sit under the face instead of catching the rider.
+        const bend = Math.max(15, Math.abs(pc.d || 90)) * DEG, sg = (pc.d || 90) < 0 ? -1 : 1, R = pc.l, H = edRampH(pc), drop = pc.h || 0;
+        const N = Math.max(2, Math.ceil(R * bend / 240));
+        const sect = (j) => {
+          const ph = j / N * bend, th = sg * ph, x = sg * (-R + R * Math.cos(ph)), z = -R * Math.sin(ph), rx = Math.cos(th), rz = -Math.sin(th), y = top - drop * j / N;
+          return [[x - rx * hw, y - H, z - rz * hw], [x, y, z], [x + rx * hw, y - H, z + rz * hw]];
+        };
+        for (let j = 0; j < N; j++) {
+          const s0 = sect(j), s1 = sect(j + 1);
+          const fx0 = s1[1][0] - s0[1][0], fz0 = s1[1][2] - s0[1][2], len = Math.hypot(fx0, fz0), fx = fx0 / len, fz = fz0 / len;
+          const ex = (q, k) => P(q[0] + fx * 40 * k, q[1] - drop / N * 40 / len * k, q[2] + fz * 40 * k);
+          const k0 = j ? -1 : 0, k1 = j < N - 1 ? 1 : 0;
+          // two halves: the inside face (concave) runs into its neighbours; the
+          // outside face (convex) meets them exactly, since a piece run past
+          // a convex fold would stand up out of the next one's face
+          const inner = sg > 0 ? 0 : 2, outer = 2 - inner;
+          out.push({ f: hullFaces([s0[inner], s0[1], s1[inner], s1[1]].map((q, i) => ex(q, i < 2 ? k0 : k1)).concat([ex([s0[1][0], s0[1][1] - H, s0[1][2]], k0), ex([s1[1][0], s1[1][1] - H, s1[1][2]], k1)])), k: 'ramp' });
+          out.push({ f: hullFaces([s0[outer], s0[1], s1[outer], s1[1], [s0[1][0], s0[1][1] - H, s0[1][2]], [s1[1][0], s1[1][1] - H, s1[1][2]]].map(q => P(q[0], q[1], q[2]))), k: 'ramp' });
+        }
+        break;
+      }
+      case 'slope': {
+        // walkable wedge: low at the back (+l/2), h higher at the front, on a 32 thick base
+        const b = top - pc.h - 32;
+        prism([[-hw, b, hl], [hw, b, hl], [hw, b, -hl], [-hw, b, -hl]], [[-hw, top - pc.h, hl], [hw, top - pc.h, hl], [hw, top, -hl], [-hw, top, -hl]]);
+        break;
+      }
+      case 'line': {
+        const g = pc.d || 0, n = Math.max(1, Math.floor((pc.l + g) / (pc.w + g))), span = n * pc.w + (n - 1) * g;
+        for (let i = 0; i < n; i++) { const z0 = span / 2 - i * (pc.w + g); box(-hw, hw, top - pc.h, top, z0 - pc.w, z0); }
+        break;
+      }
+      case 'stairs': {
+        const n = Math.max(2, Math.round(pc.d || 8)), sd = pc.l / n, b = top - pc.h - 32;
+        for (let i = 0; i < n; i++) box(-hw, hw, b, top - pc.h + pc.h * (i + 1) / n, hl - (i + 1) * sd, hl - i * sd);
+        break;
+      }
+      case 'pillar': {
+        const ring = (y) => Array.from({ length: 8 }, (_, i) => { const t = (i + 0.5) * Math.PI / 4; return [Math.cos(t) * hw, y, Math.sin(t) * hw]; });
+        prism(ring(top - pc.h), ring(top));
+        break;
+      }
+      case 'tunnel': {
+        const t = 32, y0 = top, y1 = top + pc.h;
+        box(-hw - t, -hw, y0, y1, -hl, hl); box(hw, hw + t, y0, y1, -hl, hl); box(-hw - t, hw + t, y1, y1 + t, -hl, hl);
+        break;
+      }
+      case 'boost': box(-hw, hw, top - ED_PAD, top, -hl, hl); break;
+      default: {
+        const y1 = T.foot ? top + pc.h : top;
+        box(-hw, hw, y1 - pc.h, y1, -hl, hl);
+      }
     }
-    const hw = pc.w / 2, hl = pc.l / 2;
-    const y1 = pc.t === 'wall' ? pc.y + pc.h : pc.y, y0 = y1 - pc.h;
-    const q = [[-hw, -hl], [hw, -hl], [hw, hl], [-hw, hl]];
-    const lo = q.map(([x, z]) => P(x, y0, z)), hi = q.map(([x, z]) => P(x, y1, z));
-    return [lo, hi.slice().reverse(), [lo[0], lo[1], hi[1], hi[0]], [lo[1], lo[2], hi[2], hi[1]], [lo[2], lo[3], hi[3], hi[2]], [lo[3], lo[0], hi[0], hi[3]]];
+    return out;
   }
-  const edKind = (t) => t === 'ramp' ? 'ramp' : t === 'block' ? 'block' : t === 'wall' ? 'wall' : 'pad';
+  // every face of a piece, for the placement preview
+  const edFaces = (pc) => [].concat(...edHulls(pc).map(h => h.f));
+  // the glowing chevrons on a launch pad, pointing the way it throws you
+  function edChevrons(pc) {
+    const c = Math.cos(pc.r * DEG), s = Math.sin(pc.r * DEG);
+    const P = (lx, y, lz) => [EDO[0] + pc.x + lx * c + lz * s, EDO[1] + y, EDO[2] + pc.z - lx * s + lz * c];
+    const y = pc.y + 1.5, hw = pc.w * 0.32, faces = [];
+    for (const z0 of [pc.l * 0.22, -pc.l * 0.08]) {
+      const t = pc.l * 0.09, tip = z0 - pc.l * 0.2;
+      faces.push([P(-hw, y, z0), P(-hw, y, z0 + t), P(0, y, tip + t), P(0, y, tip)]);
+      faces.push([P(0, y, tip), P(0, y, tip + t), P(hw, y, z0 + t), P(hw, y, z0)]);
+    }
+    return faces;
+  }
+  const edKind = (t) => (ED[t] || ED.block).k;
   function edClear() {
     for (let i = world.brushes.length - 1; i >= 0; i--) if (world.brushes[i].props.custom) world.brushes.splice(i, 1);
     for (let i = world.triggers.length - 1; i >= 0; i--) if (world.triggers[i].custom) world.triggers.splice(i, 1);
@@ -4294,10 +4527,18 @@ body.touch #menu button, body.touch #drawer button { min-height: 40px; }
     edClear();
     for (const k in map.courses) if (userCourse(k)) delete map.courses[k];
     let lowY = Infinity, box = [Infinity, Infinity, -Infinity, -Infinity], cps = 0, start = null;
+    const glow = [];
     L.pieces.forEach((pc, i) => {
-      const b = world.addHull(edFaces(pc), { custom: true, piece: i, kind: edKind(pc.t), color: ED_COLOR[pc.t] });
-      lowY = Math.min(lowY, b.min[1]);
-      box = [Math.min(box[0], b.min[0]), Math.min(box[1], b.min[2]), Math.max(box[2], b.max[0]), Math.max(box[3], b.max[2])];
+      let b = null;
+      for (const h of edHulls(pc)) {
+        const props = { custom: true, piece: i, kind: h.k, color: ED_COLOR[pc.t] };
+        if (pc.t === 'lava') props.edLava = true;
+        if (pc.t === 'boost') props.boost = { dir: [-Math.sin(pc.r * DEG), -Math.cos(pc.r * DEG)], a: pc.a * DEG, power: pc.d };
+        b = world.addHull(h.f, props);
+        lowY = Math.min(lowY, b.min[1]);
+        box = [Math.min(box[0], b.min[0]), Math.min(box[1], b.min[2]), Math.max(box[2], b.max[0]), Math.max(box[3], b.max[2])];
+      }
+      if (pc.t === 'boost') glow.push(...edChevrons(pc));
       if (pc.t === 'start' || pc.t === 'checkpoint' || pc.t === 'finish') {
         const spawn = { pos: [EDO[0] + pc.x, EDO[1] + pc.y + 1, EDO[2] + pc.z], yaw: pc.r * DEG };
         const tmin = [b.min[0], b.max[1], b.min[2]], tmax = [b.max[0], b.max[1] + 160, b.max[2]];
@@ -4310,7 +4551,9 @@ body.touch #menu button, body.touch #drawer button { min-height: 40px; }
     if (L.pieces.length) world.addTrigger([box[0] - 20000, lowY - 4000, box[1] - 20000], [box[2] + 20000, lowY - 1500, box[3] + 20000], { type: 'kill', custom: true });
     map.courses[id] = { name: L.name || 'Custom level', spawn: start || { pos: [EDO[0], EDO[1] + 200, EDO[2]], yaw: 0 }, stages: cps + 1, color: 0xe5533d, custom: true, hasStart: !!start,
       hasEnd: L.pieces.some(p => p.t === 'finish') };
-    const parts = buildGeometry(b => b.props.custom, bucketFor);
+    const parts = buildGeometry(b => b.props.custom && !b.props.edLava, bucketFor);
+    if (L.pieces.some(p => p.t === 'lava') && animated.lava) { const lv = buildGeometry(b => b.props.custom && b.props.edLava); const m = new THREE.Mesh(lv.g, animated.lava); scene.add(m); ed.meshes.push(m); }
+    if (glow.length) { const m = new THREE.Mesh(facesToGeo(glow), chevronMat); scene.add(m); ed.meshes.push(m); }
     for (const [name, part] of Object.entries(parts)) {
       const mesh = new THREE.Mesh(part.g, MATS[name]);
       mesh.castShadow = mesh.receiveShadow = true;
@@ -4340,11 +4583,11 @@ body.touch #menu button, body.touch #drawer button { min-height: 40px; }
 body.editing .hud, body.editing #touch { display: none !important; }
 #edhud { position: fixed; left: 16px; top: 16px; z-index: 30; display: none; pointer-events: none; font-family: var(--display); color: #fff; text-shadow: 0 1px 3px rgba(0,0,0,.7); }
 body.editing.playing #edhud { display: block; }
-#edhud ol { list-style: none; margin: 0; padding: 0; display: grid; gap: 3px; }
-#edhud li { font-weight: 700; font-size: 15px; letter-spacing: .08em; text-transform: uppercase; padding: 3px 10px; background: rgba(10,14,18,.45); }
+#edhud ol { list-style: none; margin: 0; padding: 0; display: grid; grid-template-rows: repeat(9, auto); grid-auto-flow: column; gap: 2px; }
+#edhud li { font-weight: 700; font-size: 13px; letter-spacing: .07em; text-transform: uppercase; padding: 2px 9px; background: rgba(10,14,18,.45); }
 #edhud li.on { background: #fff; color: #15191d; text-shadow: none; }
-#edhud li b { display: inline-block; width: 1.4em; opacity: .7; }
-#edinfo { margin-top: 10px; font-size: 14px; letter-spacing: .06em; background: rgba(10,14,18,.45); padding: 6px 10px; max-width: 280px; }
+#edhud li b { display: inline-block; width: 1.9em; opacity: .7; }
+#edinfo { margin-top: 10px; font-size: 14px; letter-spacing: .06em; background: rgba(10,14,18,.45); padding: 6px 10px; max-width: 360px; }
 #edhelp { position: fixed; left: 0; right: 0; bottom: 14px; text-align: center; z-index: 30; display: none; pointer-events: none; font: 600 13px/1.5 var(--display); letter-spacing: .08em; color: #fff; text-shadow: 0 1px 3px rgba(0,0,0,.8); }
 body.editing.playing #edhelp { display: block; }
 #edpanel { position: fixed; inset: 0; z-index: 50; display: grid; place-items: center; padding: 16px; background: rgba(21,25,29,.45); }
@@ -4366,11 +4609,12 @@ body.editing.playing #edhelp { display: block; }
   document.head.appendChild(edCss);
   const edHud = document.createElement('div');
   edHud.id = 'edhud';
-  edHud.innerHTML = '<ol>' + ED_TYPES.map((t, i) => '<li data-t="' + t + '"><b>' + (i + 1) + '</b>' + ED_NAMES[t] + '</li>').join('') + '</ol><div id="edinfo"></div>';
+  const edSlot = (i) => i < 9 ? String(i + 1) : i === 9 ? '0' : '⇧' + (i - 9);
+  edHud.innerHTML = '<ol>' + ED_TYPES.map((t, i) => '<li data-t="' + t + '"><b>' + edSlot(i) + '</b>' + ED_NAMES[t] + '</li>').join('') + '</ol><div id="edinfo"></div>';
   document.body.appendChild(edHud);
   const edHelp = document.createElement('div');
   edHelp.id = 'edhelp';
-  edHelp.innerHTML = 'WASD fly · Space up · C down · Shift fast · Click place · Right click delete · Middle click copy · Q/E rotate · Wheel length · Shift+wheel width<br>R/F height or angle · [ ] ramp drop · T/G build height · Z undo · Enter test · Esc menu';
+  edHelp.innerHTML = 'WASD fly · Space up · C down · Shift fast · 1-0, Shift+1-8 or - and = pick a piece · Click place · Right click delete · Middle click copy · Q/E rotate<br>Wheel and Shift+wheel size · R/F, [ ] and , . change the piece (top left says how) · T/G build height · Z undo · Enter test · Esc menu';
   document.body.appendChild(edHelp);
   const edPanel = document.createElement('div');
   edPanel.id = 'edpanel'; edPanel.hidden = true;
@@ -4388,6 +4632,7 @@ body.editing.playing #edhelp { display: block; }
   gridHelper.material.transparent = true; gridHelper.material.opacity = 0.35; gridHelper.visible = false;
   scene.add(gridHelper);
   const previewMat = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.35, depthWrite: false });
+  const chevronMat = new THREE.MeshBasicMaterial({ color: 0xfff3b0, side: THREE.DoubleSide });
   const previewDel = new THREE.MeshBasicMaterial({ color: 0xff3b3b, transparent: true, opacity: 0.35, depthWrite: false });
   function facesToGeo(faces) {
     const pos = [];
@@ -4538,15 +4783,13 @@ body.editing.playing #edhelp { display: block; }
     else if (!code.startsWith('S0')) throw new Error('not a level code');
     const [v, name, rows] = JSON.parse(new TextDecoder().decode(raw));
     if (v !== 1 || !Array.isArray(rows) || rows.length > 2000) throw new Error('bad code');
-    const num = (x, lo, hi) => Math.max(lo, Math.min(hi, +x || 0));
     const pieces = rows.map(r => {
-      const t = ED_TYPES[r[0]];
+      const t = Array.isArray(r) && ED_TYPES[r[0]];
       if (!t) throw new Error('bad piece');
       const p = { t };
-      ED_KEYS.slice(1).forEach((k, i) => { p[k] = num(r[i + 1], -200000, 200000); });
-      p.w = num(p.w, 16, 8000); p.l = num(p.l, 16, 20000); p.h = num(p.h, 0, 8000);
-      if (t === 'ramp') { p.a = num(p.a || 60, 30, 80); p.d = num(p.d, -6000, 6000); } else { delete p.a; delete p.d; }
-      return p;
+      ED_KEYS.slice(1).forEach((k, i) => { p[k] = edNum(r[i + 1], -200000, 200000); });
+      if (ED[t].k === 'ramp' && !p.a) p.a = 60;
+      return edClamp(p);
     });
     return { name: String(name || 'Shared level').slice(0, 40), pieces };
   }
@@ -4575,9 +4818,26 @@ body.editing.playing #edhelp { display: block; }
   }
   // at[1] is where the piece stands: its base. Pieces store their top (a ramp its ridge, a wall its foot).
   function edNewPiece(at) {
-    const pr = ed.params[ed.type];
-    if (pr.a) return { t: ed.type, x: at[0], y: Math.round(at[1] + pr.w / 2 * Math.tan(pr.a * DEG)), z: at[2], r: ed.rot, w: pr.w, l: pr.l, a: pr.a, d: pr.d, h: 0 };
-    return { t: ed.type, x: at[0], y: ed.type === 'wall' ? at[1] : at[1] + pr.h, z: at[2], r: ed.rot, w: pr.w, l: pr.l, h: pr.h };
+    const t = ed.type, T = ED[t], pc = Object.assign({ t, x: at[0], y: 0, z: at[2], r: ed.rot, w: 0, l: 0, h: 0 }, ed.params[t]);
+    if (t === 'pillar') pc.l = pc.w; // a pillar is round
+    pc.y = T.k === 'ramp' ? Math.round(at[1] + edRampH(pc)) : T.foot ? at[1] : t === 'boost' ? at[1] + ED_PAD : at[1] + pc.h;
+    return pc;
+  }
+  // what the HUD says about the piece in hand
+  function edDescribe(t, pr) {
+    const ang = pr.a + '° faces R/F', drop = ', drops ' + pr.d + ' [ ]';
+    switch (t) {
+      case 'ramp': case 'half': return pr.w + ' wide, ' + pr.l + ' long, ' + ang + drop;
+      case 'curve': return pr.w + ' wide, radius ' + pr.l + ', bends ' + Math.abs(pr.d) + '° ' + (pr.d < 0 ? 'right' : 'left') + ' [ ], ' + ang + ', drops ' + pr.h + ' , .';
+      case 'line': { const n = Math.max(1, Math.floor((pr.l + pr.d) / (pr.w + pr.d))); return n + ' blocks of ' + pr.w + ', gaps ' + pr.d + ' [ ], ' + pr.h + ' tall'; }
+      case 'stairs': return pr.d + ' steps [ ], ' + pr.w + ' wide, ' + pr.l + ' long, rises ' + pr.h;
+      case 'slope': return pr.w + ' × ' + pr.l + ', rises ' + pr.h;
+      case 'pillar': return pr.w + ' across, ' + pr.h + ' tall';
+      case 'tunnel': return pr.w + ' wide inside, ' + pr.h + ' high, ' + pr.l + ' long';
+      case 'lava': return pr.w + ' × ' + pr.l + ', kills on touch';
+      case 'boost': return pr.w + ' × ' + pr.l + ', throws you ' + pr.d + ' u/s [ ], ' + pr.a + '° up R/F';
+      default: return pr.w + ' × ' + pr.l + ', ' + pr.h + ' tall';
+    }
   }
   function edUpdate(dt) {
     // fly
@@ -4602,20 +4862,30 @@ body.editing.playing #edhelp { display: block; }
     }
     if (ed.preview) ed.preview.visible = locked;
     for (const li of edHud.querySelectorAll('li')) li.classList.toggle('on', li.dataset.t === ed.type);
-    const pr = ed.params[ed.type];
-    $('edinfo').textContent = ED_NAMES[ed.type] + ': ' + (pr.a ? pr.w + ' wide, ' + pr.l + ' long, ' + pr.a + '° faces, drops ' + pr.d : pr.w + ' × ' + pr.l + ', ' + pr.h + ' tall') +
+    $('edinfo').textContent = ED_NAMES[ed.type] + ': ' + edDescribe(ed.type, ed.params[ed.type]) +
       ' · turned ' + ed.rot + '° · build height ' + ed.plane + ' · ' + ed.level.pieces.length + ' pieces';
   }
+  // step one of the piece's fields with the key pair it's on
+  function edAdjust(which, dir) {
+    const spec = ED[ed.type][which];
+    if (!spec) return;
+    const [f, st, lo, hi] = spec, pr = ed.params[ed.type];
+    pr[f] = Math.max(lo, Math.min(hi, (pr[f] || 0) + dir * st));
+    if (ed.type === 'curve' && f === 'd' && pr.d === 0) pr.d = dir * st; // a curve always bends
+  }
   function edKey(e) {
-    const pr = ed.params[ed.type];
-    const i = /^Digit[1-7]$/.test(e.code) ? +e.code.slice(5) - 1 : -1;
-    if (i >= 0) { ed.type = ED_TYPES[i]; return; }
+    let i = /^Digit[0-9]$/.test(e.code) ? (+e.code.slice(5) + 9) % 10 : -1;
+    if (i >= 0 && e.shiftKey) i = i >= 0 && i <= 7 ? 10 + i : -1;
+    if (i >= 0) { if (ED_TYPES[i]) ed.type = ED_TYPES[i]; return; }
+    if (e.code === 'Minus' || e.code === 'Equal') { ed.type = ED_TYPES[(ED_TYPES.indexOf(ed.type) + (e.code === 'Equal' ? 1 : ED_TYPES.length - 1)) % ED_TYPES.length]; return; }
     if (e.code === 'KeyQ') ed.rot = (ed.rot + 15) % 360;
     else if (e.code === 'KeyE') ed.rot = (ed.rot + 345) % 360;
-    else if (e.code === 'KeyR') { if (pr.a) pr.a = Math.min(80, pr.a + 5); else pr.h = Math.min(4096, pr.h + 16); }
-    else if (e.code === 'KeyF') { if (pr.a) pr.a = Math.max(35, pr.a - 5); else pr.h = Math.max(16, pr.h - 16); }
-    else if (e.code === 'BracketRight' && pr.a) pr.d = Math.min(4000, pr.d + 100);
-    else if (e.code === 'BracketLeft' && pr.a) pr.d = Math.max(-1000, pr.d - 100);
+    else if (e.code === 'KeyR') edAdjust('rf', 1);
+    else if (e.code === 'KeyF') edAdjust('rf', -1);
+    else if (e.code === 'BracketRight') edAdjust('br', 1);
+    else if (e.code === 'BracketLeft') edAdjust('br', -1);
+    else if (e.code === 'Period') edAdjust('cp', 1);
+    else if (e.code === 'Comma') edAdjust('cp', -1);
     else if (e.code === 'KeyT') ed.plane += 64;
     else if (e.code === 'KeyG') ed.plane -= 64;
     else if (e.code === 'KeyZ') { const u = ed.undo.pop(); if (u) { ed.level = JSON.parse(u); edBuild(); toast('Undone'); } }
@@ -4631,7 +4901,7 @@ body.editing.playing #edhelp { display: block; }
   window.addEventListener('keydown', (e) => {
     if (!ed.on || !locked) return;
     if (e.code === 'Tab') { e.preventDefault(); if (document.pointerLockElement) document.exitPointerLock(); return; }
-    if (!e.repeat || /^(KeyR|KeyF|BracketLeft|BracketRight|KeyT|KeyG)$/.test(e.code)) edKey(e);
+    if (!e.repeat || /^(KeyR|KeyF|BracketLeft|BracketRight|Comma|Period|KeyT|KeyG)$/.test(e.code)) edKey(e);
   });
   window.addEventListener('mousedown', (e) => {
     if (!ed.on || !locked) return;
@@ -4639,7 +4909,7 @@ body.editing.playing #edhelp { display: block; }
     const a = ed.aim;
     if (e.button === 0 && a && a.at) { const pc = edNewPiece(a.at); edChange(() => { ed.level.pieces.push(pc); }); A.play('land'); }
     else if (e.button === 2) edDelete();
-    else if (e.button === 1 && a && a.hit) { const p = ed.level.pieces[a.hit.piece]; ed.type = p.t; ed.rot = p.r; Object.assign(ed.params[p.t], p.t === 'ramp' ? { w: p.w, l: p.l, a: p.a, d: p.d } : { w: p.w, l: p.l, h: p.h }); toast('Copied ' + ED_NAMES[p.t]); }
+    else if (e.button === 1 && a && a.hit) { const p = ed.level.pieces[a.hit.piece]; ed.type = p.t; ed.rot = p.r; const pr = ed.params[p.t]; for (const k in pr) if (k in p) pr[k] = p[k]; toast('Copied ' + ED_NAMES[p.t]); }
   });
   window.addEventListener('contextmenu', (e) => { if (ed.on) e.preventDefault(); });
   // Esc on the panel goes straight back to building (or to the test run)
@@ -4650,9 +4920,7 @@ body.editing.playing #edhelp { display: block; }
   });
   window.addEventListener('wheel', (e) => {
     if (!ed.on || !locked) return;
-    const pr = ed.params[ed.type], d = e.deltaY < 0 ? 1 : -1;
-    if (e.shiftKey) pr.w = Math.max(16, Math.min(4096, pr.w + d * (pr.a ? 32 : 16)));
-    else pr.l = Math.max(16, Math.min(12000, pr.l + d * (pr.a ? 200 : 32)));
+    edAdjust(e.shiftKey ? 'sw' : 'wh', e.deltaY < 0 ? 1 : -1);
   }, { passive: true });
   $('m-editor').addEventListener('click', enterEditor);
 
@@ -4734,6 +5002,8 @@ body.editing.playing #edhelp { display: block; }
   }
   function cmRenderDetail() {
     const L = cm.level, mine = L.authorId === net.id;
+    if (L.authorTicks) communityAuthor['c:' + L.id] = L.authorTicks;
+    $('cm-medals').innerHTML = medalRow('c:' + L.id, best['c:' + L.id]);
     $('cm-name').textContent = L.name;
     $('cm-meta').textContent = 'By ' + L.author + (mine ? ' (you)' : '') + ' · ' + L.pieces + ' pieces · ' + L.plays + (L.plays === 1 ? ' play' : ' plays') + ' · published ' + cmSince(L.created) + ' · level ' + L.id;
     const lk = $('cm-like');
@@ -4773,6 +5043,7 @@ body.editing.playing #edhelp { display: block; }
     if (ed.on || ed.testing) exitEditor();
     const id = 'c:' + L.id;
     userBuild(Object.assign(lv, { name: L.name }), id);
+    if (L.authorTicks) communityAuthor[id] = L.authorTicks;
     cm.playing = L;
     api('/level?id=' + encodeURIComponent(L.id) + '&play=1').then(r => { L.plays = r.plays; }).catch(() => {});
     ghost.useRemote(raceWith ? id : null, raceWith || null);
