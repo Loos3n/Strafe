@@ -46,6 +46,7 @@
     loops.surf = makeLoop('bandpass', 2200, 0.9, 'highpass', 900);
     loops.slide = makeLoop('bandpass', 650, 1.4);
     loops.wall = makeLoop('bandpass', 1100, 1.1, 'lowpass', 3200);
+    loops.zip = makeLoop('bandpass', 1800, 6);
 
     applyVolumes();
     startMusic();
@@ -96,6 +97,9 @@
     const wr = s.playing && s.wallrun ? Math.min(1, (s.wallrunTime || 0) / 0.12) : 0;
     loops.wall.g.gain.setTargetAtTime(wr * (0.035 + Math.min(1, sp / 900) * 0.035), t, wr > 0 ? 0.04 : 0.03);
     loops.wall.f.frequency.setTargetAtTime(800 + sp * 0.6 + (s.wallrunTime || 0) * 500, t, k);
+    // zipline: a metal whine on the cable that rises with speed
+    loops.zip.g.gain.setTargetAtTime(s.playing && s.zip ? 0.03 + Math.min(1, sp / 1400) * 0.05 : 0, t, s.zip ? 0.04 : 0.02);
+    loops.zip.f.frequency.setTargetAtTime(900 + sp * 1.4, t, k);
     const target = s.playing ? 0.35 + Math.min(1, sp / 1400) * 0.65 : 0;
     state.intensity += (target - state.intensity) * 0.05;
     const cutoff = s.playing ? 900 + Math.min(sp, 2000) * 3.2 : 1300;
@@ -185,6 +189,12 @@
       noiseHit(t, 'highpass', 1800, 0.8, 0.14, 0.04);
       noiseHit(t + 0.06, 'bandpass', 500, 1, 0.07, 0.2, null, 1400);
     },
+    // grabbing a cable: a metal clank and a hand slap
+    zip(t) {
+      tone(t, 'triangle', 620, 540, 0.07, 0.002, 0.25);
+      tone(t, 'triangle', 935, 880, 0.04, 0.002, 0.18);
+      noiseHit(t, 'highpass', 2400, 0.9, 0.08, 0.04);
+    },
     climb(t) {
       for (let i = 0; i < 3; i++) noiseHit(t + i * 0.11, 'bandpass', 700 + i * 120, 2, 0.1, 0.04);
     },
@@ -193,6 +203,12 @@
       tone(t, 'triangle', 880, 880, 0.08, 0.005, 0.5);
       tone(t + 0.09, 'triangle', 1318.5, 1318.5, 0.1, 0.005, 0.8, reverbSend);
       tone(t + 0.09, 'triangle', 1318.5, 1318.5, 0.07, 0.005, 0.6);
+    },
+    // an achievement: a bright rising pair, softer than a checkpoint
+    ach(t) {
+      tone(t, 'sine', 1046.5, 1046.5, 0.06, 0.004, 0.35, reverbSend);
+      tone(t + 0.08, 'sine', 1568, 1568, 0.06, 0.004, 0.5, reverbSend);
+      tone(t + 0.08, 'triangle', 1568, 1568, 0.035, 0.004, 0.3);
     },
     finish(t) {
       [523.25, 659.25, 783.99, 1046.5, 1318.5].forEach((f, i) => {

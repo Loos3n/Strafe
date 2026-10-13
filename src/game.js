@@ -1447,6 +1447,7 @@ body.touch #menu button, body.touch #drawer button { min-height: 40px; }
   function respawn() {
     if (!game.course) return;
     if (game.practice && game.save) { practiceLoad(); return; }
+    if (game.running && game.run) game.run.resets = (game.run.resets || 0) + 1;
     place(game.cpSpawn);
     respawnFade();
     A.play('respawn');
@@ -1467,7 +1468,7 @@ body.touch #menu button, body.touch #drawer button { min-height: 40px; }
   const copyState = (v) => Array.isArray(v) ? v.map(copyState) : v && typeof v === 'object' && Object.getPrototypeOf(v) === Object.prototype
     ? Object.fromEntries(Object.entries(v).map(([k, x]) => [k, copyState(x)])) : v;
   const SAVED = ['pos', 'vel', 'approach', 'ducked', 'onGround', 'groundNormal', 'groundBrush', 'viewOffset', 'prevJump', 'prevDuck', 'jumpPressed',
-    'slide', 'slideCooldown', 'wallrun', 'wallrunCooldown', 'lastWall', 'climb', 'climbAvailable', 'mantle', 'airTime'];
+    'slide', 'slideCooldown', 'wallrun', 'wallrunCooldown', 'lastWall', 'climb', 'climbAvailable', 'mantle', 'zip', 'zipCooldown', 'airTime'];
   // In practice, checkpoints and the finish show segment times: from where
   // you last started (a load, a checkpoint jump, the last checkpoint or the
   // start) to here, against your best for that same stretch this session.
@@ -1562,6 +1563,7 @@ body.touch #menu button, body.touch #drawer button { min-height: 40px; }
     const u = fallUser ? fallUser.at(p[0], p[2]) : null;
     if (u !== null && (f === null || u < f)) f = u;
     if (f !== null) game.fallY = f;
+    if (player.zip) return false; // a cable can cross a long drop
     if (player.onGround && player.groundBrush && window.StrafeMap.isScenery(player.groundBrush.props)) return true;
     return game.fallY != null && p[1] < game.fallY - FALL_DROP;
   }
@@ -1626,6 +1628,8 @@ body.touch #menu button, body.touch #drawer button { min-height: 40px; }
         const isBest = !prevBest || ticks < prevBest;
         showSplit('Finish', ticks, prevBest);
         careerCount('finishes', game.course);
+        if (!game.run.resets && map.courses[game.course].stages >= 3) careerCount('flawless');
+        if (isCommunity(game.course)) careerCount('community');
         if (isBest) {
           careerCount('pbs');
           best[game.course] = ticks; save(BEST_KEY, best);
@@ -1643,6 +1647,7 @@ body.touch #menu button, body.touch #drawer button { min-height: 40px; }
         if (game.course === 'tutorial') finishTutorial();
         updateCourseHud();
         showComplete(ticks, prevBest, isBest);
+        achCheck();
       }
     }
     if (inStart) {
@@ -1792,6 +1797,7 @@ body.touch #menu button, body.touch #drawer button { min-height: 40px; }
     { id: 'ember', name: 'Ember', need: 18, sleeve: 0x2a2523, glove: 0x5a1712, accent: 0xff5a1f, pants: 0x2b2725, shirt: 0x3a302c },
     { id: 'gold', name: 'Gold Run', need: 24, sleeve: 0x16130d, glove: 0x3a2e14, accent: 0xe0a400, pants: 0x1c1a16, shirt: 0xf3e6c0 },
     { id: 'prism', name: 'Prism', need: 30, sleeve: 0xf4f5f7, glove: 0xd9dde2, accent: 'hue', pants: 0xc8cdd3, shirt: 0xffffff },
+    { id: 'circuit', name: 'Circuit', ach: 10, sleeve: 0x14161c, glove: 0x0f1115, accent: 0xb46cff, pants: 0x1a1d24, shirt: 0x24212e, ghost: 0xc99bff },
   ];
   const TRAILS = [
     { id: 'none', name: 'None', need: 0 },
@@ -1802,9 +1808,16 @@ body.touch #menu button, body.touch #drawer button { min-height: 40px; }
     { id: 'toxic', name: 'Toxic', need: 16, color: 0xc8ff4f, tail: 0x22b35a },
     { id: 'gold', name: 'Gold', need: 21, color: 0xffe07a, tail: 0xb87a00 },
     { id: 'rainbow', name: 'Rainbow', need: 27, color: 'hue' },
+    { id: 'comet', name: 'Comet', ach: 20, color: 0xe6f6ff, tail: 0x7a3cff },
   ];
   const storyStars = () => STORY.reduce((n, job, i) => n + (job.stars && storyProgress[i] ? storyProgress[i].stars : 0), 0);
-  const unlocked = (it) => it.need <= storyStars();
+  // a few are unlocked by achievements instead of stars
+  const ACH_KEY = 'strafe.ach.v1';
+  const achDone = load(ACH_KEY) || {};
+  const achCount = () => Object.keys(achDone).length;
+  const unlocked = (it) => it.ach ? achCount() >= it.ach : it.need <= storyStars();
+  const costLabel = (it) => it.ach ? '◆ ' + it.ach : '★ ' + it.need;
+  const costText = (it) => it.ach ? it.ach + ' achievements' : '★ ' + it.need;
   const pick = (list, id) => { const it = list.find(x => x.id === id); return it && unlocked(it) ? it : list[0]; };
   const hueColor = (h) => new THREE.Color().setHSL(h % 1, 0.85, 0.58).getHex();
 
@@ -2031,7 +2044,7 @@ body.touch #menu button, body.touch #drawer button { min-height: 40px; }
   // ------------------------------------------------------------ camera feel
   const cam = { dip: 0, dipVel: 0, roll: 0, fovKick: 0, bobPhase: 0, bob: 0, flip: 0, kick: 0, kickVel: 0, kickRoll: 0 };
 
-  const EVENT_SFX = { jump: 'jump', slide: 'slide', wallrun: 'wallrun', walljump: 'walljump', climbjump: 'walljump', climb: 'climb', vault: 'vault', mantle: 'vault' };
+  const EVENT_SFX = { jump: 'jump', slide: 'slide', wallrun: 'wallrun', walljump: 'walljump', climbjump: 'walljump', climb: 'climb', vault: 'vault', mantle: 'vault', zip: 'zip' };
   function handleEvents() {
     for (const e of player.events) {
       if (EVENT_SFX[e.type]) A.play(EVENT_SFX[e.type]);
@@ -2269,6 +2282,7 @@ body.touch #menu button, body.touch #drawer button { min-height: 40px; }
         case 'roll': return { x: 2.0, z: -s * 0.3, y: 0, e: 2.2, w: 0, k: 1 };
         case 'vault': return { x: 1.55, z: s * 0.35, y: 0, e: 0.55, w: -0.9, k: 0 };
         case 'climb': { const c = Math.sin(t * 13 + (s > 0 ? 0 : Math.PI)); return { x: 2.05 + c * 0.25, z: s * 0.05, y: 0, e: 0.6 + c * 0.3, w: -0.4, k: 0.2 }; }
+        case 'zip': return { x: 2.75, z: s * 0.18, y: 0, e: 0.35, w: 0.2, k: 1 };
         case 'wallhand': return { x: 1.3, z: s * 1.0, y: 0, e: 0.2, w: 0, k: 0 };
         case 'slide': return s < 0 ? { x: -0.25, z: -0.35, y: 0, e: 0.3, w: 0.2, k: 0.2 } : { x: 1.0, z: 0.25, y: 0, e: 1.0, w: 0, k: 0.6 };
         case 'surf': return { x: 0.75, z: s * 1.15, y: 0, e: 0.35, w: 0, k: 0.3 };
@@ -2282,7 +2296,7 @@ body.touch #menu button, body.touch #drawer button { min-height: 40px; }
       switch (mode) {
         case 'slide': return s < 0 ? { h: 1.45, k: -0.15, s: 0 } : { h: 1.1, k: -0.9, s: 0 };
         case 'roll': return { h: 1.9, k: -2.2, s: 0 };
-        case 'air': case 'surf': return { h: 0.55 + s * 0.15, k: -0.9, s: 0 };
+        case 'air': case 'surf': case 'zip': return { h: 0.55 + s * 0.15, k: -0.9, s: 0 };
         case 'climb': case 'wallrun': return { h: 0.5 + swing * 0.5, k: -0.9 - swing * 0.4, s: 0 };
         default: return { h: swing * 0.6 * run, k: -(0.2 + Math.max(0, -swing) * 1.0 * run), s: 0 };
       }
@@ -2296,6 +2310,7 @@ body.touch #menu button, body.touch #drawer button { min-height: 40px; }
       if (st.act === 'roll') mode = 'roll';
       else if (p.mantle || st.act === 'vault') mode = 'vault';
       else if (p.climb) mode = 'climb';
+      else if (p.zip) mode = 'zip';
       else if (p.wallrun) mode = 'wallrun';
       else if (p.slide && p.onGround) mode = 'slide';
       else if (!p.onGround && surfing()) mode = 'surf';
@@ -2479,7 +2494,7 @@ body.touch #menu button, body.touch #drawer button { min-height: 40px; }
     }
     hud.jump.textContent = jt;
 
-    const st = player.mantle ? (player.mantle.vault ? 'Vault' : 'Mantle') : player.wallrun ? 'Wallrun' : player.climb ? 'Climb'
+    const st = player.mantle ? (player.mantle.vault ? 'Vault' : 'Mantle') : player.wallrun ? 'Wallrun' : player.climb ? 'Climb' : player.zip ? 'Zipline'
       : player.slide ? 'Slide' : !player.onGround && player.groundNormal === null && surfing() ? 'Surf' : '';
     hud.state.textContent = st;
     hud.state.classList.toggle('on', !!st);
@@ -2805,8 +2820,8 @@ body.touch #menu button, body.touch #drawer button { min-height: 40px; }
   // bests come from the saved best times, so they go back further.
   const STATS_KEY = 'strafe.stats.v1';
   const career = Object.assign({ since: Date.now(), time: 0, jumps: 0, top: 0, dist: 0, runs: 0, finishes: 0, pbs: 0, restarts: 0, falls: 0,
-    wallruns: 0, walljumps: 0, slides: 0, vaults: 0, climbs: 0, levels: {} }, load(STATS_KEY) || {});
-  const CAREER_EVENTS = { jump: 'jumps', wallrun: 'wallruns', walljump: 'walljumps', climbjump: 'walljumps', slide: 'slides', vault: 'vaults', mantle: 'vaults', climb: 'climbs' };
+    wallruns: 0, walljumps: 0, slides: 0, vaults: 0, climbs: 0, zips: 0, flawless: 0, community: 0, published: 0, races: 0, levels: {} }, load(STATS_KEY) || {});
+  const CAREER_EVENTS = { jump: 'jumps', wallrun: 'wallruns', walljump: 'walljumps', climbjump: 'walljumps', slide: 'slides', vault: 'vaults', mantle: 'vaults', climb: 'climbs', zip: 'zips' };
   let careerDirty = 0;
   const careerLevel = (c) => career.levels[c] || (career.levels[c] = { runs: 0, finishes: 0, time: 0 });
   function careerSave() { if (careerDirty) { careerDirty = 0; save(STATS_KEY, career); } }
@@ -2819,6 +2834,7 @@ body.touch #menu button, body.touch #drawer button { min-height: 40px; }
     if (game.course && !userCourse(game.course)) careerLevel(game.course).time += TICK;
     for (const e of player.events) if (CAREER_EVENTS[e.type]) career[CAREER_EVENTS[e.type]]++;
     if (++careerDirty > 1000) careerSave(); // every ten seconds of play
+    if (game.tick % 50 === 0) achCheck();
   }
   function careerCount(key, course) {
     if (game.demo) return;
@@ -2939,6 +2955,7 @@ body.touch #menu button, body.touch #drawer button { min-height: 40px; }
       speed: hs, playing: locked || !!game.demo, airborne: !player.onGround,
       surfing: !player.onGround && surfing(), sliding: !!player.slide && player.onGround, slideTime: player.slide ? player.slide.t : 0,
       wallrun: !!player.wallrun, wallrunTime: player.wallrun ? player.wallrun.t : 0,
+      zip: !!player.zip,
     });
     sky.position.copy(camera.position);
     // the Night City levels light the world for night
@@ -3331,6 +3348,7 @@ body.touch #menu button, body.touch #drawer button { min-height: 40px; }
   function raceFinish() {
     if (!race.active || race.finished || game.course !== race.course || !race.room || race.room.phase !== 'race') return;
     race.finished = true;
+    careerCount('races');
     raceSend({ t: 'fin', ticks: 0 }); // the room times it from the go
   }
   // other racers: a see-through runner each, with a name over its head
@@ -3984,8 +4002,96 @@ body.touch #menu button, body.touch #drawer button { min-height: 40px; }
     }
     $('st-since').textContent = 'Counting on this device since ' + new Date(career.since).toLocaleDateString(undefined, { day: 'numeric', month: 'long', year: 'numeric' }) +
       '. Best times go back to your first run.';
+    achRender();
     statsMenuSub();
   }
+
+  // ---- achievements: goals across the whole game, kept on this device.
+  // Checked every half second of play and on every finish; the ones your
+  // saved times and stats already meet are granted quietly at startup.
+  const km = () => career.dist * 0.0254 / 1000;
+  const medalCount = (fn) => ALL_LEVELS.filter(n => { const m = medalOf(n, best[n]); return m >= 0 && fn(m); }).length;
+  const ACH = [
+    { id: 'tutorial', n: 'Learned the ropes', d: 'Finish the tutorial', t: () => !!best.tutorial },
+    { id: 'first', n: 'First steps', d: 'Finish any level', t: () => ALL_LEVELS.some(n => best[n]) },
+    { id: 'chain', n: 'Chain hopper', d: 'Jump 20 times in a row without stopping', t: () => stats.jumps >= 20 },
+    { id: 's1000', n: 'Sound barrier', d: 'Reach 1,000 u/s', t: () => career.top >= 1000 },
+    { id: 's1500', n: 'Overdrive', d: 'Reach 1,500 u/s', t: () => career.top >= 1500 },
+    { id: 's2000', n: 'Terminal velocity', d: 'Reach 2,000 u/s', t: () => career.top >= 2000 },
+    { id: 'wallruns', n: 'Wall walker', d: 'Wallrun 100 times', t: () => career.wallruns >= 100 },
+    { id: 'slides', n: 'Low rider', d: 'Slide 100 times', t: () => career.slides >= 100 },
+    { id: 'vaults', n: 'Free runner', d: 'Vault or mantle 100 times', t: () => career.vaults >= 100 },
+    { id: 'zip', n: 'Cable guy', d: 'Ride a zipline (build one in the editor)', t: () => career.zips >= 1 },
+    { id: 'jumps', n: 'Frequent flyer', d: 'Jump 5,000 times', t: () => career.jumps >= 5000 },
+    { id: 'marathon', n: 'Marathon', d: 'Cover 42 km', t: () => km() >= 42 },
+    { id: 'hours', n: 'Regular', d: 'Play for 5 hours', t: () => career.time >= 5 * 3600 },
+    { id: 'falls', n: 'Gravity check', d: 'Fall 500 times', t: () => career.falls >= 500 },
+    { id: 'flawless', n: 'Flawless', d: 'Finish a level with two or more checkpoints without a respawn', t: () => career.flawless >= 1 },
+    { id: 'pbs', n: 'Self improvement', d: 'Set 50 personal bests', t: () => career.pbs >= 50 },
+    { id: 'stars10', n: 'Rising star', d: 'Earn 10 story stars', t: () => storyStars() >= 10 },
+    { id: 'stars', n: 'Off the books', d: 'Earn every story star', t: () => storyStars() >= STORY.reduce((n, j) => n + (j.stars ? 3 : 0), 0) },
+    { id: 'medal', n: 'On the podium', d: 'Earn any medal', t: () => medalCount(() => true) >= 1 },
+    { id: 'gold10', n: 'Gold rush', d: 'Earn gold or better on 10 levels', t: () => medalCount(m => m <= 1) >= 10 },
+    { id: 'plat', n: 'Platinum', d: 'Earn a platinum medal', t: () => medalCount(m => m === 0) >= 1 },
+    { id: 'plat10', n: 'Untouchable', d: 'Earn platinum on 10 levels', t: () => medalCount(m => m === 0) >= 10 },
+    { id: 'gauntlet', n: 'Ran the gauntlet', d: 'Finish all six Gauntlet levels', t: () => map.gauntlet.every(n => best[n]) },
+    { id: 'night', n: 'Night owl', d: 'Finish all six Night City levels', t: () => map.night.every(n => best[n]) },
+    { id: 'harbor', n: 'Harbor master', d: 'Finish all six Harbor levels', t: () => map.harbor.every(n => best[n]) },
+    { id: 'all', n: 'Completionist', d: 'Finish every level', t: () => ALL_LEVELS.every(n => best[n]) },
+    { id: 'community', n: 'Tourist', d: 'Finish a community level', t: () => career.community >= 1 },
+    { id: 'publish', n: 'Architect', d: 'Publish a level to Community', t: () => career.published >= 1 },
+    { id: 'race', n: 'Head to head', d: 'Finish a live race', t: () => career.races >= 1 },
+    { id: 'daily', n: 'Daily habit', d: 'Finish the daily challenge 7 days in a row', t: () => dailyStreak() >= 7 },
+  ];
+  const achQueue = [];
+  let achShowing = false;
+  function achCheck(quiet) {
+    if (game.demo || replay.on) return;
+    const before = achCount(), fresh = [];
+    for (const a of ACH) {
+      if (achDone[a.id]) continue;
+      let ok = false;
+      try { ok = a.t(); } catch (e) { /* not ready yet */ }
+      if (ok) { achDone[a.id] = Date.now(); fresh.push(a); }
+    }
+    if (!fresh.length) return;
+    save(ACH_KEY, achDone);
+    if (quiet) return;
+    for (const a of fresh) achQueue.push({ a });
+    const prizes = SKINS.concat(TRAILS).filter(it => it.ach > before && it.ach <= achCount());
+    for (const it of prizes) achQueue.push({ unlock: it.name + (SKINS.includes(it) ? ' skin' : ' trail') });
+    if (!achShowing) achNext();
+  }
+  const achPop = document.createElement('div');
+  achPop.id = 'achpop';
+  achPop.setAttribute('role', 'status');
+  document.body.appendChild(achPop);
+  function achNext() {
+    const q = achQueue.shift();
+    if (!q) { achShowing = false; return; }
+    achShowing = true;
+    achPop.innerHTML = q.a ? '<small>Achievement · ' + achCount() + ' / ' + ACH.length + '</small><b></b><span></span>' : '<small>Unlocked</small><b></b><span>Pick it in Cosmetics</span>';
+    achPop.querySelector('b').textContent = q.a ? q.a.n : q.unlock;
+    if (q.a) achPop.querySelector('span').textContent = q.a.d;
+    achPop.classList.add('show');
+    A.play('ach');
+    setTimeout(() => { achPop.classList.remove('show'); setTimeout(achNext, 450); }, 3200);
+  }
+  function achRender() {
+    const el = $('st-ach');
+    $('st-achn').textContent = 'Achievements · ' + achCount() + ' / ' + ACH.length;
+    el.textContent = '';
+    for (const a of ACH) {
+      const li = document.createElement('li');
+      if (achDone[a.id]) li.className = 'done';
+      const b = document.createElement('b'); b.textContent = a.n;
+      const sp = document.createElement('span'); sp.textContent = a.d;
+      li.append(b, sp); el.appendChild(li);
+    }
+    const next = SKINS.concat(TRAILS).filter(it => it.ach && it.ach > achCount()).sort((x, y) => x.ach - y.ach)[0];
+    $('st-achnext').textContent = next ? achCount() + ' of ' + next.ach + ' toward the ' + next.name + (SKINS.includes(next) ? ' skin' : ' trail') + '.' : 'Every achievement reward is unlocked.';
+  }
+  setTimeout(() => achCheck(true), 0);
 
   function openDrawer(which) {
     A.play('click');
@@ -4099,7 +4205,7 @@ body.touch #menu button, body.touch #drawer button { min-height: 40px; }
         }
         const cn = document.createElement('span');
         cn.className = 'cn';
-        cn.innerHTML = it.name + '<small>' + (locked ? '★ ' + it.need : cosmetics[key] === it ? 'Equipped' : it.need ? '★ ' + it.need : 'Default') + '</small>';
+        cn.innerHTML = it.name + '<small>' + (locked ? costLabel(it) : cosmetics[key] === it ? 'Equipped' : it.need || it.ach ? costLabel(it) : 'Default') + '</small>';
         b.append(sw, cn);
         // pointing at an item previews it; clicking equips it, or pins the preview if locked
         b.addEventListener('pointerenter', () => showPreview(key, it));
@@ -4129,7 +4235,7 @@ body.touch #menu button, body.touch #drawer button { min-height: 40px; }
     preview.show(sk, tr);
     const lock = [sk, tr].filter(x => !unlocked(x));
     $('cos-cap').innerHTML = sk.name + ' skin · ' + (tr.id === 'none' ? 'no trail' : tr.name + ' trail') +
-      (lock.length ? '<small>Locked: ' + lock.map(x => x.name + ' needs ★ ' + x.need).join(', ') + '</small>' : '');
+      (lock.length ? '<small>Locked: ' + lock.map(x => x.name + ' needs ' + costText(x)).join(', ') + '</small>' : '');
   }
   for (const id of ['cos-skins', 'cos-trails']) $(id).addEventListener('pointerleave', () => { hovering.skin = hovering.trail = null; showPreview(); });
   $('st-start').addEventListener('click', () => { A.init(); A.play('click'); if (briefed !== null) startJob(briefed); });
@@ -4353,7 +4459,7 @@ body.touch #menu button, body.touch #drawer button { min-height: 40px; }
   // field a key changes: rf is R/F, br is [ ], cp is , and ., wh is the wheel
   // and sw is Shift+wheel, each as [field, step, min, max].
   const ED_TYPES = ['block', 'floor', 'ramp', 'wall', 'start', 'checkpoint', 'finish',
-    'slope', 'half', 'curve', 'line', 'stairs', 'pillar', 'runwall', 'tunnel', 'beam', 'lava', 'boost'];
+    'slope', 'half', 'curve', 'line', 'stairs', 'pillar', 'runwall', 'tunnel', 'beam', 'lava', 'boost', 'zip'];
   const BOX_KEYS = { rf: ['h', 16, 16, 4096], wh: ['l', 32, 16, 12000], sw: ['w', 16, 16, 4096] };
   const RAMP_KEYS = { rf: ['a', 5, 35, 80], br: ['d', 100, -1000, 4000], wh: ['l', 200, 16, 12000], sw: ['w', 32, 16, 4096] };
   const ED = {
@@ -4377,10 +4483,30 @@ body.touch #menu button, body.touch #drawer button { min-height: 40px; }
     lava: Object.assign({ n: 'Lava', c: 0xff5a1f, k: 'lava', def: { w: 1024, l: 1024, h: 32 } }, BOX_KEYS),
     boost: { n: 'Launch pad', c: 0xffc21a, k: 'pad', def: { w: 256, l: 256, a: 45, d: 900 },
       rf: ['a', 5, 0, 80], br: ['d', 100, 200, 3000], wh: ['l', 32, 64, 4096], sw: ['w', 32, 64, 4096] },
+    // two red posts and a cable from the near one's top (h up) down d to the far one, l away
+    zip: { n: 'Zipline', c: 0xffffff, k: 'route', foot: true, def: { w: 32, l: 2400, h: 144, d: 600 },
+      rf: ['h', 16, 112, 4096], br: ['d', 50, 0, 6000], wh: ['l', 100, 400, 12000], sw: ['l', 400, 400, 12000] },
   };
   const ED_NAMES = {}, ED_COLOR = {}, ED_DEF = {};
   for (const t of ED_TYPES) { ED_NAMES[t] = ED[t].n; ED_COLOR[t] = ED[t].c; ED_DEF[t] = ED[t].def; }
   const ED_PAD = 24; // a launch pad's thickness
+  // a zipline's two post positions along its length (local z), or its cable ends in world space
+  function edZipEnds(pc, local) {
+    const hl = pc.l / 2;
+    if (local) return [hl, -hl];
+    const c = Math.cos(pc.r * DEG), s = Math.sin(pc.r * DEG), y = EDO[1] + pc.y + pc.h;
+    return [[EDO[0] + pc.x + hl * s, y, EDO[2] + pc.z + hl * c], [EDO[0] + pc.x - hl * s, y - (pc.d || 0), EDO[2] + pc.z - hl * c]];
+  }
+  // a cable's faces: a thin square tube from a to b
+  function cableFaces(a, b, r) {
+    const d = [b[0] - a[0], b[1] - a[1], b[2] - a[2]], L = Math.hypot(...d), f = d.map(v => v / L);
+    let u = [f[2], 0, -f[0]]; const ul = Math.hypot(...u) || 1; u = u.map(v => v / ul * r);
+    const v = [f[1] * u[2] - f[2] * u[1], f[2] * u[0] - f[0] * u[2], f[0] * u[1] - f[1] * u[0]];
+    const ring = (p) => [[1, 1], [-1, 1], [-1, -1], [1, -1]].map(([i, j]) => [p[0] + u[0] * i + v[0] * j, p[1] + u[1] * i + v[1] * j, p[2] + u[2] * i + v[2] * j]);
+    const A = ring(a), B = ring(b), out = [];
+    for (let i = 0; i < 4; i++) { const j = (i + 1) % 4; out.push([A[i], A[j], B[j], B[i]]); }
+    return out;
+  }
   // piece -> what a click stands it on: its base. Pieces store their top (a
   // ramp its ridge); walls, runner walls and tunnels store their foot.
   const edRampH = (pc) => (pc.t === 'half' ? pc.w : pc.w / 2) * Math.tan(pc.a * DEG);
@@ -4514,6 +4640,15 @@ body.touch #menu button, body.touch #drawer button { min-height: 40px; }
         break;
       }
       case 'boost': box(-hw, hw, top - ED_PAD, top, -hl, hl); break;
+      case 'zip': {
+        // posts stand beside the cable so a rider passes them; an arm reaches over
+        const [a, b] = edZipEnds(pc, true), d = pc.d || 0, px = 40;
+        box(px - 16, px + 16, top, top + pc.h + 16, a - 16, a + 16);
+        box(-8, px + 16, top + pc.h + 4, top + pc.h + 16, a - 6, a + 6);
+        box(px - 16, px + 16, top - d, top + pc.h - d + 16, b - 16, b + 16);
+        box(-8, px + 16, top + pc.h - d + 4, top + pc.h - d + 16, b - 6, b + 6);
+        break;
+      }
       default: {
         const y1 = T.foot ? top + pc.h : top;
         box(-hw, hw, y1 - pc.h, y1, -hl, hl);
@@ -4539,6 +4674,7 @@ body.touch #menu button, body.touch #drawer button { min-height: 40px; }
   function edClear() {
     for (let i = world.brushes.length - 1; i >= 0; i--) if (world.brushes[i].props.custom) world.brushes.splice(i, 1);
     for (let i = world.triggers.length - 1; i >= 0; i--) if (world.triggers[i].custom) world.triggers.splice(i, 1);
+    for (let i = world.ziplines.length - 1; i >= 0; i--) if (world.ziplines[i].custom) world.ziplines.splice(i, 1);
     for (const m of ed.meshes) { scene.remove(m); m.geometry.dispose(); }
     ed.meshes = [];
   }
@@ -4548,7 +4684,7 @@ body.touch #menu button, body.touch #drawer button { min-height: 40px; }
     edClear();
     for (const k in map.courses) if (userCourse(k)) delete map.courses[k];
     let lowY = Infinity, box = [Infinity, Infinity, -Infinity, -Infinity], cps = 0, start = null;
-    const glow = [];
+    const glow = [], cables = [];
     L.pieces.forEach((pc, i) => {
       let b = null;
       for (const h of edHulls(pc)) {
@@ -4560,6 +4696,7 @@ body.touch #menu button, body.touch #drawer button { min-height: 40px; }
         box = [Math.min(box[0], b.min[0]), Math.min(box[1], b.min[2]), Math.max(box[2], b.max[0]), Math.max(box[3], b.max[2])];
       }
       if (pc.t === 'boost') glow.push(...edChevrons(pc));
+      if (pc.t === 'zip') { const [a, b] = edZipEnds(pc); world.ziplines.push({ a, b, custom: true }); cables.push(...cableFaces(a, b, 1.5)); }
       if (pc.t === 'start' || pc.t === 'checkpoint' || pc.t === 'finish') {
         const spawn = { pos: [EDO[0] + pc.x, EDO[1] + pc.y + 1, EDO[2] + pc.z], yaw: pc.r * DEG };
         const tmin = [b.min[0], b.max[1], b.min[2]], tmax = [b.max[0], b.max[1] + 160, b.max[2]];
@@ -4575,6 +4712,7 @@ body.touch #menu button, body.touch #drawer button { min-height: 40px; }
     const parts = buildGeometry(b => b.props.custom && !b.props.edLava, bucketFor);
     if (L.pieces.some(p => p.t === 'lava') && animated.lava) { const lv = buildGeometry(b => b.props.custom && b.props.edLava); const m = new THREE.Mesh(lv.g, animated.lava); scene.add(m); ed.meshes.push(m); }
     if (glow.length) { const m = new THREE.Mesh(facesToGeo(glow), chevronMat); scene.add(m); ed.meshes.push(m); }
+    if (cables.length) { const m = new THREE.Mesh(facesToGeo(cables), cableMat); scene.add(m); ed.meshes.push(m); }
     for (const [name, part] of Object.entries(parts)) {
       const mesh = new THREE.Mesh(part.g, MATS[name]);
       mesh.castShadow = mesh.receiveShadow = true;
@@ -4635,7 +4773,7 @@ body.editing.playing #edhelp { display: block; }
   document.body.appendChild(edHud);
   const edHelp = document.createElement('div');
   edHelp.id = 'edhelp';
-  edHelp.innerHTML = 'WASD fly · Space up · C down · Shift fast · 1-0, Shift+1-8 or - and = pick a piece · Click place · Right click delete · Middle click copy · Q/E rotate<br>Wheel and Shift+wheel size · R/F, [ ] and , . change the piece (top left says how) · T/G build height · Z undo · Enter test · Esc menu';
+  edHelp.innerHTML = 'WASD fly · Space up · C down · Shift fast · 1-0, Shift+1-9 or - and = pick a piece · Click place · Right click delete · Middle click copy · Q/E rotate<br>Wheel and Shift+wheel size · R/F, [ ] and , . change the piece (top left says how) · T/G build height · Z undo · Enter test · Esc menu';
   document.body.appendChild(edHelp);
   const edPanel = document.createElement('div');
   edPanel.id = 'edpanel'; edPanel.hidden = true;
@@ -4654,6 +4792,7 @@ body.editing.playing #edhelp { display: block; }
   scene.add(gridHelper);
   const previewMat = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.35, depthWrite: false });
   const chevronMat = new THREE.MeshBasicMaterial({ color: 0xfff3b0, side: THREE.DoubleSide });
+  const cableMat = new THREE.MeshBasicMaterial({ color: 0x20262c, side: THREE.DoubleSide });
   const previewDel = new THREE.MeshBasicMaterial({ color: 0xff3b3b, transparent: true, opacity: 0.35, depthWrite: false });
   function facesToGeo(faces) {
     const pos = [];
@@ -4781,6 +4920,7 @@ body.editing.playing #edhelp { display: block; }
     try {
       const r = await api('/levels/publish', { name: ed.level.name || '', code: await edCode(), ticks, ghost: run });
       cm.stale = true;
+      careerCount('published'); achCheck();
       edMsg('Published "' + r.name + '" (level ' + r.id + '). It is in Community now, with your ' + fmt(ticks) + ' as the time to beat.');
       toast('Published', 1800);
     } catch (e) { edMsg(e.message); }
@@ -4857,6 +4997,7 @@ body.editing.playing #edhelp { display: block; }
       case 'tunnel': return pr.w + ' wide inside, ' + pr.h + ' high, ' + pr.l + ' long';
       case 'lava': return pr.w + ' × ' + pr.l + ', kills on touch';
       case 'boost': return pr.w + ' × ' + pr.l + ', throws you ' + pr.d + ' u/s [ ], ' + pr.a + '° up R/F';
+      case 'zip': return pr.l + ' long, cable ' + pr.h + ' up R/F, drops ' + pr.d + ' [ ]. Jump to grab it';
       default: return pr.w + ' × ' + pr.l + ', ' + pr.h + ' tall';
     }
   }
@@ -4896,7 +5037,7 @@ body.editing.playing #edhelp { display: block; }
   }
   function edKey(e) {
     let i = /^Digit[0-9]$/.test(e.code) ? (+e.code.slice(5) + 9) % 10 : -1;
-    if (i >= 0 && e.shiftKey) i = i >= 0 && i <= 7 ? 10 + i : -1;
+    if (i >= 0 && e.shiftKey) i = i >= 0 && i <= 8 ? 10 + i : -1;
     if (i >= 0) { if (ED_TYPES[i]) ed.type = ED_TYPES[i]; return; }
     if (e.code === 'Minus' || e.code === 'Equal') { ed.type = ED_TYPES[(ED_TYPES.indexOf(ed.type) + (e.code === 'Equal' ? 1 : ED_TYPES.length - 1)) % ED_TYPES.length]; return; }
     if (e.code === 'KeyQ') ed.rot = (ed.rot + 15) % 360;
@@ -5157,6 +5298,7 @@ body.editing.playing #edhelp { display: block; }
       daily.days = Object.fromEntries(keep.map(k => [k, daily.days[k]]));
       save(DAILY_KEY, { days: daily.days });
     }
+    achCheck();
     if (dailyStreak() > 1) setTimeout(() => toast('Daily done · ' + dailyStreak() + ' day streak', 2400), 1200);
     dailySub();
   }
@@ -5235,6 +5377,6 @@ body.editing.playing #edhelp { display: block; }
   if (location.hash === '#demo') game.demo = true; // headless screenshot mode
   window.__strafe = { courses: map.courses, mats: MATS, lights: { hemi, sun }, setNight, setTheme, player, game, keys, eff, faceInsets, practice: { set: setPractice, save: practiceSave, load: practiceLoad }, goCourse, place, attract, previewCourse, body, ghost, cosmetics, preview, step, modelChunks, renderer, setView: (y, p) => { yaw = y; pitch = p; }, editor: { ed, enter: enterEditor, test: edTest, back: edBack, code: edCode, decode: edDecode, publish: edPublish }, community: { cm, open: cmOpen, show: cmShow, play: cmPlay }, daily: { daily, open: dailyOpen, play: dailyPlay, load: dailyLoad, finish: dailyFinish }, practiceJump,
     online: { net, race, submit: netSubmit, raceFinish, showComplete, openDrawer },
-    replay: { state: replay, open: replayOpen, close: replayClose, watchBest }, career, binds: { binds, set: (id, code) => { rebinding = id; setBind(code); }, keyName }, settings, applyColors, saved: { save: saveLastRun, render: replaysRender } };
+    replay: { state: replay, open: replayOpen, close: replayClose, watchBest }, career, ach: { check: achCheck, done: achDone, list: ACH, render: achRender }, binds: { binds, set: (id, code) => { rebinding = id; setBind(code); }, keyName }, settings, applyColors, saved: { save: saveLastRun, render: replaysRender } };
   requestAnimationFrame((t) => { last = t; frame(t); });
 })();

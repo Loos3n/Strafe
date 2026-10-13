@@ -40,6 +40,12 @@
     mantleReach: 96,
     mantleExitMin: 280, // exit speed of a mantle you came into below 150 u/s
     vaultReach: 60,
+    // ziplines: you hang from a cable and ride it downhill
+    zipReach: 34,       // how close your hands must pass to grab it
+    zipHang: 84,        // cable height above your feet while riding
+    zipMinSpeed: 450,
+    zipMaxSpeed: 1600,
+    zipJump: 260,
   };
 
   const HULL_STAND = { min: [-16, 0, -16], max: [16, 72, 16] };
@@ -66,6 +72,7 @@
   class World {
     constructor() {
       this.brushes = [];
+      this.ziplines = [];
       this.triggers = [];
     }
 
@@ -264,6 +271,8 @@
       this.climb = null;
       this.climbAvailable = true;
       this.mantle = null;
+      this.zip = null;
+      this.zipCooldown = 0;
       this.airTime = 0;
       this.categorize();
     }
@@ -286,11 +295,14 @@
       this.approach = Math.max(this.hspeed(), (this.approach || 0) - 2000 * dt);
       if (this.slideCooldown > 0) this.slideCooldown -= dt;
       if (this.wallrunCooldown > 0) this.wallrunCooldown -= dt;
+      if (this.zipCooldown > 0) this.zipCooldown -= dt;
       const wasOnGround = this.onGround;
       const fallSpeed = -this.vel[1];
 
       if (this.mantle) {
         this.mantleMove(dt);
+      } else if (this.zip || this.tryZip()) {
+        this.zipMove(cmd, dt);
       } else {
         this.duck(cmd);
         if (this.wallrun) this.wallRunMove(cmd, dt);
@@ -824,6 +836,78 @@
         this.vel = m.out.slice();
         this.categorize();
         if (this.onGround) this.vel[1] = 0;
+      }
+    }
+
+    // ---- ziplines: world.ziplines is a list of { a, b } cables, a the high
+    // end. Pass your hands near one in the air and you grab it, then ride it
+    // down, picking up speed. Jump to let go with a hop, crouch to drop, or
+    // ride off the end and keep the speed.
+
+    tryZip() {
+      const zl = this.world.ziplines;
+      if (!zl || !zl.length || this.onGround || this.zipCooldown > 0 || this.climb) return false;
+      const c = this.cfg, h = [this.pos[0], this.pos[1] + c.zipHang, this.pos[2]];
+      for (const z of zl) {
+        const d = [z.b[0] - z.a[0], z.b[1] - z.a[1], z.b[2] - z.a[2]], L2 = dot(d, d);
+        if (L2 < 1) continue;
+        const t = dot([h[0] - z.a[0], h[1] - z.a[1], h[2] - z.a[2]], d) / L2;
+        if (t < 0.01 || t > 0.95) continue;
+        const q = [z.a[0] + d[0] * t, z.a[1] + d[1] * t, z.a[2] + d[2] * t];
+        const dist = Math.hypot(h[0] - q[0], h[1] - q[1], h[2] - q[2]);
+        // a little more reach below the cable, where your arms are
+        if (dist > c.zipReach + (h[1] < q[1] ? 14 : 0)) continue;
+        const L = Math.sqrt(L2), dir = [d[0] / L, d[1] / L, d[2] / L];
+        const to = [q[0], q[1] - c.zipHang, q[2]];
+        const tr = this.trace(this.pos, to);
+        if (tr.startsolid || tr.fraction < 1) continue;
+        this.pos = to;
+        this.zip = { z, dir, L, t, speed: Math.min(c.zipMaxSpeed, Math.max(c.zipMinSpeed, dot(this.vel, dir))), time: 0 };
+        if (this.wallrun) this.endWallrun(0.2);
+        if (this.slide) this.endSlide();
+        this.onGround = false;
+        this.events.push({ type: 'zip' });
+        return true;
+      }
+      return false;
+    }
+
+    endZip(cooldown) {
+      this.zip = null;
+      this.zipCooldown = cooldown;
+      this.climbAvailable = true;
+      this.lastWall = null;
+      this.events.push({ type: 'zipoff' });
+    }
+
+    zipMove(cmd, dt) {
+      const c = this.cfg, Z = this.zip, dir = Z.dir;
+      Z.time += dt;
+      const ride = () => { this.vel = [dir[0] * Z.speed, dir[1] * Z.speed, dir[2] * Z.speed]; };
+      if (this.jumpPressed && Z.time > 0.08) {
+        ride();
+        this.vel[1] = Math.max(this.vel[1], 0) + c.zipJump;
+        this.endZip(0.35);
+        this.events.push({ type: 'jump', speed: this.hspeed() });
+        this.tryPlayerMove(dt);
+        this.categorize();
+        return;
+      }
+      if (cmd.duck && !this.prevDuck) { ride(); this.endZip(0.5); this.tryPlayerMove(dt); this.categorize(); return; }
+      // gravity along the cable, less a little drag
+      Z.speed = Math.min(c.zipMaxSpeed, Math.max(c.zipMinSpeed * 0.5, Z.speed - c.gravity * dir[1] * dt - Z.speed * 0.04 * dt));
+      Z.t += Z.speed * dt / Z.L;
+      const end = Z.t >= 1;
+      const z = Z.z, t = Math.min(1, Z.t);
+      const to = [z.a[0] + (z.b[0] - z.a[0]) * t, z.a[1] + (z.b[1] - z.a[1]) * t - c.zipHang, z.a[2] + (z.b[2] - z.a[2]) * t];
+      const tr = this.trace(this.pos, to);
+      if (!tr.startsolid) this.pos = tr.endpos;
+      ride();
+      if (end || tr.fraction < 1) {
+        // off the end (or into something): keep the speed and fly on
+        if (tr.fraction < 1) this.vel = [this.vel[0] * 0.5, Math.max(0, this.vel[1]), this.vel[2] * 0.5];
+        this.endZip(0.5);
+        this.categorize();
       }
     }
 

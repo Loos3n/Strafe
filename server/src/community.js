@@ -4,7 +4,7 @@
 // This mirrors edDecode and edFaces in src/game.js: keep them in step.
 export const EDO = [600000, 0, 0];
 const TYPES = ['block', 'floor', 'ramp', 'wall', 'start', 'checkpoint', 'finish',
-  'slope', 'half', 'curve', 'line', 'stairs', 'pillar', 'runwall', 'tunnel', 'beam', 'lava', 'boost'];
+  'slope', 'half', 'curve', 'line', 'stairs', 'pillar', 'runwall', 'tunnel', 'beam', 'lava', 'boost', 'zip'];
 const KEYS = ['t', 'x', 'y', 'z', 'r', 'w', 'l', 'h', 'a', 'd'];
 const DEG = Math.PI / 180;
 

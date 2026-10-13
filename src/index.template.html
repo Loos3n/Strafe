@@ -269,6 +269,19 @@ body.playing #drawer, body.complete #drawer { display: none; }
 .sttiles div { background: rgba(255,255,255,.05); padding: 9px 12px; }
 .sttiles dt { font-family: var(--display); font-weight: 600; font-size: 11px; letter-spacing: .2em; text-transform: uppercase; color: rgba(236,240,244,.6); }
 .sttiles dd { margin: 2px 0 0; font-family: var(--display); font-weight: 700; font-size: 22px; font-variant-numeric: tabular-nums; color: #fff; }
+.stach { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; }
+.stach li { background: rgba(255,255,255,.04); padding: 8px 12px; opacity: .5; }
+.stach li.done { opacity: 1; background: rgba(255,255,255,.08); box-shadow: inset 3px 0 0 #ffb340; }
+.stach b { display: block; font-family: var(--display); font-weight: 700; font-size: 15px; letter-spacing: .04em; color: #fff; }
+.stach span { display: block; font-size: 12px; color: rgba(236,240,244,.7); margin-top: 2px; }
+#achpop { position: fixed; right: 18px; top: 18px; z-index: 60; min-width: 240px; max-width: min(360px, calc(100vw - 36px)); padding: 10px 16px 12px; background: rgba(14,17,21,.9); border-left: 4px solid #ffb340; color: #fff; font-family: var(--display); transform: translateX(calc(100% + 40px)); transition: transform .4s cubic-bezier(.2,.8,.2,1); pointer-events: none; }
+#achpop.show { transform: none; }
+body:has(#drawer:not([hidden])) #achpop { right: auto; left: 18px; transform: translateX(calc(-100% - 40px)); }
+body:has(#drawer:not([hidden])) #achpop.show { transform: none; }
+#achpop small { display: block; font-weight: 600; font-size: 11px; letter-spacing: .2em; text-transform: uppercase; color: #ffb340; }
+#achpop b { display: block; font-weight: 800; font-style: italic; font-size: 22px; line-height: 1.15; margin-top: 2px; }
+#achpop span { display: block; font-size: 13px; color: rgba(236,240,244,.75); margin-top: 2px; }
+@media (prefers-reduced-motion: reduce) { #achpop { transition: none; } }
 .stlevels { width: 100%; border-collapse: collapse; font-size: 13px; }
 .stlevels th { text-align: right; font-family: var(--display); font-weight: 600; font-size: 11px; letter-spacing: .14em; text-transform: uppercase; color: rgba(236,240,244,.6); padding: 4px 0 6px 8px; }
 .stlevels td { text-align: right; padding: 6px 0 6px 8px; border-bottom: 1px solid rgba(255,255,255,.08); font-variant-numeric: tabular-nums; color: rgba(236,240,244,.8); white-space: nowrap; }
@@ -699,6 +712,11 @@ body.touch #racehud { top: calc(56px + env(safe-area-inset-top, 0px)); left: 10p
     </div>
     <div data-pane="stats" hidden>
       <dl class="sttiles" id="st-tiles"></dl>
+      <div class="group">
+        <p class="label" id="st-achn">Achievements</p>
+        <ol class="stach" id="st-ach"></ol>
+        <p class="onmsg" id="st-achnext"></p>
+      </div>
       <div class="group">
         <p class="label">Levels</p>
         <table class="stlevels"><thead><tr><th>Level</th><th>Best</th><th>Medal</th><th>Finished</th><th>Tries</th><th>Played</th></tr></thead><tbody id="st-levels"></tbody></table>
