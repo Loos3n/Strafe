@@ -441,7 +441,8 @@ body[data-colors=contrast] { --ahead: #5cf2ff; --behind: #ff4df0; }
 .dystats dd { margin: 2px 0 0; font-family: var(--display); font-weight: 700; font-size: 18px; font-variant-numeric: tabular-nums; }
 .onboard .old { font-size: 11px; color: rgba(236,240,244,.5); }
 /* community levels */
-.cmtabs { display: flex; gap: 6px; margin: 4px 0 8px; }
+.cmtabs { display: flex; flex-wrap: wrap; gap: 6px; margin: 4px 0 8px; }
+#cm-follow.on { border-color: var(--red); color: #fff; }
 .cmtabs .on { background: var(--red); border-color: var(--red); color: #fff; }
 .cmlist { list-style: none; margin: 6px 0; padding: 0; display: grid; gap: 4px; }
 .cmrow { all: unset; box-sizing: border-box; cursor: pointer; width: 100%; display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 2px 10px; padding: 9px 10px; background: rgba(255,255,255,.05); border-left: 3px solid transparent; }
@@ -524,7 +525,7 @@ body.touch #racehud { top: calc(56px + env(safe-area-inset-top, 0px)); left: 10p
       <button class="mbtn" id="m-practice" hidden><span>Practice mode</span><small id="m-practice-sub"></small></button>
       <button class="mbtn" data-open="story" aria-expanded="false" aria-controls="drawer"><span>Story</span><small id="m-story-sub"></small></button>
       <button class="mbtn" id="m-play"><span>Play</span><small id="m-play-sub"></small></button>
-      <button class="mbtn" data-open="daily" aria-expanded="false" aria-controls="drawer"><span>Daily challenge</span><small id="m-daily-sub">One level a day</small></button>
+      <button class="mbtn" data-open="daily" aria-expanded="false" aria-controls="drawer"><span>Challenges</span><small id="m-daily-sub">Daily and weekly levels</small></button>
       <button class="mbtn" id="m-tutorial"><span>Tutorial</span><small id="m-tut-sub"></small></button>
       <button class="mbtn" data-open="online" aria-expanded="false" aria-controls="drawer"><span>Online</span><small id="m-online-sub">Top times and races</small></button>
       <button class="mbtn" data-open="replays" aria-expanded="false" aria-controls="drawer"><span>Replays</span><small>Saved runs and bests</small></button>
@@ -756,6 +757,7 @@ body.touch #racehud { top: calc(56px + env(safe-area-inset-top, 0px)); left: 10p
     </div>
     <div data-pane="daily" hidden>
       <div class="group" id="dy-off" hidden><p class="onmsg">Can't reach the Strafe server from here, so the daily challenge is off. You can play it at <a href="https://strafe-online.strafe-game.workers.dev" target="_blank" rel="noopener">strafe-online.strafe-game.workers.dev</a>.</p></div>
+      <div class="cmtabs" id="dy-tabs" role="tablist"><button class="ghost small" data-kind="day">Daily</button><button class="ghost small" data-kind="week">Weekly</button></div>
       <div id="dy-body">
         <p class="label" id="dy-date"></p>
         <h3 class="cmname" id="dy-name"></h3>
@@ -765,20 +767,21 @@ body.touch #racehud { top: calc(56px + env(safe-area-inset-top, 0px)); left: 10p
         <dl class="dystats">
           <div><dt>Your time</dt><dd id="dy-mine"></dd></div>
           <div><dt>Streak</dt><dd id="dy-streak"></dd></div>
-          <div><dt>Next level in</dt><dd id="dy-left"></dd></div>
+          <div><dt id="dy-leftlbl">Next level in</dt><dd id="dy-left"></dd></div>
         </dl>
         <div class="group">
-          <p class="label">Today's board</p>
+          <p class="label" id="dy-boardlbl">Today's board</p>
           <ol class="onboard" id="dy-board"></ol>
           <p class="onmsg" id="dy-boardmsg"></p>
         </div>
-        <p class="onmsg">Everyone gets the same level, picked from the built-in levels and the top rated community levels. Every run you finish on it today counts, and your best stays on the board. A new level comes up at midnight UTC. Your streak counts the days in a row you've finished it.</p>
+        <p class="onmsg">Everyone gets the same level, picked from the built-in levels and the top rated community levels. Every run you finish on it while it's up counts, and your best stays on the board. A new daily level comes up at midnight UTC and a new weekly one on Monday. Your streak counts the days (or weeks) in a row you've finished it.</p>
       </div>
     </div>
     <div data-pane="community" hidden>
       <div class="group" id="cm-off" hidden><p class="onmsg">Can't reach the Strafe server from here, so community levels are off. You can play them at <a href="https://strafe-online.strafe-game.workers.dev" target="_blank" rel="noopener">strafe-online.strafe-game.workers.dev</a>.</p></div>
       <div id="cm-listview">
-        <div class="cmtabs" id="cm-tabs" role="tablist"><button class="ghost small" data-sort="top">Top rated</button><button class="ghost small" data-sort="new">Newest</button><button class="ghost small" data-sort="mine">Mine</button></div>
+        <div class="cmtabs" id="cm-tabs" role="tablist"><button class="ghost small" data-sort="top">Top rated</button><button class="ghost small" data-sort="new">Newest</button><button class="ghost small" data-sort="played">Most played</button><button class="ghost small" data-sort="hard">Hardest</button><button class="ghost small" data-sort="follow">Following</button><button class="ghost small" data-sort="mine">Mine</button></div>
+        <p class="onmsg" id="cm-bymsg" hidden><span></span><button class="ghost small" id="cm-byclear">Show all levels</button></p>
         <form class="onrow" id="cm-search"><input id="cm-q" maxlength="32" placeholder="Search levels or makers" autocomplete="off" spellcheck="false" aria-label="Search levels"><button class="ghost">Search</button></form>
         <ol class="cmlist" id="cm-list"></ol>
         <p class="onmsg" id="cm-msg"></p>
@@ -791,7 +794,7 @@ body.touch #racehud { top: calc(56px + env(safe-area-inset-top, 0px)); left: 10p
         <p class="onmsg" id="cm-meta"></p>
         <p class="mrow" id="cm-medals"></p>
         <div class="onrow" id="cm-actions"><button class="cprimary" id="cm-play">Play</button><button class="ghost" id="cm-like"></button></div>
-        <div class="onrow" id="cm-tools"><button class="ghost small" id="cm-edit">Open in editor</button><button class="ghost small" id="cm-copy">Copy level code</button><button class="ghost small" id="cm-del" hidden>Take down</button></div>
+        <div class="onrow" id="cm-tools"><button class="ghost small" id="cm-edit">Open in editor</button><button class="ghost small" id="cm-copy">Copy level code</button><button class="ghost small" id="cm-follow"></button><button class="ghost small" id="cm-byauthor"></button><button class="ghost small" id="cm-del" hidden>Take down</button></div>
         <p class="onmsg" id="cm-dmsg"></p>
         <div class="group">
           <p class="label">Top times</p>

@@ -8,7 +8,7 @@ const noisy = require('./noise.js')();
 const P = globalThis.StrafePhysics; const { world, courses } = globalThis.StrafeMap.buildMap(P);
 const DIRS = [[0, -1], [1, 0], [0, 1], [-1, 0]];
 const wrap = a => Math.atan2(Math.sin(a), Math.cos(a));
-const LEVELS = ['surf', 'bhop', 'canyon', 'stairway', 'crossover'].concat(globalThis.StrafeMap.buildMap(P).night, globalThis.StrafeMap.buildMap(P).harbor);
+const LEVELS = ['surf', 'bhop', 'canyon', 'stairway', 'crossover'].concat(globalThis.StrafeMap.buildMap(P).night, globalThis.StrafeMap.buildMap(P).harbor, globalThis.StrafeMap.buildMap(P).skyline);
 
 function frameOf(lg) {
   const f = DIRS[lg.h], r = DIRS[(lg.h + 1) % 4];
@@ -42,6 +42,10 @@ function brain(F, st) {
   // q: the player seen in this leg's frame
   return (p, q, n, i) => {
     const plan = F.items, z = q.pos[2];
+    // a zipline: let it carry you, then fly for the pad under its end
+    if (p.zip) return { yaw: 0 };
+    const zp = plan.find(it => it.t === 'zip' && z <= it.z0 + 200 && z >= it.z1);
+    if (zp && !p.onGround && z > zp.z0 - 300) return { forward: 1, yaw: Math.atan2(-(zp.x - q.pos[0]), 300) };
     if (n) st.ramp = plan.findIndex(it => it.t === 'ramp' && z <= it.z0 + 50 && z >= it.z1 - 50);
     if (p.onGround) st.ramp = -1;
     if (n && st.ramp >= 0) {
@@ -69,6 +73,8 @@ function brain(F, st) {
     if (k < 0) k = plan.length - 1;
     const t = plan[Math.min(k, plan.length - 1)];
     const here = plan[cur];
+    // the next thing is a zipline: run straight under it and jump off the edge
+    if (t.t === 'zip' && p.onGround) return { forward: 1, yaw: Math.atan2(-(t.x - q.pos[0]), Math.max(120, Math.min(400, z - (here ? here.z1 : z)))), jump: !!here && z < here.z1 + 40 };
     // after a slide the next thing is a ramp below: fly at it
     if (isRamp(t)) {
       const [ax, az] = rampAim(q, t);

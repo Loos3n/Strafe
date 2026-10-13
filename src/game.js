@@ -80,7 +80,8 @@
   const MEDALS = [{ k: 'plat', n: 'Platinum' }, { k: 'gold', n: 'Gold' }, { k: 'silver', n: 'Silver' }, { k: 'bronze', n: 'Bronze' }];
   const MEDAL_PAR = { surf: 62.4, bhop: 55.3, roofs: 76.3, canyon: 62.7, stairway: 53.4, crossover: 65.1, downtown: 77.5, cascade: 25.3, spire: 62.0, freerun: 62.3,
     g1: 24.8, g2: 32.4, g3: 48.4, g4: 49.6, g5: 58.7, g6: 74.0, n1: 31.9, n2: 33.9, n3: 45.0, n4: 44.6, n5: 71.2, n6: 79.6,
-    h1: 59.3, h2: 59.3, h3: 53.1, h4: 58.6, h5: 69.8, h6: 74.2 };
+    h1: 59.3, h2: 59.3, h3: 53.1, h4: 58.6, h5: 69.8, h6: 74.2,
+    s1: 36.3, s2: 37.9, s3: 50.5, s4: 61.2 };
   const communityAuthor = {}; // community course -> its maker's time, from the server
   // [platinum, gold, silver, bronze] in ticks, or null for levels without medals
   function medalTimes(course) {
@@ -1468,7 +1469,7 @@ body.touch #menu button, body.touch #drawer button { min-height: 40px; }
   const copyState = (v) => Array.isArray(v) ? v.map(copyState) : v && typeof v === 'object' && Object.getPrototypeOf(v) === Object.prototype
     ? Object.fromEntries(Object.entries(v).map(([k, x]) => [k, copyState(x)])) : v;
   const SAVED = ['pos', 'vel', 'approach', 'ducked', 'onGround', 'groundNormal', 'groundBrush', 'viewOffset', 'prevJump', 'prevDuck', 'jumpPressed',
-    'slide', 'slideCooldown', 'wallrun', 'wallrunCooldown', 'lastWall', 'climb', 'climbAvailable', 'mantle', 'zip', 'zipCooldown', 'airTime'];
+    'slide', 'slideCooldown', 'wallrun', 'wallrunCooldown', 'lastWall', 'climb', 'climbAvailable', 'mantle', 'zip', 'zipCooldown', 'rampSlide', 'edgeBug', 'airTime'];
   // In practice, checkpoints and the finish show segment times: from where
   // you last started (a load, a checkpoint jump, the last checkpoint or the
   // start) to here, against your best for that same stretch this session.
@@ -2071,6 +2072,11 @@ body.touch #menu button, body.touch #drawer button { min-height: 40px; }
           }
         }
         if (player.hspeed() < 20) { stats.jumps = 0; eff.last = null; }
+      } else if (e.type === 'edgebug') {
+        if (locked && !replay.on) toast('Edgebug', 900);
+        A.play('whoosh');
+      } else if (e.type === 'rampslide') {
+        A.play('slide');
       } else if (e.type === 'climbjump') {
         turnLeft = Math.PI;
       } else if (e.type === 'mantle' || e.type === 'vault') {
@@ -2494,7 +2500,7 @@ body.touch #menu button, body.touch #drawer button { min-height: 40px; }
     }
     hud.jump.textContent = jt;
 
-    const st = player.mantle ? (player.mantle.vault ? 'Vault' : 'Mantle') : player.wallrun ? 'Wallrun' : player.climb ? 'Climb' : player.zip ? 'Zipline'
+    const st = player.mantle ? (player.mantle.vault ? 'Vault' : 'Mantle') : player.wallrun ? 'Wallrun' : player.climb ? 'Climb' : player.zip ? 'Zipline' : player.rampSlide ? 'Rampslide'
       : player.slide ? 'Slide' : !player.onGround && player.groundNormal === null && surfing() ? 'Surf' : '';
     hud.state.textContent = st;
     hud.state.classList.toggle('on', !!st);
@@ -2566,7 +2572,7 @@ body.touch #menu button, body.touch #drawer button { min-height: 40px; }
   }
 
   // ------------------------------------------------------------ level complete
-  const LEVEL_ORDER = ['tutorial'].concat(map.order, map.gauntlet, map.night, map.harbor);
+  const LEVEL_ORDER = ['tutorial'].concat(map.order, map.gauntlet, map.night, map.harbor, map.skyline);
   const completeEl = $('complete');
   let completeTimer = 0;
   function nextLevel(name) {
@@ -2820,8 +2826,8 @@ body.touch #menu button, body.touch #drawer button { min-height: 40px; }
   // bests come from the saved best times, so they go back further.
   const STATS_KEY = 'strafe.stats.v1';
   const career = Object.assign({ since: Date.now(), time: 0, jumps: 0, top: 0, dist: 0, runs: 0, finishes: 0, pbs: 0, restarts: 0, falls: 0,
-    wallruns: 0, walljumps: 0, slides: 0, vaults: 0, climbs: 0, zips: 0, flawless: 0, community: 0, published: 0, races: 0, levels: {} }, load(STATS_KEY) || {});
-  const CAREER_EVENTS = { jump: 'jumps', wallrun: 'wallruns', walljump: 'walljumps', climbjump: 'walljumps', slide: 'slides', vault: 'vaults', mantle: 'vaults', climb: 'climbs', zip: 'zips' };
+    wallruns: 0, walljumps: 0, slides: 0, vaults: 0, climbs: 0, zips: 0, rampslides: 0, edgebugs: 0, flawless: 0, community: 0, published: 0, races: 0, levels: {} }, load(STATS_KEY) || {});
+  const CAREER_EVENTS = { jump: 'jumps', wallrun: 'wallruns', walljump: 'walljumps', climbjump: 'walljumps', slide: 'slides', vault: 'vaults', mantle: 'vaults', climb: 'climbs', zip: 'zips', rampslide: 'rampslides', edgebug: 'edgebugs' };
   let careerDirty = 0;
   const careerLevel = (c) => career.levels[c] || (career.levels[c] = { runs: 0, finishes: 0, time: 0 });
   function careerSave() { if (careerDirty) { careerDirty = 0; save(STATS_KEY, career); } }
@@ -3164,7 +3170,8 @@ body.touch #menu button, body.touch #drawer button { min-height: 40px; }
     const here = l && l.course === game.course;
     el.hidden = !here;
     if (here) el.textContent = l.error ? 'Not posted: ' + l.error : l.mine ? 'Online rank #' + l.mine.rank + ' of ' + l.total +
-      (l.daily && l.daily.mine ? ' · Daily #' + l.daily.mine.rank + ' of ' + l.daily.total : '') : 'Posting…';
+      (l.daily && l.daily.mine ? ' · Daily #' + l.daily.mine.rank + ' of ' + l.daily.total : '') +
+      (l.weekly && l.weekly.mine ? ' · Weekly #' + l.weekly.mine.rank + ' of ' + l.weekly.total : '') : 'Posting…';
     $('c-post').hidden = !(net.pending && net.pending.course === game.course && !net.token);
   }
   async function netSubmit(course, ticks, run) {
@@ -3174,9 +3181,10 @@ body.touch #menu button, body.touch #drawer button { min-height: 40px; }
     netRenderComplete();
     try {
       const res = await api('/run', { course: lbKey(course), ticks, ghost: run });
-      net.last = { course, mine: res.mine, total: res.total, daily: res.daily };
+      net.last = { course, mine: res.mine, total: res.total, daily: res.daily, weekly: res.weekly };
       delete net.boards[lbKey(course)];
       if (res.daily) daily.at = 0;
+      if (res.weekly) weekly.at = 0;
     } catch (e) {
       if (e.status === 401) { net.token = null; saveNet(); net.pending = { course, ticks, run }; net.last = null; }
       else net.last = { course, error: e.message };
@@ -3780,8 +3788,8 @@ body.touch #menu button, body.touch #drawer button { min-height: 40px; }
   const flashEl = $('flash');
   const MENU_ROWS = [{ name: 'tutorial', key: 'T' }].concat(map.order.map((name, i) => ({ name, key: String((i + 1) % 10) })),
     map.gauntlet.map((name, i) => ({ name, key: 'G' + (i + 1) })), map.night.map((name, i) => ({ name, key: 'N' + (i + 1) })),
-    map.harbor.map((name, i) => ({ name, key: 'H' + (i + 1) })));
-  const ALL_LEVELS = map.order.concat(map.gauntlet, map.night, map.harbor);
+    map.harbor.map((name, i) => ({ name, key: 'H' + (i + 1) })), map.skyline.map((name, i) => ({ name, key: 'S' + (i + 1) })));
+  const ALL_LEVELS = map.order.concat(map.gauntlet, map.night, map.harbor, map.skyline);
   // difficulty pips: five, or more for levels off the scale
   const pipHtml = (d, label) => '<span class="pips" aria-label="' + label + d + ' of ' + Math.max(5, d) + '">' +
     Array.from({ length: Math.max(5, d) }, (_, k) => '<i class="' + (k < d ? 'on' : '') + '"></i>').join('') + '</span>';
@@ -3793,7 +3801,7 @@ body.touch #menu button, body.touch #drawer button { min-height: 40px; }
     const c = rowCourse(name);
     const tutorial = name === 'tutorial';
     $('h-type').innerHTML = '<span class="chip" style="--c:' + hex(c.color) + '">' + c.type + '</span>' +
-      (tutorial ? 'Start here' : c.set === 'gauntlet' ? 'Gauntlet ' + (map.gauntlet.indexOf(name) + 1) + ' of 6' : c.set === 'night' ? 'Night City ' + (map.night.indexOf(name) + 1) + ' of 6' : c.set === 'harbor' ? 'Harbor ' + (map.harbor.indexOf(name) + 1) + ' of 6' : map.order.indexOf(name) >= 6 ? 'Advanced' : 'Level ' + (map.order.indexOf(name) + 1));
+      (tutorial ? 'Start here' : c.set === 'gauntlet' ? 'Gauntlet ' + (map.gauntlet.indexOf(name) + 1) + ' of 6' : c.set === 'night' ? 'Night City ' + (map.night.indexOf(name) + 1) + ' of 6' : c.set === 'harbor' ? 'Harbor ' + (map.harbor.indexOf(name) + 1) + ' of 6' : c.set === 'skyline' ? 'Cableway ' + (map.skyline.indexOf(name) + 1) + ' of 4' : map.order.indexOf(name) >= 6 ? 'Advanced' : 'Level ' + (map.order.indexOf(name) + 1));
     $('h-name').textContent = c.name;
     $('h-desc').textContent = c.desc;
     $('h-diff').innerHTML = c.difficulty ? pipHtml(c.difficulty, '') : (tutorial ? 'Easy' : 'None');
@@ -3862,7 +3870,7 @@ body.touch #menu button, body.touch #drawer button { min-height: 40px; }
       b.style.setProperty('--c', hex(c.color));
       const pips = c.difficulty ? pipHtml(c.difficulty, 'Difficulty ') : '<span>' + c.type + '</span>';
       const bt = best[r.name] ? fmt(best[r.name]) : '';
-      const adv = c.set === 'gauntlet' ? '<span class="adv">GAUNTLET</span>' : c.set === 'night' ? '<span class="adv">NIGHT</span>' : c.set === 'harbor' ? '<span class="adv">HARBOR</span>' : map.order.indexOf(r.name) >= 6 ? '<span class="adv">ADV</span>' : '';
+      const adv = c.set === 'gauntlet' ? '<span class="adv">GAUNTLET</span>' : c.set === 'night' ? '<span class="adv">NIGHT</span>' : c.set === 'harbor' ? '<span class="adv">HARBOR</span>' : c.set === 'skyline' ? '<span class="adv">CABLEWAY</span>' : map.order.indexOf(r.name) >= 6 ? '<span class="adv">ADV</span>' : '';
       b.innerHTML = '<span class="ck"><span>' + r.key + '</span>' + adv + '</span><span class="cn">' + c.name + '</span>' +
         '<span class="cm">' + pips + '<span>' + medalDot(r.name, medalOf(r.name, best[r.name])) + bt + '</span></span>';
       b.addEventListener('mouseenter', () => { A.play('hover'); previewLevel(r.name); });
@@ -4022,6 +4030,8 @@ body.touch #menu button, body.touch #drawer button { min-height: 40px; }
     { id: 'slides', n: 'Low rider', d: 'Slide 100 times', t: () => career.slides >= 100 },
     { id: 'vaults', n: 'Free runner', d: 'Vault or mantle 100 times', t: () => career.vaults >= 100 },
     { id: 'zip', n: 'Cable guy', d: 'Ride a zipline (build one in the editor)', t: () => career.zips >= 1 },
+    { id: 'rampslide', n: 'Rampslider', d: 'Ramp slide over a slope at 1,000 u/s or more', t: () => career.rampslides >= 1 },
+    { id: 'edgebug', n: 'Edgebug', d: 'Land a hard fall on just the edge of a ledge and slip off it', t: () => career.edgebugs >= 1 },
     { id: 'jumps', n: 'Frequent flyer', d: 'Jump 5,000 times', t: () => career.jumps >= 5000 },
     { id: 'marathon', n: 'Marathon', d: 'Cover 42 km', t: () => km() >= 42 },
     { id: 'hours', n: 'Regular', d: 'Play for 5 hours', t: () => career.time >= 5 * 3600 },
@@ -4037,10 +4047,12 @@ body.touch #menu button, body.touch #drawer button { min-height: 40px; }
     { id: 'gauntlet', n: 'Ran the gauntlet', d: 'Finish all six Gauntlet levels', t: () => map.gauntlet.every(n => best[n]) },
     { id: 'night', n: 'Night owl', d: 'Finish all six Night City levels', t: () => map.night.every(n => best[n]) },
     { id: 'harbor', n: 'Harbor master', d: 'Finish all six Harbor levels', t: () => map.harbor.every(n => best[n]) },
+    { id: 'skyline', n: 'Cable master', d: 'Finish all four Cableway levels', t: () => map.skyline.every(n => best[n]) },
     { id: 'all', n: 'Completionist', d: 'Finish every level', t: () => ALL_LEVELS.every(n => best[n]) },
     { id: 'community', n: 'Tourist', d: 'Finish a community level', t: () => career.community >= 1 },
     { id: 'publish', n: 'Architect', d: 'Publish a level to Community', t: () => career.published >= 1 },
     { id: 'race', n: 'Head to head', d: 'Finish a live race', t: () => career.races >= 1 },
+    { id: 'weekly', n: 'Week in, week out', d: 'Finish the weekly challenge 4 weeks in a row', t: () => chalStreak(weekly) >= 4 },
     { id: 'daily', n: 'Daily habit', d: 'Finish the daily challenge 7 days in a row', t: () => dailyStreak() >= 7 },
   ];
   const achQueue = [];
@@ -4096,7 +4108,7 @@ body.touch #menu button, body.touch #drawer button { min-height: 40px; }
   function openDrawer(which) {
     A.play('click');
     drawer.hidden = false;
-    $('d-title').textContent = { settings: 'Settings', story: 'Story', cosmetics: 'Cosmetics', controls: 'Controls', online: 'Online', replays: 'Replays', stats: 'Stats', community: 'Community', daily: 'Daily challenge' }[which];
+    $('d-title').textContent = { settings: 'Settings', story: 'Story', cosmetics: 'Cosmetics', controls: 'Controls', online: 'Online', replays: 'Replays', stats: 'Stats', community: 'Community', daily: 'Challenges' }[which];
     if (which === 'online') onlineOpen();
     if (which === 'daily') dailyOpen();
     if (which === 'community') cmOpen();
@@ -4642,7 +4654,7 @@ body.touch #menu button, body.touch #drawer button { min-height: 40px; }
       case 'boost': box(-hw, hw, top - ED_PAD, top, -hl, hl); break;
       case 'zip': {
         // posts stand beside the cable so a rider passes them; an arm reaches over
-        const [a, b] = edZipEnds(pc, true), d = pc.d || 0, px = 40;
+        const [a, b] = edZipEnds(pc, true), d = pc.d || 0, px = 64;
         box(px - 16, px + 16, top, top + pc.h + 16, a - 16, a + 16);
         box(-8, px + 16, top + pc.h + 4, top + pc.h + 16, a - 6, a + 6);
         box(px - 16, px + 16, top - d, top + pc.h - d + 16, b - 16, b + 16);
@@ -4800,6 +4812,12 @@ body.editing.playing #edhelp { display: block; }
     const g = new THREE.BufferGeometry();
     g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
     return g;
+  }
+  // the built-in levels' cables (Cableway), drawn once
+  {
+    const cf = [];
+    for (const z of world.ziplines) if (!z.custom) cf.push(...cableFaces(z.a, z.b, 2));
+    if (cf.length) scene.add(new THREE.Mesh(facesToGeo(cf), cableMat));
   }
 
   // ---- entering, leaving, testing
@@ -5090,7 +5108,11 @@ body.editing.playing #edhelp { display: block; }
   // Levels players publish from the editor, kept on the Strafe server. Browse
   // the top rated or newest, give them a thumbs up, play them and chase the
   // board each one gets. A community level plays as course "c:<its id>".
-  const cm = { sort: 'top', q: '', page: 0, rows: [], more: false, level: null, playing: null, stale: true, token: 0 };
+  const cm = { sort: 'top', q: '', page: 0, rows: [], more: false, level: null, playing: null, stale: true, token: 0, by: null };
+  // makers you follow, by id (with their name as last seen), kept on this device
+  const FOLLOW_KEY = 'strafe.follow.v1';
+  const follows = load(FOLLOW_KEY) || {};
+  const following = (id) => !!follows[id];
   const cmEl = (tag, cls, text) => { const e = document.createElement(tag); e.className = cls; e.textContent = text; return e; };
   const cmQuery = () => net.id ? '&me=' + encodeURIComponent(net.id) : '';
   function cmSince(t) {
@@ -5106,6 +5128,8 @@ body.editing.playing #edhelp { display: block; }
     $('cm-detail').hidden = true;
     cm.level = null;
     for (const b of $('cm-tabs').children) { b.classList.toggle('on', b.dataset.sort === cm.sort); b.setAttribute('aria-selected', String(b.dataset.sort === cm.sort)); }
+    $('cm-bymsg').hidden = cm.sort !== 'by';
+    if (cm.sort === 'by') $('cm-bymsg').firstChild.textContent = 'Levels by ' + cm.by.name + ' ';
     $('cm-q').value = cm.q;
     if (off) return;
     if (cm.stale || !cm.rows.length) cmLoad(false); else cmRenderList();
@@ -5113,12 +5137,14 @@ body.editing.playing #edhelp { display: block; }
   async function cmLoad(append) {
     const token = ++cm.token;
     if (!append) cm.page = 0;
-    if (cm.sort === 'mine' && !net.id) { cm.rows = []; cm.more = false; cmRenderList(); return; }
+    const by = cm.sort === 'mine' ? net.id : cm.sort === 'follow' ? Object.keys(follows).join(',') : cm.sort === 'by' ? cm.by.id : '';
+    if ((cm.sort === 'mine' || cm.sort === 'follow') && !by) { cm.rows = []; cm.more = false; cmRenderList(); return; }
     $('cm-msg').textContent = 'Loading…';
     let data;
     try {
-      data = await api('/levels?sort=' + (cm.sort === 'new' ? 'new' : 'top') + '&page=' + cm.page + (cm.q ? '&q=' + encodeURIComponent(cm.q) : '') +
-        (cm.sort === 'mine' ? '&by=' + encodeURIComponent(net.id) : '') + cmQuery());
+      const order = { new: 'new', played: 'played', hard: 'hard' }[cm.sort] || (cm.sort === 'follow' || cm.sort === 'by' ? 'new' : 'top');
+      data = await api('/levels?sort=' + order + '&page=' + cm.page + (cm.q ? '&q=' + encodeURIComponent(cm.q) : '') +
+        (by ? '&by=' + encodeURIComponent(by) : '') + cmQuery());
     } catch (e) { if (token === cm.token) $('cm-msg').textContent = 'Could not load levels.'; return; }
     if (token !== cm.token) return;
     cm.stale = false;
@@ -5136,12 +5162,15 @@ body.editing.playing #edhelp { display: block; }
       lk.title = L.likes + (L.likes === 1 ? ' like' : ' likes');
       b.append(cmEl('span', 'n', L.name), lk,
         cmEl('span', 'm', 'by ' + L.author + (L.authorId === net.id ? ' (you)' : '') + ' · ' + L.plays + (L.plays === 1 ? ' play' : ' plays') + ' · ' +
-          L.runners + (L.runners === 1 ? ' runner' : ' runners') + (L.best ? ' · record ' + fmt(L.best) : '') + ' · ' + cmSince(L.created)));
+          L.runners + (L.runners === 1 ? ' runner' : ' runners') + (cm.sort === 'hard' && L.plays >= 3 ? ' · ' + Math.round(Math.min(1, L.runners / L.plays) * 100) + '% finish' : '') +
+          (L.best ? ' · record ' + fmt(L.best) : '') + ' · ' + cmSince(L.created)));
       b.addEventListener('click', () => { A.play('click'); cmShow(L.id); });
       li.appendChild(b); ol.appendChild(li);
     }
     $('cm-msg').textContent = cm.rows.length ? '' : cm.q ? 'No levels match "' + cm.q + '".' :
-      cm.sort === 'mine' ? (net.id ? 'You have not published a level yet.' : 'Pick a name under Online, or publish from the editor, to see your levels here.') : 'No levels yet. Build one in the Level editor and be the first to publish.';
+      cm.sort === 'mine' ? (net.id ? 'You have not published a level yet.' : 'Pick a name under Online, or publish from the editor, to see your levels here.') :
+      cm.sort === 'follow' ? (Object.keys(follows).length ? 'The makers you follow have no levels up right now.' : 'Open a level and pick Follow to see that maker\'s levels here, newest first.') :
+      'No levels yet. Build one in the Level editor and be the first to publish.';
     $('cm-more').hidden = !cm.more;
   }
   async function cmShow(id) {
@@ -5174,6 +5203,11 @@ body.editing.playing #edhelp { display: block; }
     lk.disabled = mine;
     lk.title = mine ? 'Your level' : L.liked ? 'Take back your like' : 'Give this level a thumbs up';
     $('cm-del').hidden = !mine;
+    const fb = $('cm-follow');
+    fb.hidden = mine;
+    fb.textContent = following(L.authorId) ? 'Following ' + L.author + ' ✓' : 'Follow ' + L.author;
+    fb.classList.toggle('on', following(L.authorId));
+    $('cm-byauthor').textContent = mine ? 'All my levels' : 'More by ' + L.author;
   }
   async function cmBoard() {
     const L = cm.level, ol = $('cm-board'), msg = $('cm-boardmsg');
@@ -5233,6 +5267,23 @@ body.editing.playing #edhelp { display: block; }
   for (const b of $('cm-tabs').children) b.addEventListener('click', () => { A.play('click'); cm.sort = b.dataset.sort; cm.stale = true; cmOpen(); });
   $('cm-search').addEventListener('submit', (e) => { e.preventDefault(); cm.q = $('cm-q').value.trim(); cmLoad(false); });
   $('cm-more').addEventListener('click', () => { cm.page++; cmLoad(true); });
+  $('cm-follow').addEventListener('click', () => {
+    const L = cm.level;
+    if (!L) return;
+    A.play('click');
+    if (following(L.authorId)) delete follows[L.authorId]; else follows[L.authorId] = L.author;
+    save(FOLLOW_KEY, follows);
+    if (cm.sort === 'follow') cm.stale = true;
+    cmRenderDetail();
+  });
+  $('cm-byauthor').addEventListener('click', () => {
+    const L = cm.level;
+    if (!L) return;
+    A.play('click');
+    cm.sort = 'by'; cm.by = { id: L.authorId, name: L.author }; cm.q = ''; cm.stale = true;
+    cmOpen();
+  });
+  $('cm-byclear').addEventListener('click', () => { A.play('click'); cm.sort = 'top'; cm.by = null; cm.stale = true; cmOpen(); });
   $('cm-back').addEventListener('click', () => { A.play('click'); cmOpen(); });
   $('cm-play').addEventListener('click', () => { if (cm.level) { A.init(); A.play('click'); cmPlay(cm.level); } });
   $('cm-like').addEventListener('click', async () => { if (cm.level) { await cmLike(cm.level, $('cm-dmsg')); cmRenderDetail(); } });
@@ -5255,81 +5306,103 @@ body.editing.playing #edhelp { display: block; }
     catch (e) { $('cm-dmsg').textContent = e.message; }
   });
 
-  // ------------------------------------------------------------ daily challenge
-  // One level a day, the same for everyone, picked by the server from the
-  // built-in levels and the top rated community levels, with a board of its
-  // own that starts fresh at midnight UTC. Every run you finish on that level
-  // that day counts (the server files it on the daily board too). The streak
-  // is the days in a row you've finished it, kept on this device.
-  const DAILY_KEY = 'strafe.daily.v1';
-  const daily = { days: (load(DAILY_KEY) || {}).days || {}, data: null, at: 0, skew: 0, token: 0 };
+  // ------------------------------------------------------------ daily and weekly challenges
+  // One level a day and one a week, the same for everyone, picked by the
+  // server from the built-in levels and the top rated community levels, each
+  // with a board of its own that starts fresh at midnight UTC (Monday for the
+  // week). Every run you finish on that level counts (the server files it on
+  // the challenge board too). The streak is the days (or weeks) in a row
+  // you've finished it, kept on this device.
+  const DAILY_KEY = 'strafe.daily.v1', WEEKLY_KEY = 'strafe.weekly.v1';
+  const daily = { kind: 'day', key: DAILY_KEY, path: '/daily', board: 'd:', step: 86400000, days: (load(DAILY_KEY) || {}).days || {}, data: null, at: 0, skew: 0, token: 0 };
+  const weekly = { kind: 'week', key: WEEKLY_KEY, path: '/weekly', board: 'w:', step: 7 * 86400000, days: (load(WEEKLY_KEY) || {}).days || {}, data: null, at: 0, skew: 0, token: 0 };
+  const CHALLENGES = [daily, weekly];
+  let chal = daily; // the one the drawer shows
   const utcDay = (ms) => new Date(ms).toISOString().slice(0, 10);
-  const dailyNow = () => Date.now() + daily.skew;
-  const dailyLive = () => !!daily.data && dailyNow() < daily.data.ends;
+  const utcWeek = (ms) => { const d = new Date(ms); d.setUTCHours(0, 0, 0, 0); d.setUTCDate(d.getUTCDate() - (d.getUTCDay() + 6) % 7); return utcDay(d.getTime()); };
+  const chalNow = (C) => Date.now() + C.skew;
+  const chalLive = (C) => !!C.data && chalNow(C) < C.data.ends;
+  const chalPeriod = (C, ms) => C === weekly ? utcWeek(ms) : utcDay(ms);
   // the game's name for the server's level: a built-in level, or "c:<id>"
   const dailyCourse = (d) => !d ? null : isCommunity(d.course) ? d.course : LEVEL_ORDER.find(c => lbKey(c) === d.course) || null;
   const dailyName = (d) => d.level ? d.level.name : dailyCourse(d) && !isCommunity(dailyCourse(d)) ? rowCourse(dailyCourse(d)).name : d.name || 'Community level';
-  async function dailyLoad(fresh) {
-    if (!fresh && dailyLive() && Date.now() - daily.at < 60000) return daily.data;
-    const d = await api('/daily' + (net.id ? '?me=' + encodeURIComponent(net.id) : ''));
-    Object.assign(daily, { data: d, at: Date.now(), skew: d.now - Date.now() });
+  async function chalLoad(C, fresh) {
+    if (!fresh && chalLive(C) && Date.now() - C.at < 60000) return C.data;
+    const d = await api(C.path + (net.id ? '?me=' + encodeURIComponent(net.id) : ''));
+    Object.assign(C, { data: d, at: Date.now(), skew: d.now - Date.now() });
     dailySub();
     return d;
   }
-  function dailyStreak() {
-    let n = 0, t = dailyNow();
-    if (!daily.days[utcDay(t)]) t -= 86400000; // today isn't done yet: count up to yesterday
-    while (daily.days[utcDay(t)]) { n++; t -= 86400000; }
+  const dailyLoad = (fresh) => Promise.all(CHALLENGES.map(C => chalLoad(C, fresh))).then(() => daily.data);
+  function chalStreak(C) {
+    let n = 0, t = chalNow(C);
+    if (!C.days[chalPeriod(C, t)]) t -= C.step; // this one isn't done yet: count up to the last
+    while (C.days[chalPeriod(C, t)]) { n++; t -= C.step; }
     return n;
   }
+  const dailyStreak = () => chalStreak(daily);
   function dailySub() {
-    const el = $('m-daily-sub'), d = daily.data;
+    const el = $('m-daily-sub'), d = daily.data, w = weekly.data;
     if (!el) return;
     const n = dailyStreak();
-    el.textContent = net.ok === false ? 'Needs the Strafe server' : !d || !dailyLive() ? 'One level a day' :
-      (daily.days[d.day] ? 'Done today' : 'Today: ' + dailyName(d)) + (n > 1 ? ' · ' + n + ' day streak' : '');
+    el.textContent = net.ok === false ? 'Needs the Strafe server' : !d || !chalLive(daily) ? 'Daily and weekly levels' :
+      (daily.days[d.day] ? 'Done today' : 'Today: ' + dailyName(d)) + (n > 1 ? ' · ' + n + ' day streak' : '') +
+      (w && chalLive(weekly) && !weekly.days[w.day] ? ' · week: ' + dailyName(w) : '');
   }
+  // a finished run: counts for today's and this week's challenge if it's their level
   function dailyFinish(course, ticks) {
-    const d = daily.data;
-    if (!dailyLive() || dailyCourse(d) !== course) return;
-    if (!daily.days[d.day] || ticks < daily.days[d.day]) {
-      daily.days[d.day] = ticks;
-      const keep = Object.keys(daily.days).sort().slice(-120); // a few months is plenty for a streak
-      daily.days = Object.fromEntries(keep.map(k => [k, daily.days[k]]));
-      save(DAILY_KEY, { days: daily.days });
+    let any = false;
+    for (const C of CHALLENGES) {
+      const d = C.data;
+      if (!chalLive(C) || dailyCourse(d) !== course) continue;
+      any = true;
+      if (!C.days[d.day] || ticks < C.days[d.day]) {
+        C.days[d.day] = ticks;
+        const keep = Object.keys(C.days).sort().slice(-120); // plenty for a streak
+        C.days = Object.fromEntries(keep.map(k => [k, C.days[k]]));
+        save(C.key, { days: C.days });
+      }
     }
+    if (!any) return;
     achCheck();
-    if (dailyStreak() > 1) setTimeout(() => toast('Daily done · ' + dailyStreak() + ' day streak', 2400), 1200);
+    if (dailyStreak() > 1 && dailyCourse(daily.data) === course) setTimeout(() => toast('Daily done · ' + dailyStreak() + ' day streak', 2400), 1200);
+    else if (dailyCourse(weekly.data) === course) setTimeout(() => toast('Weekly challenge run saved', 2000), 1200);
     dailySub();
   }
-  async function dailyOpen() {
-    const off = net.ok === false;
+  async function dailyOpen(which) {
+    if (which) chal = which;
+    const off = net.ok === false, C = chal;
+    for (const b of $('dy-tabs').children) { const on = b.dataset.kind === C.kind; b.classList.toggle('on', on); b.setAttribute('aria-selected', String(on)); }
     $('dy-off').hidden = !off;
     $('dy-body').hidden = off;
     if (off) return;
-    const token = ++daily.token;
+    const token = ++C.token;
     $('dy-msg').textContent = '';
-    if (daily.data) dailyRender(); else { $('dy-name').textContent = 'Loading…'; $('dy-play').disabled = true; }
+    if (C.data) dailyRender(); else { $('dy-name').textContent = 'Loading…'; $('dy-play').disabled = true; $('dy-board').textContent = ''; for (const k of ['dy-date', 'dy-meta', 'dy-mine', 'dy-streak', 'dy-left']) $(k).textContent = ''; }
     $('dy-boardmsg').textContent = 'Loading…';
-    try { await dailyLoad(true); } catch (e) { if (token === daily.token) $('dy-boardmsg').textContent = 'Could not load today\'s challenge.'; return; }
-    if (token !== daily.token) return;
+    try { await chalLoad(C, true); } catch (e) { if (token === C.token && chal === C) $('dy-boardmsg').textContent = 'Could not load this challenge.'; return; }
+    if (token !== C.token || chal !== C) return;
     dailyRender();
   }
-  function dailyLeft() {
-    const ms = Math.max(0, daily.data.ends - dailyNow()), h = Math.floor(ms / 3600000), m = Math.floor(ms / 60000) % 60;
-    return h ? h + 'h ' + m + 'm' : m ? m + 'm' : '<1m';
+  function dailyLeft(C) {
+    const ms = Math.max(0, C.data.ends - chalNow(C)), dd = Math.floor(ms / 86400000), h = Math.floor(ms / 3600000) % 24, m = Math.floor(ms / 60000) % 60;
+    return dd ? dd + 'd ' + h + 'h' : h ? h + 'h ' + m + 'm' : m ? m + 'm' : '<1m';
   }
   function dailyRender() {
-    const d = daily.data, c = dailyCourse(d), local = daily.days[d.day];
-    $('dy-date').textContent = new Date(d.ends - 43200000).toLocaleDateString(undefined, { weekday: 'long', day: 'numeric', month: 'long', timeZone: 'UTC' });
+    const C = chal, d = C.data, c = dailyCourse(d), local = C.days[d.day], wk = C === weekly;
+    const date = (ms, o) => new Date(ms).toLocaleDateString(undefined, Object.assign({ timeZone: 'UTC' }, o));
+    $('dy-date').textContent = wk ? 'Week of ' + date(Date.parse(d.day), { day: 'numeric', month: 'long' }) : date(d.ends - 43200000, { weekday: 'long', day: 'numeric', month: 'long' });
     $('dy-name').textContent = dailyName(d);
     $('dy-meta').textContent = d.level ? 'Community level by ' + d.level.author + ' · 👍 ' + d.level.likes + ' · ' + d.level.pieces + ' pieces' :
       c ? 'Built-in level · ' + rowCourse(c).stages + (rowCourse(c).stages === 1 ? ' stage' : ' stages') + (best[c] ? ' · your best ever ' + fmt(best[c]) : '') : 'This level isn\'t in your version of the game yet.';
     $('dy-play').disabled = !c || (isCommunity(c) && !d.level);
+    $('dy-play').textContent = wk ? 'Play this week\'s level' : 'Play today\'s level';
     $('dy-mine').textContent = d.mine ? fmt(d.mine.ticks) + ' · #' + d.mine.rank : local ? fmt(local) : 'No run yet';
-    const n = dailyStreak();
-    $('dy-streak').textContent = n + (n === 1 ? ' day' : ' days');
-    $('dy-left').textContent = dailyLeft();
+    const n = chalStreak(C);
+    $('dy-streak').textContent = n + (wk ? (n === 1 ? ' week' : ' weeks') : (n === 1 ? ' day' : ' days'));
+    $('dy-left').textContent = dailyLeft(C);
+    $('dy-leftlbl').textContent = wk ? 'New week in' : 'Next level in';
+    $('dy-boardlbl').textContent = wk ? 'This week\'s board' : 'Today\'s board';
     const ol = $('dy-board');
     ol.textContent = '';
     for (const r of d.rows) {
@@ -5339,22 +5412,22 @@ body.editing.playing #edhelp { display: block; }
         const b = document.createElement('button'); b.className = 'ghost small'; b.textContent = 'Race'; b.title = 'Race this ghost';
         b.addEventListener('click', async () => {
           try {
-            const g = await api('/ghost?course=' + encodeURIComponent('d:' + d.day) + '&id=' + encodeURIComponent(r.id));
-            if (await dailyPlay(g.ghost)) toast('Racing ' + r.name + "'s ghost (" + fmt(g.ticks) + ')', 2600);
+            const g = await api('/ghost?course=' + encodeURIComponent(C.board + d.day) + '&id=' + encodeURIComponent(r.id));
+            if (await dailyPlay(g.ghost, C)) toast('Racing ' + r.name + "'s ghost (" + fmt(g.ticks) + ')', 2600);
           } catch (e) { $('dy-boardmsg').textContent = 'Could not load that ghost.'; }
         });
         btns.appendChild(b);
       }
       ol.appendChild(boardRow(r, net.id, btns));
     }
-    $('dy-boardmsg').textContent = !d.total ? 'No times yet today. Set the first.' :
-      (d.mine && d.mine.rank > d.rows.length ? 'You are #' + d.mine.rank + ' of ' + d.total + '. ' : d.total + (d.total === 1 ? ' runner' : ' runners') + ' today. ') +
+    $('dy-boardmsg').textContent = !d.total ? (wk ? 'No times yet this week. Set the first.' : 'No times yet today. Set the first.') :
+      (d.mine && d.mine.rank > d.rows.length ? 'You are #' + d.mine.rank + ' of ' + d.total + '. ' : d.total + (d.total === 1 ? ' runner' : ' runners') + (wk ? ' this week. ' : ' today. ')) +
       (!canPost() ? 'Your air acceleration is not ' + LB_AA + ', so your runs are not posted.' : !net.token ? 'Pick a name under Online to post your time.' : '');
   }
-  // start today's level, optionally racing a ghost from its board
-  async function dailyPlay(raceWith) {
-    const d = daily.data, c = dailyCourse(d);
-    if (!c || !dailyLive()) { $('dy-msg').textContent = 'That challenge is over. Here is today\'s.'; dailyOpen(); return false; }
+  // start the challenge's level, optionally racing a ghost from its board
+  async function dailyPlay(raceWith, C = chal) {
+    const d = C.data, c = dailyCourse(d);
+    if (!c || !chalLive(C)) { $('dy-msg').textContent = 'That challenge is over. Here is the new one.'; dailyOpen(C); return false; }
     if (game.practice) setPractice(false); // practice runs don't count
     if (isCommunity(c)) {
       if (!d.level || !(await cmPlay(d.level, raceWith))) { $('dy-msg').textContent = 'This level did not load.'; return false; }
@@ -5368,14 +5441,15 @@ body.editing.playing #edhelp { display: block; }
     return true;
   }
   $('dy-play').addEventListener('click', () => { A.init(); A.play('click'); dailyPlay(); });
-  setInterval(() => { if (daily.data && !$('dy-body').closest('[data-pane]').hidden && !drawer.hidden) $('dy-left').textContent = dailyLeft(); }, 15000);
+  for (const b of $('dy-tabs').children) b.addEventListener('click', () => { A.play('click'); dailyOpen(b.dataset.kind === 'week' ? weekly : daily); });
+  setInterval(() => { if (chal.data && !$('dy-body').closest('[data-pane]').hidden && !drawer.hidden) $('dy-left').textContent = dailyLeft(chal); }, 15000);
 
   // ------------------------------------------------------------ boot
   goIdle();
   previewCourse(map.order[0]);
   showMenuState();
   if (location.hash === '#demo') game.demo = true; // headless screenshot mode
-  window.__strafe = { courses: map.courses, mats: MATS, lights: { hemi, sun }, setNight, setTheme, player, game, keys, eff, faceInsets, practice: { set: setPractice, save: practiceSave, load: practiceLoad }, goCourse, place, attract, previewCourse, body, ghost, cosmetics, preview, step, modelChunks, renderer, setView: (y, p) => { yaw = y; pitch = p; }, editor: { ed, enter: enterEditor, test: edTest, back: edBack, code: edCode, decode: edDecode, publish: edPublish }, community: { cm, open: cmOpen, show: cmShow, play: cmPlay }, daily: { daily, open: dailyOpen, play: dailyPlay, load: dailyLoad, finish: dailyFinish }, practiceJump,
+  window.__strafe = { courses: map.courses, mats: MATS, lights: { hemi, sun }, setNight, setTheme, player, game, keys, eff, faceInsets, practice: { set: setPractice, save: practiceSave, load: practiceLoad }, goCourse, place, attract, previewCourse, body, ghost, cosmetics, preview, step, modelChunks, renderer, setView: (y, p) => { yaw = y; pitch = p; }, editor: { ed, enter: enterEditor, test: edTest, back: edBack, code: edCode, decode: edDecode, publish: edPublish }, community: { cm, open: cmOpen, show: cmShow, play: cmPlay }, daily: { daily, weekly, open: dailyOpen, play: dailyPlay, load: dailyLoad, finish: dailyFinish }, practiceJump,
     online: { net, race, submit: netSubmit, raceFinish, showComplete, openDrawer },
     replay: { state: replay, open: replayOpen, close: replayClose, watchBest }, career, ach: { check: achCheck, done: achDone, list: ACH, render: achRender }, binds: { binds, set: (id, code) => { rebinding = id; setBind(code); }, keyName }, settings, applyColors, saved: { save: saveLastRun, render: replaysRender } };
   requestAnimationFrame((t) => { last = t; frame(t); });

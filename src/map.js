@@ -769,6 +769,9 @@
           const w = sg.w || 600, len = sg.len || 600;
           if (prev && RAMPS[prev.t]) {
             y = prev.endApex - prev.H - (sg.fall || 450); z = prev.z1 + (sg.back || 200); x = sg.x !== undefined ? sg.x : prev.cx;
+          } else if (prev && prev.t === 'zip') {
+            // under the cable's low end: you let go over it and land
+            y = prev.endY - 84 - (sg.fall || 300); z = prev.z1 + (sg.back || 300); x = sg.x !== undefined ? sg.x : prev.ex;
           } else {
             z -= sg.gap || 0; y += sg.rise || 0; if (sg.x !== undefined) x = sg.x;
           }
@@ -797,6 +800,19 @@
             [[x - w / 2, y - sg.drop], [x + w / 2, y - sg.drop], [x + w / 2, sg.base], [x - w / 2, sg.base]], z - len, { color: COLORS.roof, kind: 'building' });
           L.items.push({ t: 'slide', x, y, y1: y - sg.drop, z0: z, z1: z - len, w });
           z -= len; y -= sg.drop;
+        } else if (sg.t === 'zip') {
+          // a zipline off the pad's far edge: jump from the edge, grab the
+          // cable, ride it down to the next pad. Posts stand beside the cable.
+          const dx = sg.dx || 0, ay = y + 140, by = ay - sg.drop, ex = x + dx, z0 = z + 60, z1 = z - sg.len;
+          world.ziplines.push({ a: W3(x, ay, z0), b: W3(ex, by, z1) });
+          const post = { color: COLORS.route, kind: 'route' }, foot = by - 84 - 600;
+          lbox(x + 48, x + 80, y, ay + 16, z0 - 16, z0 + 16, post); lbox(x - 8, x + 80, ay + 4, ay + 16, z0 - 6, z0 + 6, post);
+          lbox(ex + 48, ex + 80, foot, by + 16, z1 - 16, z1 + 16, post); lbox(ex - 8, ex + 80, by + 4, by + 16, z1 - 6, z1 + 6, post);
+          // the cable itself: drawn, never solid
+          L.items.push({ t: 'zip', x, y, ex, z0, z1, endY: by });
+          Object.assign(sg, { ex, z1, endY: by });
+          lo = Math.min(lo, by - 84 - 300);
+          z = z1; x = ex; y = by - 84;
         } else if (sg.t === 'wall') {
           // a gap with a billboard along one side: wallrun it to the next pad
           const s = sg.side, wx = x + s * 330;
@@ -1375,6 +1391,92 @@
         { t: 'pad', len: 3000, w: 1400, end: true },
       ] });
 
+    // ------------------------------------------------------------ skyline: the zipline set
+    // Four daytime levels high over the city where ziplines carry you between
+    // the hard parts: jump off a roof's edge, grab the cable, ride it down.
+    const SKY = { set: 'skyline', base: 0, padColor: 0x8d99a6 };
+    const SPAL = [0x2f7de1, 0xff6b3d, 0x22b38a, 0xf2b705];
+    const skyline = (name, ox, oz, top, def) => routeKit(name, ox, oz, top, Object.assign({}, SKY, def,
+      { skyline: Object.assign({ lo: 1500, hi: top - 1500, step: 1100, size: 480 }, def.skyline) }));
+    skyline('s1', 200000, -240000, 9000, {
+      name: 'Wireline', type: 'Parkour', difficulty: 3, color: SPAL[0], palette: [SPAL[0], SPAL[1], SPAL[2], SPAL[3]],
+      skyline: { seed: 307 },
+      desc: 'Skyline 1. Learn the cable: jump off the edge and grab it, ride it down, hop a line of blocks, wallrun a gap and ride two more.',
+      segs: [
+        { t: 'pad', len: 900, w: 800 },
+        { t: 'zip', len: 2400, drop: 700 },
+        { t: 'pad', len: 1800, w: 900, cp: true },
+        { t: 'bhop', gap: 70, n: 8, size: 128, step: 280 },
+        { t: 'pad', gap: 120, len: 900, w: 900 },
+        { t: 'zip', len: 3000, drop: 900 },
+        { t: 'pad', len: 1800, w: 900, cp: true }, { t: 'turn', dir: 1 },
+        { t: 'wall', side: 1, len: 700, gap: 550 },
+        { t: 'pad', rise: 120, len: 900, w: 900, lip: true },
+        { t: 'zip', len: 2400, drop: 700 },
+        { t: 'pad', len: 2000, w: 1000, end: true },
+      ] });
+
+    skyline('s2', 260000, -240000, 11000, {
+      name: 'Cable Car', type: 'Mixed', difficulty: 4, color: SPAL[1], palette: [SPAL[1], SPAL[0], SPAL[3], SPAL[2]],
+      skyline: { seed: 311 },
+      desc: 'Skyline 2. Ride off the end of a cable straight onto a surf ramp, transfer, then a line of blocks to a long cable down.',
+      segs: [
+        { t: 'pad', len: 900, w: 800 },
+        { t: 'zip', len: 2600, drop: 800 },
+        { t: 'surf', face: 60, len: 3200, drop: 400, dx: 160, fall: 300, gap: 200 },
+        { t: 'surf', face: 60, len: 3200, drop: 400, dx: -420, gap: 1000 },
+        { t: 'pad', len: 3000, w: 1400, cp: true },
+        { t: 'bhop', gap: 76, n: 9, size: 120, step: 285, zig: 80 },
+        { t: 'pad', gap: 120, len: 900, w: 900 }, { t: 'turn', dir: -1 },
+        { t: 'zip', len: 3600, drop: 1200 },
+        { t: 'pad', len: 2000, w: 1000, cp: true },
+        { t: 'wall', side: -1, len: 700, gap: 550 },
+        { t: 'pad', rise: 120, len: 900, w: 900, lip: true, end: true },
+      ] });
+    skyline('s3', 320000, -240000, 13000, {
+      name: 'Highwire', type: 'Mixed', difficulty: 5, color: SPAL[2], palette: [SPAL[2], SPAL[3], SPAL[0], SPAL[1]],
+      skyline: { seed: 313 },
+      desc: 'Skyline 3. Cable to cable with only a short roof between, a bend off the end of a ride, tight blocks and a wallrun to the last line.',
+      segs: [
+        { t: 'pad', len: 800, w: 800 },
+        { t: 'zip', len: 2400, drop: 700 },
+        { t: 'pad', len: 1300, w: 800 },
+        { t: 'zip', len: 2800, drop: 900, dx: 200 },
+        { t: 'pad', len: 1800, w: 900, cp: true }, { t: 'turn', dir: 1 },
+        { t: 'bhop', gap: 84, n: 10, size: 100, step: 300, zig: 100 },
+        { t: 'pad', gap: 120, len: 900, w: 900 },
+        { t: 'zip', len: 3000, drop: 1000 },
+        { t: 'curve', dir: -1, face: 60, R: 3200, drop: 500, dx: 330, fall: 300, gap: 200 },
+        { t: 'pad', len: 3000, w: 1400, cp: true },
+        { t: 'wall', side: 1, len: 700, gap: 550 },
+        { t: 'pad', rise: 120, len: 900, w: 900, lip: true },
+        { t: 'zip', len: 2800, drop: 900 },
+        { t: 'pad', len: 2000, w: 1000, end: true },
+      ] });
+    skyline('s4', 380000, -240000, 15000, {
+      name: 'Freefall', type: 'Mixed', difficulty: 6, color: SPAL[3], palette: [SPAL[3], SPAL[1], SPAL[2], SPAL[0]],
+      skyline: { seed: 317 },
+      desc: 'Skyline 4. The longest ride in the game into two narrow ramps, the smallest blocks, three cables in a row and a last wallrun.',
+      segs: [
+        { t: 'pad', len: 800, w: 700 },
+        { t: 'zip', len: 4400, drop: 1600 },
+        { t: 'surf', face: 65, len: 3000, drop: 450, dx: -140, fall: 300, gap: 200 },
+        { t: 'surf', face: 65, len: 3000, drop: 450, dx: 500, gap: 1100 },
+        { t: 'pad', len: 3000, w: 1400, cp: true },
+        { t: 'bhop', gap: 84, n: 11, size: 100, step: 300, zig: 100 },
+        { t: 'pad', gap: 120, len: 900, w: 900 }, { t: 'turn', dir: -1 },
+        { t: 'zip', len: 2600, drop: 800 },
+        { t: 'pad', len: 1200, w: 700 },
+        { t: 'zip', len: 2600, drop: 800, dx: -200 },
+        { t: 'pad', len: 1200, w: 700 },
+        { t: 'zip', len: 2600, drop: 800, dx: 200 },
+        { t: 'pad', len: 1800, w: 900, cp: true }, { t: 'turn', dir: 1 },
+        { t: 'bhop', gap: 84, n: 10, size: 96, step: 305, lat: [0, 90, -90, 50, -50] },
+        { t: 'pad', gap: 130, len: 800, w: 900 },
+        { t: 'wall', side: -1, len: 700, gap: 550 },
+        { t: 'pad', rise: 120, len: 900, w: 900, lip: true, end: true },
+      ] });
+
     // ------------------------------------------------------------ level order and keys
     const order = ['surf', 'bhop', 'roofs', 'canyon', 'stairway', 'crossover', 'downtown', 'cascade', 'spire', 'freerun'];
     order.forEach((name, i) => { courses[name].key = String((i + 1) % 10); }); // the tenth level is on 0
@@ -1389,7 +1491,10 @@
     const harborOrder = ['h2', 'h1', 'h3', 'h4', 'h5', 'h6']; // Gantry plays easier than Dockside, so it opens the set
     harborOrder.forEach((name, i) => { courses[name].key = 'H' + (i + 1); });
 
-    return { world, courses, order, gauntlet: gauntletOrder, night: nightOrder, harbor: harborOrder, hubSpawn, COLORS };
+    const skylineOrder = ['s1', 's2', 's3', 's4'];
+    skylineOrder.forEach((name, i) => { courses[name].key = 'S' + (i + 1); });
+
+    return { world, courses, order, gauntlet: gauntletOrder, night: nightOrder, harbor: harborOrder, skyline: skylineOrder, hubSpawn, COLORS };
   }
 
   // Falling off. For any spot, the lowest a rider can be while still on the course near it:

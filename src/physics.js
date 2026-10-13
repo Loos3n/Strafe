@@ -41,15 +41,22 @@
     mantleExitMin: 280, // exit speed of a mantle you came into below 150 u/s
     vaultReach: 60,
     // ziplines: you hang from a cable and ride it downhill
-    zipReach: 34,       // how close your hands must pass to grab it
+    zipReach: 40,       // how close your hands must pass to grab it
     zipHang: 84,        // cable height above your feet while riding
     zipMinSpeed: 450,
     zipMaxSpeed: 1600,
     zipJump: 260,
+    // speed tech: above this speed a walkable slope doesn't catch you, you
+    // slide over it like a surf ramp (no friction, no jumping) until you slow
+    rampSlideSpeed: 1000,
+    // falling at least this fast onto an edge your middle hangs over: the
+    // landing doesn't take, the fall is cancelled and you slip on with your speed
+    edgeBugFall: 450,
   };
 
   const HULL_STAND = { min: [-16, 0, -16], max: [16, 72, 16] };
   const HULL_DUCK = { min: [-16, 0, -16], max: [16, 54, 16] };
+  const POINT_HULL = { min: [0, 0, 0], max: [0, 0, 0] };
   const EYE_STAND = 64;
   const EYE_DUCK = 46;
   const DUCK_DELTA = HULL_STAND.max[1] - HULL_DUCK.max[1]; // 18
@@ -273,6 +280,8 @@
       this.mantle = null;
       this.zip = null;
       this.zipCooldown = 0;
+      this.rampSlide = false;
+      this.edgeBug = 0;
       this.airTime = 0;
       this.categorize();
     }
@@ -296,8 +305,10 @@
       if (this.slideCooldown > 0) this.slideCooldown -= dt;
       if (this.wallrunCooldown > 0) this.wallrunCooldown -= dt;
       if (this.zipCooldown > 0) this.zipCooldown -= dt;
+      if (this.edgeBug > 0) this.edgeBug -= dt;
       const wasOnGround = this.onGround;
       const fallSpeed = -this.vel[1];
+      this.fallIn = fallSpeed; // before a landing clips it away
 
       if (this.mantle) {
         this.mantleMove(dt);
@@ -586,10 +597,33 @@
       const tr = this.trace(p, [p[0], p[1] - 2, p[2]]);
       if (!tr.normal || tr.normal[1] < 0.7) {
         this.onGround = false; this.groundNormal = null;
-      } else {
-        this.onGround = true; this.groundNormal = tr.normal;
-        this.groundBrush = tr.brush;
+        this.rampSlide = false;
+        return;
       }
+      const c = this.cfg, n = tr.normal;
+      // ramp slide: a fast rider over a slope keeps flying along it
+      if (n[1] < 0.985 && !this.slide) {
+        const vn = dot(this.vel, n), along = Math.hypot(this.vel[0] - n[0] * vn, this.vel[1] - n[1] * vn, this.vel[2] - n[2] * vn);
+        if (along > c.rampSlideSpeed * (this.rampSlide ? 0.9 : 1)) {
+          if (!this.rampSlide) this.events.push({ type: 'rampslide' });
+          this.rampSlide = true;
+          this.onGround = false; this.groundNormal = null;
+          return;
+        }
+      }
+      this.rampSlide = false;
+      // edge bug: a hard fall caught only by the edge of your box
+      if (!this.onGround && (this.fallIn > c.edgeBugFall || this.edgeBug > 0) && this.hspeed() > 200) {
+        const mid = this.world.trace([p[0], p[1] + 1, p[2]], [p[0], p[1] - 24, p[2]], POINT_HULL);
+        if (mid.fraction === 1) {
+          if (this.edgeBug <= 0) { this.events.push({ type: 'edgebug', fall: -this.vel[1] }); this.edgeBug = 0.15; }
+          this.vel[1] = 0;
+          this.onGround = false; this.groundNormal = null;
+          return;
+        }
+      }
+      this.onGround = true; this.groundNormal = n;
+      this.groundBrush = tr.brush;
     }
 
     // ---- ducking and sliding

@@ -53,6 +53,15 @@ if (dl.body.course === run.key) {
   check('daily board', db.status === 200 && db.body.rows.some(r => r.id === a.body.id));
   check('daily ghost', (await call('/api/ghost?course=d:' + dl.body.day + '&id=' + a.body.id)).status === 200);
 } else check('other levels skip the daily board', r1.body.daily === null, JSON.stringify(r1.body.daily));
+// the weekly challenge works the same way over a week
+const wk = await call('/api/weekly?me=' + a.body.id);
+check('weekly', wk.status === 200 && wk.body.week === true && new Date(wk.body.day + 'T00:00:00Z').getUTCDay() === 1 && wk.body.ends - Date.parse(wk.body.day) === 7 * 86400000 && Array.isArray(wk.body.rows), JSON.stringify(wk.body).slice(0, 200));
+check('weekly stays put', (await call('/api/weekly')).body.course === wk.body.course);
+if (wk.body.course === run.key) {
+  check('run counts on the weekly board', r1.body.weekly && r1.body.weekly.mine.ticks === run.ticks && wk.body.mine.ticks === run.ticks, JSON.stringify(r1.body.weekly));
+  check('weekly ghost', (await call('/api/ghost?course=w:' + wk.body.day + '&id=' + a.body.id)).status === 200);
+} else check('other levels skip the weekly board', r1.body.weekly === null, JSON.stringify(r1.body.weekly));
+check('no posting to the weekly board directly', (await call('/api/run', { course: 'w:' + wk.body.day, ticks: run.ticks, ghost: g }, a.body.token)).status === 400);
 check('no posting to the daily board directly', (await call('/api/run', { course: 'd:' + dl.body.day, ticks: run.ticks, ghost: g }, a.body.token)).status === 400);
 
 // rename and import
@@ -127,6 +136,9 @@ check('publish same level twice', (await call('/api/levels/publish', { name: 'Ag
 const found = await call('/api/levels?sort=new&q=' + encodeURIComponent('test ' + tag) + '&me=' + b.body.id);
 check('browse finds it', found.body.levels.length === 1 && found.body.levels[0].id === lid && found.body.levels[0].author === 'Anna ' + tag && found.body.levels[0].runners === 1, JSON.stringify(found.body));
 check('search by author', (await call('/api/levels?by=' + a.body.id)).body.levels.some(l => l.id === lid));
+check('followed makers', (await call('/api/levels?by=' + b.body.id + ',' + a.body.id)).body.levels.some(l => l.id === lid));
+check('bad maker ids list nothing', (await call('/api/levels?by=nope')).body.levels.length === 0);
+for (const sort of ['played', 'hard']) { const r = await call('/api/levels?sort=' + sort); check('sort ' + sort, r.status === 200 && Array.isArray(r.body.levels), JSON.stringify(r.body).slice(0, 200)); }
 const got = await call('/api/level?id=' + lid + '&play=1');
 check('level with code and a play', got.body.code === code && got.body.plays === 1 && got.body.best === lticks && got.body.authorTicks === lticks, JSON.stringify(Object.assign({}, got.body, { code: undefined })));
 check('own like refused', (await call('/api/levels/like', { id: lid, on: true }, a.body.token)).status === 403);
