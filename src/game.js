@@ -1899,28 +1899,44 @@ body.touch #menu button, body.touch #drawer button { min-height: 40px; }
   // ------------------------------------------------------------ cosmetics
   // Story stars unlock runner skins and trails. A skin recolours your arms,
   // legs and your ghost; a trail is a fading ribbon behind you and the ghost.
+  // glow: how much the accent lights itself (0 to 1); an accent list cycles through its colours
   const SKINS = [
     { id: 'kite', name: 'Kite', need: 0, sleeve: 0x1d2026, glove: 0x1a1c20, accent: 0xdb2f2a, pants: 0x2c3139, shirt: 0xf2f2ee, ghost: 0x63d6ff },
     { id: 'courier', name: 'Courier', need: 3, sleeve: 0x22324a, glove: 0x2a2f36, accent: 0xf08a24, pants: 0x1f2a3a, shirt: 0xe9e4d8 },
     { id: 'blueline', name: 'Blueline', need: 6, sleeve: 0xe8ecef, glove: 0x2b3440, accent: 0x2f7de1, pants: 0x3a4450, shirt: 0xffffff },
-    { id: 'nightshift', name: 'Night Shift', need: 10, sleeve: 0x0e0f12, glove: 0x0b0c0e, accent: 0x39e07a, pants: 0x121418, shirt: 0x1b1e23 },
+    { id: 'whiteout', name: 'Whiteout', need: 8, sleeve: 0xf4f7fa, glove: 0xdfe6ee, accent: 0x7fd6ff, pants: 0xd5dde6, shirt: 0xffffff, glow: 0.35 },
+    { id: 'nightshift', name: 'Night Shift', need: 10, sleeve: 0x0e0f12, glove: 0x0b0c0e, accent: 0x39e07a, pants: 0x121418, shirt: 0x1b1e23, glow: 0.6 },
     { id: 'spillway', name: 'Spillway', need: 14, sleeve: 0x17595e, glove: 0x1d2a2c, accent: 0x3fd0c9, pants: 0x203236, shirt: 0xdff3f1 },
-    { id: 'ember', name: 'Ember', need: 18, sleeve: 0x2a2523, glove: 0x5a1712, accent: 0xff5a1f, pants: 0x2b2725, shirt: 0x3a302c },
-    { id: 'gold', name: 'Gold Run', need: 24, sleeve: 0x16130d, glove: 0x3a2e14, accent: 0xe0a400, pants: 0x1c1a16, shirt: 0xf3e6c0 },
-    { id: 'prism', name: 'Prism', need: 30, sleeve: 0xf4f5f7, glove: 0xd9dde2, accent: 'hue', pants: 0xc8cdd3, shirt: 0xffffff },
-    { id: 'circuit', name: 'Circuit', ach: 10, sleeve: 0x14161c, glove: 0x0f1115, accent: 0xb46cff, pants: 0x1a1d24, shirt: 0x24212e, ghost: 0xc99bff },
+    { id: 'ember', name: 'Ember', need: 18, sleeve: 0x2a2523, glove: 0x5a1712, accent: 0xff5a1f, pants: 0x2b2725, shirt: 0x3a302c, glow: 0.5 },
+    { id: 'hazard', name: 'Hazard', need: 20, sleeve: 0x26282b, glove: 0x16171a, accent: 0xffd400, pants: 0x303338, shirt: 0x3b3f45, glow: 0.2 },
+    { id: 'gold', name: 'Gold Run', need: 24, sleeve: 0x16130d, glove: 0x3a2e14, accent: 0xe0a400, pants: 0x1c1a16, shirt: 0xf3e6c0, glow: 0.25 },
+    { id: 'prism', name: 'Prism', need: 30, sleeve: 0xf4f5f7, glove: 0xd9dde2, accent: 'hue', pants: 0xc8cdd3, shirt: 0xffffff, glow: 0.4 },
+    { id: 'neon', name: 'Neon', ach: 5, sleeve: 0x101014, glove: 0x0b0b0e, accent: 0xff2fa8, pants: 0x15151b, shirt: 0x1c1b22, glow: 0.9 },
+    { id: 'circuit', name: 'Circuit', ach: 10, sleeve: 0x14161c, glove: 0x0f1115, accent: 0xb46cff, pants: 0x1a1d24, shirt: 0x24212e, ghost: 0xc99bff, glow: 0.7 },
+    { id: 'aurora', name: 'Aurora', ach: 15, sleeve: 0x0f1a2a, glove: 0x0b1220, accent: [0x3dffa8, 0x2fd6ff, 0xa66bff], pants: 0x131d2c, shirt: 0x1a2638, glow: 0.8 },
+    { id: 'sunset', name: 'Sunset', ach: 25, sleeve: 0x3a1f2e, glove: 0x2a1622, accent: [0xff8a2a, 0xff3d7f, 0x9b4dff], pants: 0x2d1a28, shirt: 0xffe3cf, glow: 0.5 },
+    { id: 'volt', name: 'Volt', ach: 30, sleeve: 0x0d1626, glove: 0x081020, accent: 0x3fb4ff, pants: 0x0f1a2c, shirt: 0xe6f3ff, glow: 1 },
+    { id: 'royal', name: 'Royal', ach: 35, sleeve: 0x2a1446, glove: 0x1c0d30, accent: 0xffc93c, pants: 0x231238, shirt: 0x3a1f5c, ghost: 0xffd76b, glow: 0.7 },
   ];
+  // style: how the ribbon is drawn (see makeTrail); add: glows (additive), best at night
   const TRAILS = [
     { id: 'none', name: 'None', need: 0 },
-    { id: 'streak', name: 'Streak', need: 2, color: 0xffffff, tail: 0xbfd3e6 },
-    { id: 'redline', name: 'Red Line', need: 5, color: 0xff3b30, tail: 0xb3141a },
-    { id: 'skyline', name: 'Skyline', need: 8, color: 0x7fdcff, tail: 0x2f7de1 },
-    { id: 'ember', name: 'Ember', need: 12, color: 0xffb02e, tail: 0xd8241c },
-    { id: 'toxic', name: 'Toxic', need: 16, color: 0xc8ff4f, tail: 0x22b35a },
-    { id: 'gold', name: 'Gold', need: 21, color: 0xffe07a, tail: 0xb87a00 },
-    { id: 'rainbow', name: 'Rainbow', need: 27, color: 'hue' },
-    { id: 'comet', name: 'Comet', ach: 20, color: 0xe6f6ff, tail: 0x7a3cff },
+    { id: 'streak', name: 'Streak', need: 2, color: 0xffffff, tail: 0xbfd3e6, style: 'glow' },
+    { id: 'redline', name: 'Red Line', need: 5, color: 0xff3b30, tail: 0xb3141a, style: 'ribbon' },
+    { id: 'skyline', name: 'Skyline', need: 8, color: 0x7fdcff, tail: 0x2f7de1, style: 'twin' },
+    { id: 'ember', name: 'Ember', need: 12, color: 0xffb02e, tail: 0xd8241c, style: 'fire' },
+    { id: 'toxic', name: 'Toxic', need: 16, color: 0xc8ff4f, tail: 0x22b35a, style: 'pulse' },
+    { id: 'glitch', name: 'Glitch', need: 19, color: 0x40fff0, tail: 0xff2fa8, style: 'glitch' },
+    { id: 'gold', name: 'Gold', need: 21, color: 0xffe07a, tail: 0xb87a00, style: 'spark' },
+    { id: 'rainbow', name: 'Rainbow', need: 27, color: 'hue', style: 'ribbon', scale: 1.2 },
+    { id: 'ion', name: 'Ion', ach: 5, color: 0xb8e8ff, tail: 0x3a6bff, style: 'twin', add: true },
+    { id: 'sakura', name: 'Sakura', ach: 15, color: 0xffd1e6, tail: 0xff6fa8, style: 'spark', scale: 1.3 },
+    { id: 'comet', name: 'Comet', ach: 20, color: 0xe6f6ff, tail: 0x7a3cff, style: 'glow', add: true, scale: 1.3 },
+    { id: 'plasma', name: 'Plasma', ach: 25, color: 0xff4fd8, tail: 0x2fe0ff, style: 'pulse', add: true, scale: 1.2 },
+    { id: 'inferno', name: 'Inferno', ach: 30, color: 0xfff2a8, tail: 0xff2a00, style: 'fire', add: true, scale: 1.5 },
+    { id: 'borealis', name: 'Borealis', ach: 35, color: 0x5dffb0, tail: 0x8a4dff, style: 'twin', add: true, scale: 1.6 },
   ];
+  const TRAIL_STYLES = { ribbon: 0, glow: 1, pulse: 2, spark: 3, twin: 4, fire: 5, glitch: 6 };
   const storyStars = () => STORY.reduce((n, job, i) => n + (job.stars && storyProgress[i] ? storyProgress[i].stars : 0), 0);
   // a few are unlocked by achievements instead of stars
   const ACH_KEY = 'strafe.ach.v1';
@@ -1931,6 +1947,16 @@ body.touch #menu button, body.touch #drawer button { min-height: 40px; }
   const costText = (it) => it.ach ? it.ach + ' achievements' : '★ ' + it.need;
   const pick = (list, id) => { const it = list.find(x => x.id === id); return it && unlocked(it) ? it : list[0]; };
   const hueColor = (h) => new THREE.Color().setHSL(h % 1, 0.85, 0.58).getHex();
+  // Prism and the colour-cycling skins change accent over time
+  const cycles = (k) => k.accent === 'hue' || Array.isArray(k.accent);
+  const _ca = new THREE.Color(), _cb = new THREE.Color();
+  const accentAt = (k, ts) => {
+    if (k.accent === 'hue') return hueColor(ts * 0.12);
+    if (!Array.isArray(k.accent)) return k.accent;
+    const l = k.accent, f = (ts * 0.2) % l.length, i = Math.floor(f);
+    const e = f - i, s = e * e * (3 - 2 * e);
+    return _ca.set(l[i]).lerp(_cb.set(l[(i + 1) % l.length]), s).getHex();
+  };
 
   // height: [centre above the feet, half width]; life: seconds a point lasts
   function makeTrail(height, life, into = scene, cam = camera) {
@@ -1945,14 +1971,25 @@ body.touch #menu button, body.touch #drawer button { min-height: 40px; }
     for (let i = 0; i < N - 1; i++) { const a = i * 2; idx.push(a, a + 1, a + 2, a + 1, a + 3, a + 2); }
     g.setIndex(idx);
     const mat = new THREE.ShaderMaterial({
-      uniforms: { c0: { value: new THREE.Color() }, c1: { value: new THREE.Color() }, rainbow: { value: 0 }, t: { value: 0 }, op: { value: 1 } },
+      uniforms: { c0: { value: new THREE.Color() }, c1: { value: new THREE.Color() }, rainbow: { value: 0 }, t: { value: 0 }, op: { value: 1 }, style: { value: 0 } },
       vertexShader: 'attribute float aAge; attribute float aV; varying float vA; varying float vV;' +
         'void main() { vA = aAge; vV = aV; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
-      fragmentShader: 'uniform vec3 c0; uniform vec3 c1; uniform float rainbow; uniform float t; uniform float op; varying float vA; varying float vV;' +
+      // styles: 0 ribbon, 1 glow (hot core), 2 pulse (bands), 3 spark (glitter),
+      // 4 twin (two braided strands), 5 fire (flickering tongue), 6 glitch (broken blocks)
+      fragmentShader: 'uniform vec3 c0; uniform vec3 c1; uniform float rainbow; uniform float t; uniform float op; uniform float style; varying float vA; varying float vV;' +
         'vec3 hue(float h) { return clamp(abs(mod(h * 6.0 + vec3(0.0, 4.0, 2.0), 6.0) - 3.0) - 1.0, 0.0, 1.0); }' +
+        'float rnd(float n) { return fract(sin(n) * 43758.5453); }' +
         'void main() { vec3 c = mix(mix(c0, c1, vA), hue(fract(t * 0.25 - vA * 0.9)), rainbow);' +
-        'float a = (1.0 - vA) * smoothstep(0.0, 0.06, vA) * sin(vV * 3.14159) * op;' +
-        'gl_FragColor = vec4(c, a * 0.8); }',
+        'float d = abs(vV - 0.5) * 2.0, life = 1.0 - vA, a = 1.0 - d * d;' +
+        'if (style < 0.5) { c = mix(c, vec3(1.0), smoothstep(0.35, 0.0, d) * life * 0.35); }' +
+        'else if (style < 1.5) { a = pow(1.0 - d, 1.6); c = mix(c, vec3(1.0), smoothstep(0.3, 0.0, d) * life * 0.8); }' +
+        'else if (style < 2.5) { float b = smoothstep(0.35, 0.65, 0.5 + 0.5 * sin(vA * 40.0 - t * 14.0)); a *= 0.3 + 0.7 * b; c = mix(c, vec3(1.0), b * smoothstep(0.4, 0.0, d) * 0.6); }' +
+        'else if (style < 3.5) { float cell = floor(vA * 70.0) * 13.17 + floor(vV * 5.0) * 7.31 + floor(t * 14.0) * 0.731; float tw = step(0.78, rnd(cell)) * smoothstep(1.0, 0.6, d); a = a * 0.22 + tw; c = mix(c, vec3(1.0), tw * 0.65); }' +
+        'else if (style < 4.5) { float w = 0.3 * sin(vA * 16.0 - t * 6.0); float s1 = smoothstep(0.14, 0.0, abs(vV - 0.5 - w)), s2 = smoothstep(0.14, 0.0, abs(vV - 0.5 + w)); a = max(s1, s2) + 0.12 * a; c = mix(c, vec3(1.0), max(s1, s2) * life * 0.35); }' +
+        'else if (style < 5.5) { float n = rnd(floor(vA * 24.0 - t * 18.0)); float edge = (1.0 - d) * (1.0 - vA * 0.6); a = smoothstep(0.05, 0.35 + 0.35 * n, edge); c = mix(c, vec3(1.0, 0.96, 0.75), smoothstep(0.45, 0.0, d) * life * 0.85); }' +
+        'else { float seg = floor(vA * 18.0), f = floor(t * 9.0); float on = step(0.3, rnd(seg * 1.7 + f * 3.1)); float sh = (rnd(seg + f) - 0.5) * 0.5; a = on * step(abs(vV - 0.5 - sh), 0.32); c = mix(c0, c1, step(0.5, rnd(seg * 2.3 + f))); }' +
+        'float fade = life * smoothstep(0.0, 0.06, vA);' +
+        'gl_FragColor = vec4(c, clamp(a, 0.0, 1.0) * fade * op * 0.85); }',
       transparent: true, depthWrite: false, side: THREE.DoubleSide,
     });
     const mesh = new THREE.Mesh(g, mat);
@@ -1960,7 +1997,18 @@ body.touch #menu button, body.touch #drawer button { min-height: 40px; }
     into.add(mesh);
     const pts = [];
     return {
-      mat, life,
+      mat, life, scale: 1,
+      // point the ribbon at a trail from TRAILS
+      set(tr) {
+        const u = mat.uniforms;
+        u.rainbow.value = tr.color === 'hue' ? 1 : 0;
+        if (tr.id !== 'none' && tr.color !== 'hue') { u.c0.value.set(tr.color); u.c1.value.set(tr.tail || tr.color); }
+        u.style.value = TRAIL_STYLES[tr.style] || 0;
+        const blend = tr.add ? THREE.AdditiveBlending : THREE.NormalBlending;
+        if (mat.blending !== blend) { mat.blending = blend; mat.needsUpdate = true; }
+        this.scale = tr.scale || 1;
+        if (tr.id === 'none') this.clear();
+      },
       clear() { pts.length = 0; mesh.visible = false; },
       // x, y, z: the runner's feet; now in seconds; moving: speed is high enough to draw
       update(x, y, z, now, moving) {
@@ -1979,7 +2027,7 @@ body.touch #menu button, body.touch #drawer button { min-height: 40px; }
           const dx = qa.x - qb.x, dy = qa.y - qb.y, dz = qa.z - qb.z;
           const cy = q.y + height[0], vx = cp.x - q.x, vy = cp.y - cy, vz = cp.z - q.z;
           let sx = dy * vz - dz * vy, sy = dz * vx - dx * vz, sz = dx * vy - dy * vx;
-          const sl = Math.hypot(sx, sy, sz), w = height[1] * (1 - a * 0.6);
+          const sl = Math.hypot(sx, sy, sz), w = height[1] * this.scale * (1 - a * 0.6);
           if (sl > 1e-6) { sx *= w / sl; sy *= w / sl; sz *= w / sl; } else { sx = 0; sy = w; sz = 0; }
           pos[i * 6] = q.x - sx; pos[i * 6 + 1] = cy - sy; pos[i * 6 + 2] = q.z - sz;
           pos[i * 6 + 3] = q.x + sx; pos[i * 6 + 4] = cy + sy; pos[i * 6 + 5] = q.z + sz;
@@ -1995,18 +2043,14 @@ body.touch #menu button, body.touch #drawer button { min-height: 40px; }
     skin: SKINS[0], trail: TRAILS[0], trails,
     apply() {
       const k = this.skin = pick(SKINS, settings.skin), tr = this.trail = pick(TRAILS, settings.trail);
-      body.setSkin(Object.assign({}, k, { accent: k.accent === 'hue' ? hueColor(0) : k.accent }));
-      if (k.accent !== 'hue') ghost.tint(k.ghost || k.accent);
-      for (const t of [trails.me, trails.ghost]) {
-        t.mat.uniforms.rainbow.value = tr.color === 'hue' ? 1 : 0;
-        if (tr.color !== 'hue') { t.mat.uniforms.c0.value.set(tr.color); t.mat.uniforms.c1.value.set(tr.tail || tr.color); }
-        if (tr.id === 'none') t.clear();
-      }
+      body.setSkin(Object.assign({}, k, { accent: accentAt(k, 0) }));
+      if (!cycles(k)) ghost.tint(k.ghost || k.accent);
+      trails.me.set(tr); trails.ghost.set(tr);
     },
     // per frame: Prism cycles its colour, trails follow the runner and the ghost
     update(now, x, y, z, hs, show) {
       const ts = now / 1000;
-      if (this.skin.accent === 'hue') { const c = hueColor(ts * 0.12); body.setAccent(c); ghost.tint(c); }
+      if (cycles(this.skin)) { const c = accentAt(this.skin, ts); body.setAccent(c, this.skin.glow); ghost.tint(c); }
       const on = this.trail.id !== 'none';
       trails.me.mat.uniforms.t.value = trails.ghost.mat.uniforms.t.value = ts;
       if (on && show) trails.me.update(x, y, z, ts, hs > 300); else trails.me.clear();
@@ -2019,7 +2063,7 @@ body.touch #menu button, body.touch #drawer button { min-height: 40px; }
   // circle in whatever skin and trail you point at, locked ones included.
   const preview = (() => {
     const cv = document.getElementById('cos-view');
-    let r = null, pScene, pCam, fig, trail, mats, parts;
+    let r = null, pScene, pCam, fig, trail, mats, parts, ring;
     const st = { skin: null, trail: null, on: false, t: 0, last: 0 };
     function build() {
       r = new THREE.WebGLRenderer({ canvas: cv, antialias: true, alpha: true });
@@ -2058,22 +2102,29 @@ body.touch #menu button, body.touch #drawer button { min-height: 40px; }
       });
       const floor = new THREE.Mesh(new THREE.CylinderGeometry(118, 118, 6, 48), new THREE.MeshStandardMaterial({ color: new THREE.Color(0x2a3038).convertSRGBToLinear(), roughness: 0.9 }));
       floor.position.y = -3; pScene.add(floor);
+      ring = new THREE.Mesh(new THREE.TorusGeometry(118, 1.6, 8, 96), new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.4 }));
+      ring.rotation.x = Math.PI / 2; ring.position.y = 0.5; pScene.add(ring);
+      const rim = new THREE.DirectionalLight(0x9fc8ff, 0.6); rim.position.set(-1.5, 1, -2); pScene.add(rim);
       trail = makeTrail([24, 12], 1.2, pScene, pCam);
     }
     function setSkin(k) {
       const c = (m, v) => m.color.set(v).convertSRGBToLinear();
       c(mats.sleeve, k.sleeve); c(mats.glove, k.glove); c(mats.pants, k.pants); c(mats.shirt, k.shirt);
-      if (k.accent !== 'hue') c(mats.accent, k.accent);
       // the model: shirt colour on the body, accent on the joints
       if (mats.surface) c(mats.surface, k.shirt);
-      if (mats.joints && k.accent !== 'hue') c(mats.joints, k.accent);
+      setAccent(accentAt(k, 0), k.glow);
     }
-    function setTrail(tr) {
-      const u = trail.mat.uniforms;
-      u.rainbow.value = tr.color === 'hue' ? 1 : 0;
-      if (tr.color !== 'hue' && tr.id !== 'none') { u.c0.value.set(tr.color); u.c1.value.set(tr.tail || tr.color); }
-      if (tr.id === 'none') trail.clear();
+    // the accent, plus the ring of light round the turntable
+    function setAccent(hex, glow = 0) {
+      for (const m of [mats.accent, mats.joints]) {
+        if (!m) continue;
+        m.color.set(hex).convertSRGBToLinear();
+        m.emissive.copy(m.color).multiplyScalar(glow * 0.9);
+      }
+      ring.material.color.set(hex);
+      ring.material.opacity = 0.35 + glow * 0.5;
     }
+    function setTrail(tr) { trail.set(tr); }
     function loop(now) {
       if (!st.on) return;
       requestAnimationFrame(loop);
@@ -2089,7 +2140,7 @@ body.touch #menu button, body.touch #drawer button { min-height: 40px; }
       parts.arms[0].rotation.x = -sw * 0.8; parts.arms[1].rotation.x = sw * 0.8;
       parts.bodyG.position.y = Math.abs(Math.cos(st.t * 11)) * 3;
       if (parts.runner) parts.runner.update(dt, 300, false);
-      if (st.skin.accent === 'hue') { mats.accent.color.set(hueColor(now / 1000 * 0.12)).convertSRGBToLinear(); if (mats.joints) mats.joints.color.copy(mats.accent.color); }
+      if (cycles(st.skin)) setAccent(accentAt(st.skin, now / 1000), st.skin.glow);
       trail.mat.uniforms.t.value = now / 1000;
       if (st.trail.id !== 'none') trail.update(fig.position.x, 0, fig.position.z, now / 1000, true);
       r.render(pScene, pCam);
@@ -2513,9 +2564,13 @@ body.touch #menu button, body.touch #drawer button { min-height: 40px; }
     function setSkin(k) {
       sleeve.color.copy(lin(k.sleeve)); glove.color.copy(lin(k.glove)); pants.color.copy(lin(k.pants)); shirt.color.copy(lin(k.shirt));
       if (fp) fp.mats.surface.color.copy(lin(k.shirt));
-      setAccent(k.accent);
+      setAccent(k.accent, k.glow);
     }
-    function setAccent(c) { red.color.copy(lin(c)); shoe.color.copy(lin(c)); if (fp) fp.mats.joints.color.copy(lin(c)); }
+    // glow lights the accent from within, so neon skins read in the dark
+    function setAccent(c, glow = 0) {
+      const col = lin(c);
+      for (const m of [red, shoe, fp && fp.mats.joints]) if (m) { m.color.copy(col); m.emissive.copy(col).multiplyScalar(glow * 0.6); }
+    }
     // night levels: moonlight with a little city glow
     // (dusk: warm low light)
     const setNight = (th) => {
@@ -4513,10 +4568,10 @@ body.touch #menu button, body.touch #drawer button { min-height: 40px; }
     goCourse(STORY[i].course, i);
     startPlay();
   }
-  // cosmetics: pick a skin and a trail; locked ones show the stars they need
+  // cosmetics: pick a skin and a trail; locked ones show the stars or achievements they need
   function buildCosmetics() {
     const have = storyStars();
-    $('cos-total').textContent = 'Stars ' + have + ' / ' + STORY.filter(j => j.stars).length * 3;
+    $('cos-total').textContent = 'Stars ' + have + ' / ' + STORY.filter(j => j.stars).length * 3 + '   ◆ Achievements ' + achCount() + ' / ' + ACH.length;
     const hexs = (n) => '#' + n.toString(16).padStart(6, '0');
     const RAINBOW = 'linear-gradient(90deg,#ff4d4d,#ffb02e,#f5ff4f,#4fff8a,#4fc3ff,#8a5bff,#ff4dd2)';
     const fill = (el, list, key) => {
@@ -4531,11 +4586,22 @@ body.touch #menu button, body.touch #drawer button { min-height: 40px; }
         const sw = document.createElement('span');
         if (key === 'skin') {
           sw.className = 'sw';
-          const acc = it.accent === 'hue' ? RAINBOW : hexs(it.accent);
+          const acc = it.accent === 'hue' ? RAINBOW : Array.isArray(it.accent) ? 'linear-gradient(180deg,' + it.accent.map(hexs).join(',') + ')' : hexs(it.accent);
           sw.innerHTML = '<i style="background:' + hexs(it.sleeve) + '"></i><i class="band" style="background:' + acc + '"></i><i style="background:' + hexs(it.glove) + '"></i>';
+          if (it.glow >= 0.5) sw.style.setProperty('--glow', it.accent === 'hue' ? '#fff' : hexs(Array.isArray(it.accent) ? it.accent[0] : it.accent));
+          if (cycles(it)) sw.dataset.tag = 'Shifts';
+          else if (it.glow >= 0.5) sw.dataset.tag = 'Glow';
         } else {
           sw.className = 'sw trail';
-          sw.style.background = it.id === 'none' ? 'rgba(255,255,255,.08)' : it.color === 'hue' ? RAINBOW : 'linear-gradient(90deg,' + hexs(it.tail) + '00,' + hexs(it.tail) + ',' + hexs(it.color) + ')';
+          if (it.id === 'none') sw.style.background = 'rgba(255,255,255,.08)';
+          else {
+            const base = it.color === 'hue' ? RAINBOW : 'linear-gradient(90deg,' + hexs(it.tail) + '00,' + hexs(it.tail) + ',' + hexs(it.color) + ')';
+            sw.classList.add('st-' + (it.style || 'ribbon'));
+            sw.style.setProperty('--base', base);
+            sw.style.setProperty('--c', it.color === 'hue' ? '#fff' : hexs(it.color));
+            sw.style.setProperty('--t', it.color === 'hue' ? '#fff' : hexs(it.tail));
+            if (it.add) sw.dataset.tag = 'Glow';
+          }
         }
         const cn = document.createElement('span');
         cn.className = 'cn';

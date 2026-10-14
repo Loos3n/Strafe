@@ -174,7 +174,17 @@ body.complete #menu { display: none; }
 .cos .sw { height: 34px; display: flex; border-radius: 2px; overflow: hidden; }
 .cos .sw i { flex: 1; }
 .cos .sw i.band { flex: .45; }
-.cos .sw.trail { height: 14px; margin-block: 10px; border-radius: 7px; }
+.cos .sw { position: relative; }
+.cos .sw[style*="--glow"] { box-shadow: 0 0 12px -2px var(--glow); }
+.cos .sw[data-tag]::after { content: attr(data-tag); position: absolute; right: 3px; top: 3px; padding: 1px 4px; font: 700 9px/1.2 var(--display); letter-spacing: .12em; text-transform: uppercase; color: #0d0f12; background: rgba(255,255,255,.85); border-radius: 2px; }
+.cos .sw.trail { height: 14px; margin-block: 10px; border-radius: 7px; overflow: visible; background: var(--base); }
+.cos .sw.trail[data-tag]::after { top: -12px; right: 0; }
+.cos .sw.trail.st-glow { box-shadow: 0 0 10px 1px var(--c); background: linear-gradient(180deg, transparent 35%, rgba(255,255,255,.9) 50%, transparent 65%), var(--base); }
+.cos .sw.trail.st-pulse { background: repeating-linear-gradient(90deg, rgba(10,12,16,.7) 0 6px, transparent 6px 14px), var(--base); }
+.cos .sw.trail.st-spark { background: radial-gradient(circle, #fff 0 1px, transparent 1.7px) 0 1px / 9px 6px, linear-gradient(90deg, transparent, color-mix(in srgb, var(--c) 40%, transparent)); }
+.cos .sw.trail.st-twin { border-radius: 0; background: linear-gradient(90deg, transparent, var(--t), var(--c)) 0 1px / 100% 3px no-repeat, linear-gradient(90deg, transparent, var(--t), var(--c)) 0 10px / 100% 3px no-repeat; }
+.cos .sw.trail.st-fire { background: linear-gradient(180deg, transparent 30%, #fff6c8 50%, transparent 70%), var(--base); box-shadow: 0 -3px 10px -2px var(--t); border-radius: 7px 50% 50% 7px / 7px 50% 50% 7px; }
+.cos .sw.trail.st-glitch { border-radius: 0; background: linear-gradient(90deg, transparent 0 8%, var(--t) 8% 22%, transparent 22% 30%, var(--c) 30% 48%, transparent 48% 54%, var(--t) 54% 70%, transparent 70% 76%, var(--c) 76%) 0 0 / 100% 100%; clip-path: polygon(0 0,100% 0,100% 45%,92% 45%,92% 100%,0 100%,0 60%,6% 60%,6% 20%,0 20%); }
 .cos .cn { font-family: var(--display); font-weight: 700; font-size: 16px; line-height: 1.1; }
 .cos .cn small { display: block; font-weight: 600; font-size: 12px; letter-spacing: .12em; text-transform: uppercase; color: rgba(236,240,244,.55); margin-top: 2px; }
 .cos[aria-disabled="true"] .cn small { color: #f2b630; }
@@ -630,7 +640,7 @@ body.touch #racehud { top: calc(56px + env(safe-area-inset-top, 0px)); left: 10p
       <ol class="jobs" id="st-jobs"></ol>
     </div>
     <div data-pane="cosmetics" hidden>
-      <p class="sintro">Win stars on story jobs to unlock runner skins and trails. Your skin colours your arms, legs and ghost. Your trail follows you and your ghost once you pass 300 u/s.</p>
+      <p class="sintro">Win stars on story jobs (★) and earn achievements (◆) to unlock runner skins and trails. Your skin colours your arms, legs and ghost; glowing skins light up in the dark. Your trail follows you and your ghost once you pass 300 u/s.</p>
       <p class="label" id="cos-total"></p>
       <div class="cosview"><canvas id="cos-view" aria-hidden="true"></canvas><p id="cos-cap" aria-live="polite"></p></div>
       <div class="group"><p class="label">Runner skin</p><div class="cosgrid" id="cos-skins"></div></div>
