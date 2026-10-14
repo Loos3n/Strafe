@@ -19,3 +19,6 @@ new_sqlite_classes = ["Board", "Race"]
 # played in any browser at the server's address
 [assets]
 directory = "./public"
+binding = "ASSETS"
+# the page itself goes through the worker, which writes shared links' previews
+run_worker_first = ["/"]

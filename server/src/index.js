@@ -21,7 +21,7 @@ export default {
   async fetch(req, env) {
     if (req.method === 'OPTIONS') return new Response(null, { status: 204, headers: CORS });
     const url = new URL(req.url);
-    if (url.pathname === '/') return json({ ok: true, game: 'strafe' });
+    if (url.pathname === '/') return page(req, url, env);
     const race = url.pathname.match(/^\/race\/([A-Z0-9]{4,8})$/);
     if (race) {
       if (req.headers.get('upgrade') !== 'websocket') return fail('websocket only', 426);
@@ -31,6 +31,32 @@ export default {
     return fail('not found', 404);
   },
 };
+
+// The game page. A shared link (?level=, ?c=, ?race=, ?challenge=, with vs=
+// for a ghost to race) gets a preview title and description that say what it
+// opens, so it reads well when pasted into a chat.
+const SHARE_KEYS = ['level', 'c', 'race', 'challenge'];
+async function page(req, url, env) {
+  if (!env.ASSETS) return json({ ok: true, game: 'strafe' });
+  const res = await env.ASSETS.fetch(req);
+  if (!SHARE_KEYS.some(k => url.searchParams.has(k)) || !(res.headers.get('content-type') || '').includes('text/html')) return res;
+  let card = null;
+  try {
+    const r = await env.BOARD.get(env.BOARD.idFromName('main')).fetch(new Request('https://board/api/card' + url.search, { headers: req.headers }));
+    if (r.ok) card = await r.json();
+  } catch (e) { /* the plain page still works */ }
+  if (!card) return res;
+  const set = (v) => ({ element(e) { e.setAttribute('content', v); } });
+  return new HTMLRewriter()
+    .on('meta[property="og:title"]', set(card.title))
+    .on('meta[property="og:description"]', set(card.desc))
+    .on('meta[name="description"]', set(card.desc))
+    .on('meta[property="og:url"]', set(url.href))
+    .transform(res);
+}
+const clock = (ticks) => { const s = ticks / 100, m = Math.floor(s / 60); return m + ':' + (s - m * 60).toFixed(2).padStart(5, '0'); };
+// a built-in level's board key from the game's course key ("n1" is "n1_v2")
+const levelKey = (c) => typeof c === 'string' && c ? Object.keys(LEVELS).find(k => k === c || k.startsWith(c + '_v')) || null : null;
 
 const hex = (buf) => [...new Uint8Array(buf)].map(b => b.toString(16).padStart(2, '0')).join('');
 const sha = async (s) => hex(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(s)));
@@ -109,6 +135,13 @@ export class Board extends DurableObject {
     return this.checks.get(course);
   }
   // a community level as the browser lists it
+  // a level's name: "Neon Mile", or a community level's "Name by Maker"
+  courseName(course) {
+    if (LEVELS[course]) return LEVELS[course].name;
+    if (typeof course !== 'string' || !course.startsWith('c:')) return null;
+    const [L] = this.levelRows('WHERE l.id = ?', [course.slice(2)], 'l.id', 1, 0, null);
+    return L ? L.name + ' by ' + L.author : null;
+  }
   levelRows(where, args, order, limit, offset, me) {
     return this.sql.exec(`SELECT l.id, l.name, l.author AS authorId, p.name AS author, l.likes, l.plays, l.created, l.pieces,
         (SELECT COUNT(*) FROM times t WHERE t.course = 'c:' || l.id) AS runners,
@@ -229,6 +262,24 @@ export class Board extends DurableObject {
         WHERE g.course = ? AND g.player = ?`, course, id);
       if (!g) return fail('no ghost', 404);
       return json({ name: g.name, ticks: g.ticks, ghost: JSON.parse(g.data) });
+    }
+    // what a shared link opens, for its preview (see page() above)
+    if (path === '/card' && req.method === 'GET') {
+      const q = url.searchParams;
+      const room = (q.get('race') || '').toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 8);
+      if (room) return json({ title: 'Race me in Strafe', desc: 'Live race room ' + room + '. Open the link to join; it runs in your browser.' });
+      const ch = q.get('challenge');
+      let course = null;
+      if (ch === 'daily' || ch === 'weekly') {
+        const now = Date.now(), c = ch === 'daily' ? this.dailyFor(dayOf(now)) : this.weeklyFor(weekOf(now)), n = this.courseName(c);
+        return json({ title: (ch === 'daily' ? "Today's" : "This week's") + ' Strafe challenge' + (n ? ': ' + n : ''), desc: 'One level for everyone, one board. Post a time and race the ghosts ahead of you.' });
+      }
+      if (q.get('c')) course = 'c:' + q.get('c'); else course = levelKey(q.get('level'));
+      const name = course && this.courseName(course);
+      if (!name) return fail('unknown level', 404);
+      const vs = q.get('vs'), who = vs && this.one('SELECT name FROM players WHERE id = ?', vs), mine = who && this.standing(course, vs);
+      if (mine) return json({ title: who.name + ' challenges you: ' + name, desc: 'Beat ' + clock(mine.ticks) + ' on ' + name + ' in Strafe and race their ghost. Free in your browser.' });
+      return json({ title: name + ' · Strafe', desc: (course.startsWith('c:') ? 'A community level' : 'A level') + " in Strafe, Mirror's Edge parkour meets CS surf and bhop. Free in your browser." });
     }
     // browse community levels: sort=top|new, q=search, by=author id, page
     if (path === '/levels' && req.method === 'GET') {

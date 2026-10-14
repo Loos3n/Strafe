@@ -2614,6 +2614,7 @@ body.touch #menu button, body.touch #drawer button { min-height: 40px; }
     $('c-dist').textContent = (r.dist * 0.0254).toFixed(0);
     $('c-watch').hidden = userCourse(game.course) || !ghost.has(game.course);
     cmRenderComplete();
+    $('c-share').hidden = game.course === 'custom';
     const sv = $('c-save');
     sv.hidden = !game.lastRun || game.lastRun.course !== game.course;
     sv.disabled = false; sv.innerHTML = 'Save replay <kbd>S</kbd>';
@@ -3636,10 +3637,7 @@ body.touch #menu button, body.touch #drawer button { min-height: 40px; }
   $('race-leave').addEventListener('click', () => { raceLeave(); $('race-msg').textContent = ''; });
   $('race-level').addEventListener('change', () => { const v = $('race-level').value; raceSend({ t: 'level', course: v, key: lbKey(v) }); });
   $('race-start').addEventListener('click', () => { A.init(); raceSend({ t: 'start' }); });
-  $('race-copy').addEventListener('click', () => {
-    const done = () => toast('Room code copied', 1500);
-    try { navigator.clipboard.writeText(race.code).then(done, () => toast('Room code: ' + race.code, 2500)); } catch (e) { toast('Room code: ' + race.code, 2500); }
-  });
+  $('race-copy').addEventListener('click', () => shareLink({ race: race.code }, 'Race me in Strafe, room ' + race.code));
 
   // is the server there? if not, the claude.ai board carries on as before
   (async () => {
@@ -3654,6 +3652,7 @@ body.touch #menu button, body.touch #drawer button { min-height: 40px; }
     dailySub();
     if (!drawer.hidden && !$('on-body').closest('[data-pane]').hidden) onlineOpen();
     if (!drawer.hidden && !$('cm-listview').closest('[data-pane]').hidden && $('cm-detail').hidden) cmOpen();
+    inviteOpen();
     // inside claude.ai, note whether the page could reach the server
     noteReach();
   })();
@@ -5480,6 +5479,7 @@ body.editing.playing #edhelp { display: block; }
   $('cm-back').addEventListener('click', () => { A.play('click'); cmOpen(); });
   $('cm-play').addEventListener('click', () => { if (cm.level) { A.init(); A.play('click'); cmPlay(cm.level); } });
   $('cm-like').addEventListener('click', async () => { if (cm.level) { await cmLike(cm.level, $('cm-dmsg')); cmRenderDetail(); } });
+  $('cm-link').addEventListener('click', () => { if (cm.level) shareLink({ c: cm.level.id }, 'Play ' + cm.level.name + ' by ' + cm.level.author + ' in Strafe'); });
   $('cm-copy').addEventListener('click', async () => {
     try { await navigator.clipboard.writeText(cm.level.code); $('cm-dmsg').textContent = 'Copied. Paste it in the editor with Load a code.'; }
     catch (e) { $('cm-dmsg').textContent = 'Could not copy from here.'; }
@@ -5642,6 +5642,86 @@ body.editing.playing #edhelp { display: block; }
   $('dy-play').addEventListener('click', () => { A.init(); A.play('click'); dailyPlay(); });
   for (const b of $('dy-tabs').children) b.addEventListener('click', () => { A.play('click'); dailyOpen(b.dataset.kind === 'week' ? weekly : daily); });
   setInterval(() => { if (chal.data && !$('dy-body').closest('[data-pane]').hidden && !drawer.hidden) $('dy-left').textContent = dailyLeft(chal); }, 15000);
+
+  // ------------------------------------------------------------ share links
+  // Links to the game page on the Strafe server that open a level, a race
+  // room, a community level or the challenges. A level link can carry vs=<a
+  // player id> to race that player's ghost. The server writes each link's
+  // preview title and description from what it opens (card in server/src).
+  const INVITE_KEYS = ['level', 'c', 'vs', 'race', 'challenge'];
+  async function shareLink(q, text) {
+    const url = SERVER + '/?' + new URLSearchParams(q);
+    A.play('click');
+    if (TOUCH && navigator.share) {
+      try { await navigator.share({ title: 'Strafe', text, url }); return; } catch (e) { if (e.name === 'AbortError') return; }
+    }
+    try { await navigator.clipboard.writeText(url); toast('Link copied. Paste it to a friend.', 2000); }
+    catch (e) { toast(url, 8000); }
+  }
+  // from the level complete card: your best here, with your ghost if it's on the board
+  $('c-share').addEventListener('click', () => {
+    const c = game.course, mine = best[c], L = isCommunity(c) && cm.playing && c === 'c:' + cm.playing.id ? cm.playing : null;
+    const q = isCommunity(c) ? { c: c.slice(2) } : { level: c };
+    if (mine && net.token && net.id && canPost()) q.vs = net.id;
+    const name = L ? L.name : map.courses[c].name;
+    shareLink(q, mine ? 'Beat my ' + fmt(mine) + ' on ' + name + ' in Strafe' : 'Play ' + name + ' in Strafe');
+  });
+  const invite = { go: null };
+  function inviteShow(label, name, text, go) {
+    $('iv-label').textContent = label;
+    $('iv-name').textContent = name;
+    $('iv-text').textContent = text;
+    $('iv-go').textContent = go.label;
+    $('iv-tut').hidden = !!best.tutorial;
+    invite.go = go.run;
+    $('invite').hidden = false;
+    $('iv-go').focus({ preventScroll: true });
+  }
+  function inviteClose() { $('invite').hidden = true; invite.go = null; }
+  $('iv-go').addEventListener('click', () => { const go = invite.go; inviteClose(); A.init(); A.play('click'); if (go) go(); });
+  $('iv-tut').addEventListener('click', () => { inviteClose(); selected = 'tutorial'; playSelected(); });
+  $('iv-close').addEventListener('click', () => { A.play('click'); inviteClose(); });
+  window.addEventListener('keydown', (e) => { if (e.code === 'Escape' && !$('invite').hidden) { e.preventDefault(); inviteClose(); } });
+  // act on the link this page was opened with (once the server check is done)
+  async function inviteOpen() {
+    const q = new URLSearchParams(location.search);
+    const room = (q.get('race') || '').toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 8), cid = q.get('c'), lv = q.get('level'), vs = q.get('vs'), ch = q.get('challenge');
+    if (!room && !cid && !lv && !ch) return;
+    for (const k of INVITE_KEYS) q.delete(k);
+    try { history.replaceState(null, '', location.pathname + (String(q) ? '?' + q : '') + location.hash); } catch (e) { /* sandboxed */ }
+    if (game.started || ed.on) return;
+    if (room.length >= 4) {
+      openDrawer('online');
+      $('race-code').value = room;
+      if (net.ok === false) $('race-msg').textContent = 'The race server can\'t be reached right now.';
+      else if (net.name) raceConnect(room);
+      else { $('on-namemsg').className = 'onmsg err'; $('on-namemsg').textContent = 'Pick a name, then Join to race in room ' + room + '.'; $('on-name').focus(); }
+      return;
+    }
+    if (ch === 'daily' || ch === 'weekly') { openDrawer('daily'); if (ch === 'weekly') dailyOpen(weekly); return; }
+    const course = cid ? 'c:' + cid : lv;
+    if (!cid && !map.courses[lv]) return;
+    let g = null, L = null;
+    if (vs && vs !== net.id && net.ok) {
+      try { g = await api('/ghost?course=' + encodeURIComponent(cid ? course : lbKey(lv)) + '&id=' + encodeURIComponent(vs)); } catch (e) { g = null; }
+    }
+    if (cid) {
+      if (!g) { openDrawer('community'); cmShow(cid); return; }
+      try { L = await api('/level?id=' + encodeURIComponent(cid)); } catch (e) { openDrawer('community'); cmShow(cid); return; }
+    }
+    if (game.started || ed.on) return; // started playing while it loaded
+    const name = L ? L.name : map.courses[lv].name;
+    const play = () => {
+      if (L) return cmPlay(L, g && g.ghost);
+      ghost.useRemote(g ? course : null, g ? g.ghost : null);
+      selected = course;
+      playSelected();
+    };
+    if (g) {
+      inviteShow(g.name + ' challenges you', name, 'Beat ' + fmt(g.ticks) + '. Their ghost runs beside you.' + (L ? ' A community level by ' + L.author + '.' : ''),
+        { label: 'Race their ghost', run: () => { play(); toast('Racing ' + g.name + "'s ghost (" + fmt(g.ticks) + ')', 2600); } });
+    } else inviteShow('Shared level', name, best[course] ? 'Your best here is ' + fmt(best[course]) + '.' : 'Someone sent you this level.', { label: 'Play', run: play });
+  }
 
   // ------------------------------------------------------------ boot
   goIdle();

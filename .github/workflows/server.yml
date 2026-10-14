@@ -25,6 +25,8 @@ jobs:
         run: node gen-levels.cjs && git diff --exit-code src/levels.json src/sets.json
       - name: Build the game page the server hosts
         run: node ../build.js "" public/index.html
+      - name: Add the link preview image
+        run: cp static/* public/
       - name: Make sure the account has a workers.dev address
         if: env.CLOUDFLARE_API_TOKEN != ''
         run: |

@@ -1,5 +1,16 @@
 <meta charset="utf-8">
 <title>Strafe</title>
+<meta name="description" content="Mirror's Edge parkour meets CS surf and bhop. Free in your browser: 32 levels, ghost and live races, and a level editor.">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="Strafe">
+<meta property="og:title" content="Strafe: rooftop parkour with surf and bhop">
+<meta property="og:description" content="Mirror's Edge parkour meets CS surf and bhop. Free in your browser: 32 levels, ghost and live races, and a level editor.">
+<meta property="og:url" content="https://strafe-online.strafe-game.workers.dev/">
+<meta property="og:image" content="https://strafe-online.strafe-game.workers.dev/og.jpg">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="theme-color" content="#db2f2a">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:ital,wght@0,500;0,600;0,700;1,700;1,800&family=Barlow:wght@400;500;600&display=swap">
@@ -110,7 +121,7 @@ body:not(.playing) .hud, body:not(.playing) #crosshair { visibility: hidden; }
 
 /* ---------- level complete */
 body.complete #menu { display: none; }
-#complete { position: fixed; inset: 0; display: grid; place-items: center; padding-inline: 16px; background: radial-gradient(ellipse at center, rgba(246,246,243,.55), rgba(21,25,29,.35)); animation: cin .35s ease-out; }
+#complete, #invite { position: fixed; inset: 0; display: grid; place-items: center; padding-inline: 16px; background: radial-gradient(ellipse at center, rgba(246,246,243,.55), rgba(21,25,29,.35)); animation: cin .35s ease-out; }
 @keyframes cin { from { opacity: 0; } to { opacity: 1; } }
 .csheet { width: min(620px, 100%); box-sizing: border-box; background: rgba(246,246,243,.97); padding: clamp(20px, 4vw, 36px); box-shadow: 0 24px 70px rgba(10,14,18,.3); }
 .clabel { margin: 0; font-family: var(--display); font-weight: 600; font-size: 13px; letter-spacing: .26em; text-transform: uppercase; color: var(--red); }
@@ -186,7 +197,9 @@ body.complete #menu { display: none; }
 .job .s i { font-style: normal; color: rgba(255,255,255,.2); }
 .cbtns kbd { font-family: var(--display); font-size: 12px; border: 1px solid currentColor; padding: 0 4px; margin-left: 4px; opacity: .7; }
 @media (max-width: 560px) { .cstats { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
-@media (prefers-reduced-motion: reduce) { #complete { animation: none; } }
+@media (prefers-reduced-motion: reduce) { #complete, #invite { animation: none; } }
+#iv-name { margin: 4px 0 0; font-family: var(--display); font-weight: 800; font-style: italic; font-size: clamp(40px, 7vw, 64px); line-height: .92; }
+#iv-text { margin: 12px 0 0; font-size: 17px; }
 /* ---------- menu: the live level flythrough fills the screen; a dark title bar, a hero
    for the selected level and a strip of level cards sit over it like a console game */
 #menu { --glass: rgba(11,14,18,.72); --line: rgba(255,255,255,.14); --dim: rgba(236,240,244,.66);
@@ -743,7 +756,7 @@ body.touch #racehud { top: calc(56px + env(safe-area-inset-top, 0px)); left: 10p
             <form class="onrow" id="race-joinform"><input id="race-code" maxlength="5" placeholder="Code" autocomplete="off" spellcheck="false"><button class="ghost">Join</button></form>
           </div>
           <div id="race-in" hidden>
-            <p class="racecode">Room <b id="race-codeview"></b> <button class="ghost small" id="race-copy">Copy</button></p>
+            <p class="racecode">Room <b id="race-codeview"></b> <button class="ghost small" id="race-copy">Copy invite link</button></p>
             <ol class="raceplayers" id="race-players"></ol>
             <div class="onrow" id="race-hostrow"><select id="race-level" aria-label="Level"></select><button class="cprimary" id="race-start">Start race</button></div>
             <p class="onmsg" id="race-msg"></p>
@@ -797,7 +810,7 @@ body.touch #racehud { top: calc(56px + env(safe-area-inset-top, 0px)); left: 10p
         <p class="onmsg" id="cm-meta"></p>
         <p class="mrow" id="cm-medals"></p>
         <div class="onrow" id="cm-actions"><button class="cprimary" id="cm-play">Play</button><button class="ghost" id="cm-like"></button></div>
-        <div class="onrow" id="cm-tools"><button class="ghost small" id="cm-edit">Open in editor</button><button class="ghost small" id="cm-copy">Copy level code</button><button class="ghost small" id="cm-follow"></button><button class="ghost small" id="cm-byauthor"></button><button class="ghost small" id="cm-del" hidden>Take down</button></div>
+        <div class="onrow" id="cm-tools"><button class="ghost small" id="cm-edit">Open in editor</button><button class="ghost small" id="cm-link">Copy link</button><button class="ghost small" id="cm-copy">Copy level code</button><button class="ghost small" id="cm-follow"></button><button class="ghost small" id="cm-byauthor"></button><button class="ghost small" id="cm-del" hidden>Take down</button></div>
         <p class="onmsg" id="cm-dmsg"></p>
         <div class="group">
           <p class="label">Top times</p>
@@ -867,6 +880,19 @@ body.touch #racehud { top: calc(56px + env(safe-area-inset-top, 0px)); left: 10p
       <button class="ghost" data-act="save" id="c-save" hidden>Save replay <kbd>S</kbd></button>
       <button class="ghost" data-act="watch" id="c-watch" hidden>Watch best <kbd>V</kbd></button>
       <button class="ghost" id="c-like" hidden></button>
+      <button class="ghost" id="c-share" hidden>Challenge a friend</button>
+    </div>
+  </div>
+</div>
+<div id="invite" hidden role="dialog" aria-labelledby="iv-name">
+  <div class="csheet">
+    <p class="clabel" id="iv-label"></p>
+    <h2 id="iv-name"></h2>
+    <p id="iv-text"></p>
+    <div class="cbtns">
+      <button class="cprimary" id="iv-go"></button>
+      <button class="ghost" id="iv-tut" hidden>Tutorial first</button>
+      <button class="ghost" id="iv-close">Not now <kbd>Esc</kbd></button>
     </div>
   </div>
 </div>
@@ -10507,6 +10533,7 @@ body.touch #menu button, body.touch #drawer button { min-height: 40px; }
     $('c-dist').textContent = (r.dist * 0.0254).toFixed(0);
     $('c-watch').hidden = userCourse(game.course) || !ghost.has(game.course);
     cmRenderComplete();
+    $('c-share').hidden = game.course === 'custom';
     const sv = $('c-save');
     sv.hidden = !game.lastRun || game.lastRun.course !== game.course;
     sv.disabled = false; sv.innerHTML = 'Save replay <kbd>S</kbd>';
@@ -11529,10 +11556,7 @@ body.touch #menu button, body.touch #drawer button { min-height: 40px; }
   $('race-leave').addEventListener('click', () => { raceLeave(); $('race-msg').textContent = ''; });
   $('race-level').addEventListener('change', () => { const v = $('race-level').value; raceSend({ t: 'level', course: v, key: lbKey(v) }); });
   $('race-start').addEventListener('click', () => { A.init(); raceSend({ t: 'start' }); });
-  $('race-copy').addEventListener('click', () => {
-    const done = () => toast('Room code copied', 1500);
-    try { navigator.clipboard.writeText(race.code).then(done, () => toast('Room code: ' + race.code, 2500)); } catch (e) { toast('Room code: ' + race.code, 2500); }
-  });
+  $('race-copy').addEventListener('click', () => shareLink({ race: race.code }, 'Race me in Strafe, room ' + race.code));
 
   // is the server there? if not, the claude.ai board carries on as before
   (async () => {
@@ -11547,6 +11571,7 @@ body.touch #menu button, body.touch #drawer button { min-height: 40px; }
     dailySub();
     if (!drawer.hidden && !$('on-body').closest('[data-pane]').hidden) onlineOpen();
     if (!drawer.hidden && !$('cm-listview').closest('[data-pane]').hidden && $('cm-detail').hidden) cmOpen();
+    inviteOpen();
     // inside claude.ai, note whether the page could reach the server
     noteReach();
   })();
@@ -13373,6 +13398,7 @@ body.editing.playing #edhelp { display: block; }
   $('cm-back').addEventListener('click', () => { A.play('click'); cmOpen(); });
   $('cm-play').addEventListener('click', () => { if (cm.level) { A.init(); A.play('click'); cmPlay(cm.level); } });
   $('cm-like').addEventListener('click', async () => { if (cm.level) { await cmLike(cm.level, $('cm-dmsg')); cmRenderDetail(); } });
+  $('cm-link').addEventListener('click', () => { if (cm.level) shareLink({ c: cm.level.id }, 'Play ' + cm.level.name + ' by ' + cm.level.author + ' in Strafe'); });
   $('cm-copy').addEventListener('click', async () => {
     try { await navigator.clipboard.writeText(cm.level.code); $('cm-dmsg').textContent = 'Copied. Paste it in the editor with Load a code.'; }
     catch (e) { $('cm-dmsg').textContent = 'Could not copy from here.'; }
@@ -13535,6 +13561,86 @@ body.editing.playing #edhelp { display: block; }
   $('dy-play').addEventListener('click', () => { A.init(); A.play('click'); dailyPlay(); });
   for (const b of $('dy-tabs').children) b.addEventListener('click', () => { A.play('click'); dailyOpen(b.dataset.kind === 'week' ? weekly : daily); });
   setInterval(() => { if (chal.data && !$('dy-body').closest('[data-pane]').hidden && !drawer.hidden) $('dy-left').textContent = dailyLeft(chal); }, 15000);
+
+  // ------------------------------------------------------------ share links
+  // Links to the game page on the Strafe server that open a level, a race
+  // room, a community level or the challenges. A level link can carry vs=<a
+  // player id> to race that player's ghost. The server writes each link's
+  // preview title and description from what it opens (card in server/src).
+  const INVITE_KEYS = ['level', 'c', 'vs', 'race', 'challenge'];
+  async function shareLink(q, text) {
+    const url = SERVER + '/?' + new URLSearchParams(q);
+    A.play('click');
+    if (TOUCH && navigator.share) {
+      try { await navigator.share({ title: 'Strafe', text, url }); return; } catch (e) { if (e.name === 'AbortError') return; }
+    }
+    try { await navigator.clipboard.writeText(url); toast('Link copied. Paste it to a friend.', 2000); }
+    catch (e) { toast(url, 8000); }
+  }
+  // from the level complete card: your best here, with your ghost if it's on the board
+  $('c-share').addEventListener('click', () => {
+    const c = game.course, mine = best[c], L = isCommunity(c) && cm.playing && c === 'c:' + cm.playing.id ? cm.playing : null;
+    const q = isCommunity(c) ? { c: c.slice(2) } : { level: c };
+    if (mine && net.token && net.id && canPost()) q.vs = net.id;
+    const name = L ? L.name : map.courses[c].name;
+    shareLink(q, mine ? 'Beat my ' + fmt(mine) + ' on ' + name + ' in Strafe' : 'Play ' + name + ' in Strafe');
+  });
+  const invite = { go: null };
+  function inviteShow(label, name, text, go) {
+    $('iv-label').textContent = label;
+    $('iv-name').textContent = name;
+    $('iv-text').textContent = text;
+    $('iv-go').textContent = go.label;
+    $('iv-tut').hidden = !!best.tutorial;
+    invite.go = go.run;
+    $('invite').hidden = false;
+    $('iv-go').focus({ preventScroll: true });
+  }
+  function inviteClose() { $('invite').hidden = true; invite.go = null; }
+  $('iv-go').addEventListener('click', () => { const go = invite.go; inviteClose(); A.init(); A.play('click'); if (go) go(); });
+  $('iv-tut').addEventListener('click', () => { inviteClose(); selected = 'tutorial'; playSelected(); });
+  $('iv-close').addEventListener('click', () => { A.play('click'); inviteClose(); });
+  window.addEventListener('keydown', (e) => { if (e.code === 'Escape' && !$('invite').hidden) { e.preventDefault(); inviteClose(); } });
+  // act on the link this page was opened with (once the server check is done)
+  async function inviteOpen() {
+    const q = new URLSearchParams(location.search);
+    const room = (q.get('race') || '').toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 8), cid = q.get('c'), lv = q.get('level'), vs = q.get('vs'), ch = q.get('challenge');
+    if (!room && !cid && !lv && !ch) return;
+    for (const k of INVITE_KEYS) q.delete(k);
+    try { history.replaceState(null, '', location.pathname + (String(q) ? '?' + q : '') + location.hash); } catch (e) { /* sandboxed */ }
+    if (game.started || ed.on) return;
+    if (room.length >= 4) {
+      openDrawer('online');
+      $('race-code').value = room;
+      if (net.ok === false) $('race-msg').textContent = 'The race server can\'t be reached right now.';
+      else if (net.name) raceConnect(room);
+      else { $('on-namemsg').className = 'onmsg err'; $('on-namemsg').textContent = 'Pick a name, then Join to race in room ' + room + '.'; $('on-name').focus(); }
+      return;
+    }
+    if (ch === 'daily' || ch === 'weekly') { openDrawer('daily'); if (ch === 'weekly') dailyOpen(weekly); return; }
+    const course = cid ? 'c:' + cid : lv;
+    if (!cid && !map.courses[lv]) return;
+    let g = null, L = null;
+    if (vs && vs !== net.id && net.ok) {
+      try { g = await api('/ghost?course=' + encodeURIComponent(cid ? course : lbKey(lv)) + '&id=' + encodeURIComponent(vs)); } catch (e) { g = null; }
+    }
+    if (cid) {
+      if (!g) { openDrawer('community'); cmShow(cid); return; }
+      try { L = await api('/level?id=' + encodeURIComponent(cid)); } catch (e) { openDrawer('community'); cmShow(cid); return; }
+    }
+    if (game.started || ed.on) return; // started playing while it loaded
+    const name = L ? L.name : map.courses[lv].name;
+    const play = () => {
+      if (L) return cmPlay(L, g && g.ghost);
+      ghost.useRemote(g ? course : null, g ? g.ghost : null);
+      selected = course;
+      playSelected();
+    };
+    if (g) {
+      inviteShow(g.name + ' challenges you', name, 'Beat ' + fmt(g.ticks) + '. Their ghost runs beside you.' + (L ? ' A community level by ' + L.author + '.' : ''),
+        { label: 'Race their ghost', run: () => { play(); toast('Racing ' + g.name + "'s ghost (" + fmt(g.ticks) + ')', 2600); } });
+    } else inviteShow('Shared level', name, best[course] ? 'Your best here is ' + fmt(best[course]) + '.' : 'Someone sent you this level.', { label: 'Play', run: play });
+  }
 
   // ------------------------------------------------------------ boot
   goIdle();
