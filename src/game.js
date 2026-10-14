@@ -440,7 +440,20 @@
   const deco = new P.World();
   {
     const POINT = { min: [0, 0, 0], max: [0, 0, 0] };
-    const below = (x, y, z) => { const t = world.trace([x, y, z], [x, GROUND, z], POINT); return t.fraction < 1 ? t.endpos[1] : null; };
+    // straight-down traces only meet brushes over that spot, so look them up
+    // by grid cell (same brushes, same order) instead of tracing the whole world
+    const COL = 2000, cols = new Map();
+    world.brushes.forEach((b) => {
+      if (b.props.nonsolid) return;
+      const o = b.off || [0, 0, 0];
+      for (let i = Math.floor((b.min[0] + o[0] - 2) / COL); i <= Math.floor((b.max[0] + o[0] + 2) / COL); i++)
+        for (let j = Math.floor((b.min[2] + o[2] - 2) / COL); j <= Math.floor((b.max[2] + o[2] + 2) / COL); j++) {
+          const k = i + ',' + j;
+          (cols.get(k) || cols.set(k, []).get(k)).push(b);
+        }
+    });
+    const vtrace = (a, b) => P.World.prototype.trace.call({ brushes: cols.get(Math.floor(a[0] / COL) + ',' + Math.floor(a[2] / COL)) || [] }, a, b, POINT);
+    const below = (x, y, z) => { const t = vtrace([x, y, z], [x, GROUND, z]); return t.fraction < 1 ? t.endpos[1] : null; };
     const pools = world.brushes.filter(b => b.props.water || b.props.lava);
     const poolBelow = (x, y, z) => { let top = null; for (const b of pools) if (x > b.min[0] && x < b.max[0] && z > b.min[2] && z < b.max[2] && b.max[1] < y) top = Math.max(top === null ? -1e9 : top, b.max[1]); return top; };
     const isBox = (b) => b.faces.length === 6 && b.faces.every(f => Math.abs(f.n[0]) === 1 || Math.abs(f.n[1]) === 1 || Math.abs(f.n[2]) === 1);
@@ -459,7 +472,7 @@
       if (b.props.kind === 'ramp' && b.props.pylons) {
         // curved ramp pieces say where their pylon goes
         for (const [x, z] of b.props.pylons) {
-          const up = world.trace([x, GROUND, z], [x, b.max[1] + 10, z], POINT);
+          const up = vtrace([x, GROUND, z], [x, b.max[1] + 10, z]);
           if (up.fraction === 1 || up.brush !== b) continue;
           const top = up.endpos[1], bot = below(x, top - 1, z) ?? GROUND;
           if (top - bot > 40) deco.addBox([x - 60, bot, z - 60], [x + 60, top, z + 60], { color: 0x3a3f4a, kind: 'wall' });
@@ -471,7 +484,7 @@
         const len = b.max[2] - b.min[2], n = Math.max(2, Math.round(len / 1400));
         for (let i = 0; i <= n; i++) {
           const z = b.min[2] + 200 + (len - 400) * i / n;
-          const up = world.trace([cx, GROUND, z], [cx, b.max[1] + 10, z], POINT);
+          const up = vtrace([cx, GROUND, z], [cx, b.max[1] + 10, z]);
           if (up.fraction === 1 || up.brush !== b) continue;
           const top = up.endpos[1];
           const bot = Math.max(below(cx, top - 1, z) ?? GROUND, poolBelow(cx, top, z) ?? GROUND);
@@ -489,7 +502,19 @@
     deco.addBox([-160000, GROUND - 40, -160000], [360000, GROUND, 160000], { color: 0x5d646b, kind: 'street' });
     let seed = 99;
     const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
-    const clear = (a) => !footprints.some(q => a[0] < q[2] + 500 && a[2] > q[0] - 500 && a[1] < q[3] + 500 && a[3] > q[1] - 500);
+    const FP = 4000, fpCells = new Map();
+    for (const q of footprints)
+      for (let i = Math.floor((q[0] - 500) / FP); i <= Math.floor((q[2] + 500) / FP); i++)
+        for (let j = Math.floor((q[1] - 500) / FP); j <= Math.floor((q[3] + 500) / FP); j++) {
+          const k = i + ',' + j;
+          (fpCells.get(k) || fpCells.set(k, []).get(k)).push(q);
+        }
+    const clear = (a) => {
+      for (let i = Math.floor(a[0] / FP); i <= Math.floor(a[2] / FP); i++)
+        for (let j = Math.floor(a[1] / FP); j <= Math.floor(a[3] / FP); j++)
+          if ((fpCells.get(i + ',' + j) || []).some(q => a[0] < q[2] + 500 && a[2] > q[0] - 500 && a[1] < q[3] + 500 && a[3] > q[1] - 500)) return false;
+      return true;
+    };
     for (let x = -137200; x < 330000; x += 2200) {
       for (let z = -70000; z < 101000; z += 2200) {
         if (x >= 168000 && (z < -52000 || z > 40000)) continue; // the Night City district is narrower
@@ -526,23 +551,40 @@
         rec.nk = nk; rec.seq = faces.length; faces.push(rec);
       }
     }
-    for (const fa of faces) {
-      const near = buckets.get(fa.nk + ':' + (Math.floor(fa.d / 2) + 1));
-      for (const list of [buckets.get(fa.nk + ':' + Math.floor(fa.d / 2)), near]) {
-        if (!list) continue;
-        for (const fb of list) {
-          if (fb === fa || fb.b === fa.b || (list !== near && fb.seq <= fa.seq) || Math.abs(fa.d - fb.d) > 1.5) continue;
-          let wide = 0, ok = true;
-          for (let k = 0; k < 3; k++) { const ov = Math.min(fa.hi[k], fb.hi[k]) - Math.max(fa.lo[k], fb.lo[k]); if (ov < -1) ok = false; if (ov > 1) wide++; }
-          if (!ok || wide < 2) continue;
-          // pull in the face of the one you can't touch, else the smaller one
-          const pick = loose(fa.b) !== loose(fb.b) ? (loose(fa.b) ? fa : fb) : vol(fa.b) < vol(fb.b) ? fa : fb;
-          const amt = loose(pick.b) ? 14 : 2;
-          const list2 = insets.get(pick.b) || insets.set(pick.b, []).get(pick.b);
-          const prev = list2.find(q => q.f === pick);
-          const lim = Math.min(...[0, 1, 2].map(k => pick.b.max[k] - pick.b.min[k]).filter(x => x > 1)) * 0.1;
-          if (prev) prev.amt = Math.min(lim, Math.max(prev.amt, amt)); else list2.push({ f: pick, n: pick.n, d: pick.d, amt: Math.min(lim, amt) });
+    const pair = (fa, fb) => {
+      if (fb.b === fa.b || Math.abs(fa.d - fb.d) > 1.5) return;
+      let wide = 0;
+      for (let k = 0; k < 3; k++) { const ov = Math.min(fa.hi[k], fb.hi[k]) - Math.max(fa.lo[k], fb.lo[k]); if (ov < -1) return; if (ov > 1) wide++; }
+      if (wide < 2) return;
+      // pull in the face of the one you can't touch, else the smaller one
+      const pick = loose(fa.b) !== loose(fb.b) ? (loose(fa.b) ? fa : fb) : vol(fa.b) < vol(fb.b) ? fa : fb;
+      const amt = loose(pick.b) ? 14 : 2;
+      const list2 = insets.get(pick.b) || insets.set(pick.b, []).get(pick.b);
+      const prev = list2.find(q => q.f === pick);
+      const lim = Math.min(...[0, 1, 2].map(k => pick.b.max[k] - pick.b.min[k]).filter(x => x > 1)) * 0.1;
+      if (prev) prev.amt = Math.min(lim, Math.max(prev.amt, amt)); else list2.push({ f: pick, n: pick.n, d: pick.d, amt: Math.min(lim, amt) });
+    };
+    // faces in one bucket (and the next one up) only touch if their extents
+    // overlap, so sweep them in order along an axis in their plane: the low
+    // city puts thousands of faces in the ground plane's bucket
+    for (const [key, list] of buckets) {
+      const nk = key.slice(0, key.lastIndexOf(':')), near = buckets.get(nk + ':' + (+key.slice(key.lastIndexOf(':') + 1) + 1));
+      const ax = Math.abs(list[0].n[0]) > 0.7 ? 2 : 0;
+      const items = list.map(r => [r, 0]).concat(near ? near.map(r => [r, 1]) : []).sort((p, q) => p[0].lo[ax] - q[0].lo[ax]);
+      const active = [];
+      for (const it of items) {
+        const r = it[0];
+        let w = 0;
+        for (const q of active) if (q[0].hi[ax] >= r.lo[ax] - 1) active[w++] = q;
+        active.length = w;
+        for (const q of active) {
+          if (it[1] && q[1]) continue; // both from the bucket above: that one's own sweep
+          // same order as comparing each face with the later ones: fa is the
+          // earlier face, or the one from this bucket when one is from above
+          if (it[1] !== q[1]) pair(it[1] ? q[0] : r, it[1] ? r : q[0]);
+          else if (q[0].seq < r.seq) pair(q[0], r); else pair(r, q[0]);
         }
+        active.push(it);
       }
     }
     return insets;
