@@ -1401,7 +1401,7 @@
     skyline('s1', 200000, -240000, 9000, {
       name: 'Wireline', type: 'Parkour', difficulty: 3, color: SPAL[0], palette: [SPAL[0], SPAL[1], SPAL[2], SPAL[3]],
       skyline: { seed: 307 },
-      desc: 'Skyline 1. Learn the cable: jump off the edge and grab it, ride it down, hop a line of blocks, wallrun a gap and ride two more.',
+      desc: 'Cableway 1. Learn the cable: jump off the edge and grab it, ride it down, hop a line of blocks, wallrun a gap and ride two more.',
       segs: [
         { t: 'pad', len: 900, w: 800 },
         { t: 'zip', len: 2400, drop: 700 },
@@ -1419,7 +1419,7 @@
     skyline('s2', 260000, -240000, 11000, {
       name: 'Cable Car', type: 'Mixed', difficulty: 4, color: SPAL[1], palette: [SPAL[1], SPAL[0], SPAL[3], SPAL[2]],
       skyline: { seed: 311 },
-      desc: 'Skyline 2. Ride off the end of a cable straight onto a surf ramp, transfer, then a line of blocks to a long cable down.',
+      desc: 'Cableway 2. Ride off the end of a cable straight onto a surf ramp, transfer, then a line of blocks to a long cable down.',
       segs: [
         { t: 'pad', len: 900, w: 800 },
         { t: 'zip', len: 2600, drop: 800 },
@@ -1436,7 +1436,7 @@
     skyline('s3', 320000, -240000, 13000, {
       name: 'Highwire', type: 'Mixed', difficulty: 5, color: SPAL[2], palette: [SPAL[2], SPAL[3], SPAL[0], SPAL[1]],
       skyline: { seed: 313 },
-      desc: 'Skyline 3. Cable to cable with only a short roof between, a bend off the end of a ride, tight blocks and a wallrun to the last line.',
+      desc: 'Cableway 3. Cable to cable with only a short roof between, a bend off the end of a ride, tight blocks and a wallrun to the last line.',
       segs: [
         { t: 'pad', len: 800, w: 800 },
         { t: 'zip', len: 2400, drop: 700 },
@@ -1454,9 +1454,9 @@
         { t: 'pad', len: 2000, w: 1000, end: true },
       ] });
     skyline('s4', 380000, -240000, 15000, {
-      name: 'Freefall', type: 'Mixed', difficulty: 6, color: SPAL[3], palette: [SPAL[3], SPAL[1], SPAL[2], SPAL[0]],
+      name: 'Long Haul', type: 'Mixed', difficulty: 6, color: SPAL[3], palette: [SPAL[3], SPAL[1], SPAL[2], SPAL[0]],
       skyline: { seed: 317 },
-      desc: 'Skyline 4. The longest ride in the game into two narrow ramps, the smallest blocks, three cables in a row and a last wallrun.',
+      desc: 'Cableway 4. The longest ride in the game into two narrow ramps, the smallest blocks, three cables in a row and a last wallrun.',
       segs: [
         { t: 'pad', len: 800, w: 700 },
         { t: 'zip', len: 4400, drop: 1600 },

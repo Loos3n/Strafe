@@ -35,6 +35,15 @@ function run(W, steps, f) {
   });
   check('jump lets go', ev.filter(e => e === 'zipoff').length === 1 && off > 0, 'speed ' + (off || 0).toFixed(0));
 }
+// a hop off early falls back past the same cable instead of catching it again
+{
+  let off = false;
+  const { ev } = run(mkWorld(), 900, (i, p) => {
+    const j = p.zip && p.zip.t > 0.3 && !off; if (j) off = true;
+    return cmd({ forward: 1, jump: i === 40 || j });
+  });
+  check('no regrab after a hop off', ev.filter(e => e === 'zip').length === 1, ev.filter(e => e === 'zip' || e === 'zipoff').join(','));
+}
 // never grab it from the ground or when standing still under it
 {
   const { ev } = run(mkWorld(), 200, () => cmd({}));

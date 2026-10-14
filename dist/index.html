@@ -5288,6 +5288,7 @@ window.STRAFE_ASSETS = {"city":"Z2xURgIAAABU+ggAYFIAAEpTT057ImFzc2V0Ijp7ImdlbmVy
       this.mantle = null;
       this.zip = null;
       this.zipCooldown = 0;
+      this.zipLast = null;
       this.rampSlide = false;
       this.edgeBug = 0;
       this.airTime = 0;
@@ -5632,6 +5633,7 @@ window.STRAFE_ASSETS = {"city":"Z2xURgIAAABU+ggAYFIAAEpTT057ImFzc2V0Ijp7ImdlbmVy
       }
       this.onGround = true; this.groundNormal = n;
       this.groundBrush = tr.brush;
+      this.zipLast = null;
     }
 
     // ---- ducking and sliding
@@ -5893,6 +5895,10 @@ window.STRAFE_ASSETS = {"city":"Z2xURgIAAABU+ggAYFIAAEpTT057ImFzc2V0Ijp7ImdlbmVy
       for (const z of zl) {
         const d = [z.b[0] - z.a[0], z.b[1] - z.a[1], z.b[2] - z.a[2]], L2 = dot(d, d);
         if (L2 < 1) continue;
+        // not the cable you just let go of, until you've touched down: a hop
+        // off it would otherwise fall straight back onto it
+        const last = this.zipLast;
+        if (last && last.a.every((v, k) => v === z.a[k]) && last.b.every((v, k) => v === z.b[k])) continue;
         const t = dot([h[0] - z.a[0], h[1] - z.a[1], h[2] - z.a[2]], d) / L2;
         if (t < 0.01 || t > 0.95) continue;
         const q = [z.a[0] + d[0] * t, z.a[1] + d[1] * t, z.a[2] + d[2] * t];
@@ -5915,6 +5921,7 @@ window.STRAFE_ASSETS = {"city":"Z2xURgIAAABU+ggAYFIAAEpTT057ImFzc2V0Ijp7ImdlbmVy
     }
 
     endZip(cooldown) {
+      this.zipLast = { a: this.zip.z.a, b: this.zip.z.b };
       this.zip = null;
       this.zipCooldown = cooldown;
       this.climbAvailable = true;
@@ -7697,7 +7704,7 @@ window.STRAFE_ASSETS = {"city":"Z2xURgIAAABU+ggAYFIAAEpTT057ImFzc2V0Ijp7ImdlbmVy
     skyline('s1', 200000, -240000, 9000, {
       name: 'Wireline', type: 'Parkour', difficulty: 3, color: SPAL[0], palette: [SPAL[0], SPAL[1], SPAL[2], SPAL[3]],
       skyline: { seed: 307 },
-      desc: 'Skyline 1. Learn the cable: jump off the edge and grab it, ride it down, hop a line of blocks, wallrun a gap and ride two more.',
+      desc: 'Cableway 1. Learn the cable: jump off the edge and grab it, ride it down, hop a line of blocks, wallrun a gap and ride two more.',
       segs: [
         { t: 'pad', len: 900, w: 800 },
         { t: 'zip', len: 2400, drop: 700 },
@@ -7715,7 +7722,7 @@ window.STRAFE_ASSETS = {"city":"Z2xURgIAAABU+ggAYFIAAEpTT057ImFzc2V0Ijp7ImdlbmVy
     skyline('s2', 260000, -240000, 11000, {
       name: 'Cable Car', type: 'Mixed', difficulty: 4, color: SPAL[1], palette: [SPAL[1], SPAL[0], SPAL[3], SPAL[2]],
       skyline: { seed: 311 },
-      desc: 'Skyline 2. Ride off the end of a cable straight onto a surf ramp, transfer, then a line of blocks to a long cable down.',
+      desc: 'Cableway 2. Ride off the end of a cable straight onto a surf ramp, transfer, then a line of blocks to a long cable down.',
       segs: [
         { t: 'pad', len: 900, w: 800 },
         { t: 'zip', len: 2600, drop: 800 },
@@ -7732,7 +7739,7 @@ window.STRAFE_ASSETS = {"city":"Z2xURgIAAABU+ggAYFIAAEpTT057ImFzc2V0Ijp7ImdlbmVy
     skyline('s3', 320000, -240000, 13000, {
       name: 'Highwire', type: 'Mixed', difficulty: 5, color: SPAL[2], palette: [SPAL[2], SPAL[3], SPAL[0], SPAL[1]],
       skyline: { seed: 313 },
-      desc: 'Skyline 3. Cable to cable with only a short roof between, a bend off the end of a ride, tight blocks and a wallrun to the last line.',
+      desc: 'Cableway 3. Cable to cable with only a short roof between, a bend off the end of a ride, tight blocks and a wallrun to the last line.',
       segs: [
         { t: 'pad', len: 800, w: 800 },
         { t: 'zip', len: 2400, drop: 700 },
@@ -7750,9 +7757,9 @@ window.STRAFE_ASSETS = {"city":"Z2xURgIAAABU+ggAYFIAAEpTT057ImFzc2V0Ijp7ImdlbmVy
         { t: 'pad', len: 2000, w: 1000, end: true },
       ] });
     skyline('s4', 380000, -240000, 15000, {
-      name: 'Freefall', type: 'Mixed', difficulty: 6, color: SPAL[3], palette: [SPAL[3], SPAL[1], SPAL[2], SPAL[0]],
+      name: 'Long Haul', type: 'Mixed', difficulty: 6, color: SPAL[3], palette: [SPAL[3], SPAL[1], SPAL[2], SPAL[0]],
       skyline: { seed: 317 },
-      desc: 'Skyline 4. The longest ride in the game into two narrow ramps, the smallest blocks, three cables in a row and a last wallrun.',
+      desc: 'Cableway 4. The longest ride in the game into two narrow ramps, the smallest blocks, three cables in a row and a last wallrun.',
       segs: [
         { t: 'pad', len: 800, w: 700 },
         { t: 'zip', len: 4400, drop: 1600 },
@@ -9292,7 +9299,7 @@ body.touch #menu button, body.touch #drawer button { min-height: 40px; }
   const copyState = (v) => Array.isArray(v) ? v.map(copyState) : v && typeof v === 'object' && Object.getPrototypeOf(v) === Object.prototype
     ? Object.fromEntries(Object.entries(v).map(([k, x]) => [k, copyState(x)])) : v;
   const SAVED = ['pos', 'vel', 'approach', 'ducked', 'onGround', 'groundNormal', 'groundBrush', 'viewOffset', 'prevJump', 'prevDuck', 'jumpPressed',
-    'slide', 'slideCooldown', 'wallrun', 'wallrunCooldown', 'lastWall', 'climb', 'climbAvailable', 'mantle', 'zip', 'zipCooldown', 'rampSlide', 'edgeBug', 'airTime'];
+    'slide', 'slideCooldown', 'wallrun', 'wallrunCooldown', 'lastWall', 'climb', 'climbAvailable', 'mantle', 'zip', 'zipCooldown', 'zipLast', 'rampSlide', 'edgeBug', 'airTime'];
   // In practice, checkpoints and the finish show segment times: from where
   // you last started (a load, a checkpoint jump, the last checkpoint or the
   // start) to here, against your best for that same stretch this session.
@@ -11852,7 +11859,7 @@ body.touch #menu button, body.touch #drawer button { min-height: 40px; }
     { id: 'wallruns', n: 'Wall walker', d: 'Wallrun 100 times', t: () => career.wallruns >= 100 },
     { id: 'slides', n: 'Low rider', d: 'Slide 100 times', t: () => career.slides >= 100 },
     { id: 'vaults', n: 'Free runner', d: 'Vault or mantle 100 times', t: () => career.vaults >= 100 },
-    { id: 'zip', n: 'Cable guy', d: 'Ride a zipline (build one in the editor)', t: () => career.zips >= 1 },
+    { id: 'zip', n: 'Cable guy', d: 'Ride a zipline (Cableway has plenty)', t: () => career.zips >= 1 },
     { id: 'rampslide', n: 'Rampslider', d: 'Ramp slide over a slope at 1,000 u/s or more', t: () => career.rampslides >= 1 },
     { id: 'edgebug', n: 'Edgebug', d: 'Land a hard fall on just the edge of a ledge and slip off it', t: () => career.edgebugs >= 1 },
     { id: 'jumps', n: 'Frequent flyer', d: 'Jump 5,000 times', t: () => career.jumps >= 5000 },
@@ -13173,12 +13180,18 @@ body.editing.playing #edhelp { display: block; }
       (w && chalLive(weekly) && !weekly.days[w.day] ? ' · week: ' + dailyName(w) : '');
   }
   // a finished run: counts for today's and this week's challenge if it's their level
-  function dailyFinish(course, ticks) {
-    let any = false;
+  function dailyFinish(course, ticks, fresh) {
+    // left open past midnight (or Monday): fetch the new challenge first, so
+    // a run on it still counts toward the streak
+    if (!fresh && net.ok && CHALLENGES.some(C => C.data && !chalLive(C))) {
+      Promise.all(CHALLENGES.map(C => chalLive(C) ? null : chalLoad(C, true).catch(() => {}))).then(() => dailyFinish(course, ticks, true));
+      return;
+    }
+    const hit = new Set();
     for (const C of CHALLENGES) {
       const d = C.data;
       if (!chalLive(C) || dailyCourse(d) !== course) continue;
-      any = true;
+      hit.add(C);
       if (!C.days[d.day] || ticks < C.days[d.day]) {
         C.days[d.day] = ticks;
         const keep = Object.keys(C.days).sort().slice(-120); // plenty for a streak
@@ -13186,10 +13199,10 @@ body.editing.playing #edhelp { display: block; }
         save(C.key, { days: C.days });
       }
     }
-    if (!any) return;
+    if (!hit.size) return;
     achCheck();
-    if (dailyStreak() > 1 && dailyCourse(daily.data) === course) setTimeout(() => toast('Daily done · ' + dailyStreak() + ' day streak', 2400), 1200);
-    else if (dailyCourse(weekly.data) === course) setTimeout(() => toast('Weekly challenge run saved', 2000), 1200);
+    if (hit.has(daily) && dailyStreak() > 1) setTimeout(() => toast('Daily done · ' + dailyStreak() + ' day streak', 2400), 1200);
+    else if (hit.has(weekly)) setTimeout(() => toast('Weekly challenge run saved', 2000), 1200);
     dailySub();
   }
   async function dailyOpen(which) {

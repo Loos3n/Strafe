@@ -121,7 +121,8 @@ export class Board extends DurableObject {
   // by a hash of the date (never the same level two days running), then kept.
   dailyFor(day) {
     const have = this.one('SELECT course FROM daily WHERE day = ?', day);
-    if (have) return have.course;
+    if (have && this.stillLevel(have.course)) return have.course;
+    if (have) this.dropChallenge('daily', 'day', 'd:', day); // its level was rebuilt under a new key: pick again
     const pool = Object.keys(LEVELS).filter(k => k !== 'tutorial')
       .concat(this.sql.exec('SELECT id FROM levels WHERE likes >= ? ORDER BY likes DESC, plays DESC, created LIMIT ?', DAILY_LIKES, DAILY_COMMUNITY).toArray().map(r => 'c:' + r.id));
     const prev = this.one('SELECT course FROM daily WHERE day = ?', dayOf(Date.parse(day) - 86400000));
@@ -135,7 +136,8 @@ export class Board extends DurableObject {
   // on board "w:<monday>". Never last week's level, nor today's daily.
   weeklyFor(week) {
     const have = this.one('SELECT course FROM weekly WHERE week = ?', week);
-    if (have) return have.course;
+    if (have && this.stillLevel(have.course)) return have.course;
+    if (have) this.dropChallenge('weekly', 'week', 'w:', week); // its level was rebuilt under a new key: pick again
     const pool = Object.keys(LEVELS).filter(k => k !== 'tutorial')
       .concat(this.sql.exec('SELECT id FROM levels WHERE likes >= ? ORDER BY likes DESC, plays DESC, created LIMIT ?', DAILY_LIKES, DAILY_COMMUNITY).toArray().map(r => 'c:' + r.id));
     const prev = this.one('SELECT course FROM weekly WHERE week = ?', weekOf(Date.parse(week) - 86400000));
@@ -180,16 +182,16 @@ export class Board extends DurableObject {
     if (this.dailyFor(day) !== course) return null;
     return this.challengeTime('d:' + day, player, ticks, ghost, { day });
   }
+  // a picked challenge level that still exists (built-in keys change when a level is rebuilt)
+  stillLevel(course) { return course.startsWith('c:') || !!LEVELS[course]; }
+  dropChallenge(table, col, prefix, at) {
+    for (const q of ['DELETE FROM times WHERE course = ?', 'DELETE FROM ghosts WHERE course = ?']) this.sql.exec(q, prefix + at);
+    this.sql.exec(`DELETE FROM ${table} WHERE ${col} = ?`, at);
+  }
   dropLevel(id) {
     // a daily that was this level goes too, so today's gets picked again
-    for (const r of this.sql.exec('SELECT day FROM daily WHERE course = ?', 'c:' + id).toArray()) {
-      for (const q of ['DELETE FROM times WHERE course = ?', 'DELETE FROM ghosts WHERE course = ?']) this.sql.exec(q, 'd:' + r.day);
-      this.sql.exec('DELETE FROM daily WHERE day = ?', r.day);
-    }
-    for (const r of this.sql.exec('SELECT week FROM weekly WHERE course = ?', 'c:' + id).toArray()) {
-      for (const q of ['DELETE FROM times WHERE course = ?', 'DELETE FROM ghosts WHERE course = ?']) this.sql.exec(q, 'w:' + r.week);
-      this.sql.exec('DELETE FROM weekly WHERE week = ?', r.week);
-    }
+    for (const r of this.sql.exec('SELECT day FROM daily WHERE course = ?', 'c:' + id).toArray()) this.dropChallenge('daily', 'day', 'd:', r.day);
+    for (const r of this.sql.exec('SELECT week FROM weekly WHERE course = ?', 'c:' + id).toArray()) this.dropChallenge('weekly', 'week', 'w:', r.week);
     for (const q of ['DELETE FROM times WHERE course = ?', 'DELETE FROM ghosts WHERE course = ?']) this.sql.exec(q, 'c:' + id);
     this.sql.exec('DELETE FROM likes WHERE level = ?', id);
     this.sql.exec('DELETE FROM levels WHERE id = ?', id);

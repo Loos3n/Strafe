@@ -280,6 +280,7 @@
       this.mantle = null;
       this.zip = null;
       this.zipCooldown = 0;
+      this.zipLast = null;
       this.rampSlide = false;
       this.edgeBug = 0;
       this.airTime = 0;
@@ -624,6 +625,7 @@
       }
       this.onGround = true; this.groundNormal = n;
       this.groundBrush = tr.brush;
+      this.zipLast = null;
     }
 
     // ---- ducking and sliding
@@ -885,6 +887,10 @@
       for (const z of zl) {
         const d = [z.b[0] - z.a[0], z.b[1] - z.a[1], z.b[2] - z.a[2]], L2 = dot(d, d);
         if (L2 < 1) continue;
+        // not the cable you just let go of, until you've touched down: a hop
+        // off it would otherwise fall straight back onto it
+        const last = this.zipLast;
+        if (last && last.a.every((v, k) => v === z.a[k]) && last.b.every((v, k) => v === z.b[k])) continue;
         const t = dot([h[0] - z.a[0], h[1] - z.a[1], h[2] - z.a[2]], d) / L2;
         if (t < 0.01 || t > 0.95) continue;
         const q = [z.a[0] + d[0] * t, z.a[1] + d[1] * t, z.a[2] + d[2] * t];
@@ -907,6 +913,7 @@
     }
 
     endZip(cooldown) {
+      this.zipLast = { a: this.zip.z.a, b: this.zip.z.b };
       this.zip = null;
       this.zipCooldown = cooldown;
       this.climbAvailable = true;

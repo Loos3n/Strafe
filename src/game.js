@@ -1469,7 +1469,7 @@ body.touch #menu button, body.touch #drawer button { min-height: 40px; }
   const copyState = (v) => Array.isArray(v) ? v.map(copyState) : v && typeof v === 'object' && Object.getPrototypeOf(v) === Object.prototype
     ? Object.fromEntries(Object.entries(v).map(([k, x]) => [k, copyState(x)])) : v;
   const SAVED = ['pos', 'vel', 'approach', 'ducked', 'onGround', 'groundNormal', 'groundBrush', 'viewOffset', 'prevJump', 'prevDuck', 'jumpPressed',
-    'slide', 'slideCooldown', 'wallrun', 'wallrunCooldown', 'lastWall', 'climb', 'climbAvailable', 'mantle', 'zip', 'zipCooldown', 'rampSlide', 'edgeBug', 'airTime'];
+    'slide', 'slideCooldown', 'wallrun', 'wallrunCooldown', 'lastWall', 'climb', 'climbAvailable', 'mantle', 'zip', 'zipCooldown', 'zipLast', 'rampSlide', 'edgeBug', 'airTime'];
   // In practice, checkpoints and the finish show segment times: from where
   // you last started (a load, a checkpoint jump, the last checkpoint or the
   // start) to here, against your best for that same stretch this session.
@@ -4029,7 +4029,7 @@ body.touch #menu button, body.touch #drawer button { min-height: 40px; }
     { id: 'wallruns', n: 'Wall walker', d: 'Wallrun 100 times', t: () => career.wallruns >= 100 },
     { id: 'slides', n: 'Low rider', d: 'Slide 100 times', t: () => career.slides >= 100 },
     { id: 'vaults', n: 'Free runner', d: 'Vault or mantle 100 times', t: () => career.vaults >= 100 },
-    { id: 'zip', n: 'Cable guy', d: 'Ride a zipline (build one in the editor)', t: () => career.zips >= 1 },
+    { id: 'zip', n: 'Cable guy', d: 'Ride a zipline (Cableway has plenty)', t: () => career.zips >= 1 },
     { id: 'rampslide', n: 'Rampslider', d: 'Ramp slide over a slope at 1,000 u/s or more', t: () => career.rampslides >= 1 },
     { id: 'edgebug', n: 'Edgebug', d: 'Land a hard fall on just the edge of a ledge and slip off it', t: () => career.edgebugs >= 1 },
     { id: 'jumps', n: 'Frequent flyer', d: 'Jump 5,000 times', t: () => career.jumps >= 5000 },
@@ -5350,12 +5350,18 @@ body.editing.playing #edhelp { display: block; }
       (w && chalLive(weekly) && !weekly.days[w.day] ? ' · week: ' + dailyName(w) : '');
   }
   // a finished run: counts for today's and this week's challenge if it's their level
-  function dailyFinish(course, ticks) {
-    let any = false;
+  function dailyFinish(course, ticks, fresh) {
+    // left open past midnight (or Monday): fetch the new challenge first, so
+    // a run on it still counts toward the streak
+    if (!fresh && net.ok && CHALLENGES.some(C => C.data && !chalLive(C))) {
+      Promise.all(CHALLENGES.map(C => chalLive(C) ? null : chalLoad(C, true).catch(() => {}))).then(() => dailyFinish(course, ticks, true));
+      return;
+    }
+    const hit = new Set();
     for (const C of CHALLENGES) {
       const d = C.data;
       if (!chalLive(C) || dailyCourse(d) !== course) continue;
-      any = true;
+      hit.add(C);
       if (!C.days[d.day] || ticks < C.days[d.day]) {
         C.days[d.day] = ticks;
         const keep = Object.keys(C.days).sort().slice(-120); // plenty for a streak
@@ -5363,10 +5369,10 @@ body.editing.playing #edhelp { display: block; }
         save(C.key, { days: C.days });
       }
     }
-    if (!any) return;
+    if (!hit.size) return;
     achCheck();
-    if (dailyStreak() > 1 && dailyCourse(daily.data) === course) setTimeout(() => toast('Daily done · ' + dailyStreak() + ' day streak', 2400), 1200);
-    else if (dailyCourse(weekly.data) === course) setTimeout(() => toast('Weekly challenge run saved', 2000), 1200);
+    if (hit.has(daily) && dailyStreak() > 1) setTimeout(() => toast('Daily done · ' + dailyStreak() + ' day streak', 2400), 1200);
+    else if (hit.has(weekly)) setTimeout(() => toast('Weekly challenge run saved', 2000), 1200);
     dailySub();
   }
   async function dailyOpen(which) {
