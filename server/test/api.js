@@ -64,6 +64,24 @@ if (wk.body.course === run.key) {
 check('no posting to the weekly board directly', (await call('/api/run', { course: 'w:' + wk.body.day, ticks: run.ticks, ghost: g }, a.body.token)).status === 400);
 check('no posting to the daily board directly', (await call('/api/run', { course: 'd:' + dl.body.day, ticks: run.ticks, ghost: g }, a.body.token)).status === 400);
 
+// set runs: a whole set, each level a checked run, on board set:<set>
+const sky = JSON.parse(fs.readFileSync(new URL('./run-skyline.json', import.meta.url)));
+const legs = sky.map(r => ({ course: r.key, ticks: r.ticks, ghost: r.ghost }));
+check('set run needs every level', (await call('/api/setrun', { set: 'skyline', legs: legs.slice(0, 3) }, a.body.token)).status === 422);
+check('set run in order', (await call('/api/setrun', { set: 'skyline', legs: [legs[1], legs[0], legs[2], legs[3]] }, a.body.token)).status === 422);
+const badLeg = legs.map((L, i) => i === 2 ? Object.assign({}, L, { ticks: L.ticks - 300 }) : L);
+check('set run legs are checked', (await call('/api/setrun', { set: 'skyline', legs: badLeg }, a.body.token)).status === 422);
+check('unknown set', (await call('/api/setrun', { set: 'nope', legs }, a.body.token)).status === 404);
+const sr = await call('/api/setrun', { set: 'skyline', legs }, a.body.token);
+const setTicks = legs.reduce((t, L) => t + L.ticks, 0);
+check('set run', sr.status === 200 && sr.body.best && sr.body.ticks === setTicks && sr.body.mine.ticks === setTicks, JSON.stringify(sr.body));
+const sb = await call('/api/board?course=set:skyline&me=' + a.body.id);
+check('set board', sb.status === 200 && sb.body.rows.some(r => r.id === a.body.id && r.ticks === setTicks && r.ghost), JSON.stringify(sb.body).slice(0, 200));
+const sg = await call('/api/ghost?course=set:skyline&id=' + a.body.id);
+check('set ghost has every level', sg.status === 200 && sg.body.ghost.legs.length === 4 && sg.body.ghost.legs[3].t === legs[3].ticks && sg.body.ghost.legs[0].s.length === legs[0].ghost.s.length);
+check('no posting to a set board directly', (await call('/api/run', { course: 'set:skyline', ticks: run.ticks, ghost: g }, a.body.token)).status === 400);
+check('unknown set board', (await call('/api/board?course=set:nope')).status === 404);
+
 // rename and import
 check('rename', (await call('/api/name', { name: 'Anna ' + tag }, a.body.token)).body.name === 'Anna ' + tag);
 check('rename to taken', (await call('/api/name', { name: 'ben ' + tag }, a.body.token)).status === 409);
@@ -128,7 +146,9 @@ const pub = await call('/api/levels/publish', { name: 'Test ' + tag, code, ticks
 check('publish', pub.status === 200 && /^[A-Z0-9]{6}$/.test(pub.body.id), JSON.stringify(pub.body));
 const lid = pub.body.id, lkey = 'c:' + lid;
 // the newer editor pieces (curved ramp, lava, launch pad) read on the server too
-const rows2 = rows.concat([[9, 0, 400, -600, 0, 448, 1600, 0, 60, 90], [16, 900, 0, -600, 0, 512, 512, 32], [17, -900, 24, -600, 0, 256, 256, 0, 45, 900]]);
+// and the moving ones (platform, lift, gate)
+const rows2 = rows.concat([[9, 0, 400, -600, 0, 448, 1600, 0, 60, 90], [16, 900, 0, -600, 0, 512, 512, 32], [17, -900, 24, -600, 0, 256, 256, 0, 45, 900],
+  [19, 1600, 0, -600, 0, 384, 384, 48, 300, 1200], [20, -1600, 0, -600, 0, 384, 384, 48, 250, 512], [21, 0, 0, -900, 0, 32, 512, 384, 200, 384]]);
 const pub2 = await call('/api/levels/publish', { name: 'Pieces ' + tag, code: S0('Pieces ' + tag, rows2), ticks: lticks, ghost: lrun }, a.body.token);
 check('publish with new pieces', pub2.status === 200, JSON.stringify(pub2.body));
 if (pub2.status === 200) await call('/api/levels/delete', { id: pub2.body.id }, a.body.token);

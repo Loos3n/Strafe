@@ -22,7 +22,7 @@ jobs:
           node-version: 22
       - run: npm install --no-audit --no-fund
       - name: Check level data is current
-        run: node gen-levels.cjs && git diff --exit-code src/levels.json
+        run: node gen-levels.cjs && git diff --exit-code src/levels.json src/sets.json
       - name: Build the game page the server hosts
         run: node ../build.js "" public/index.html
       - name: Make sure the account has a workers.dev address

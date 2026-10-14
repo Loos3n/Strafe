@@ -128,6 +128,7 @@ body.complete #menu { display: none; }
 .mrow:empty { display: none; }
 .mrow .mt { opacity: .5; white-space: nowrap; }
 .mrow .mt.got { opacity: 1; }
+.hset { margin: 8px 0 0; font-size: 13px; opacity: .8; font-variant-numeric: tabular-nums; }
 #c-medal { margin: 10px 0 0; font-family: var(--display); font-weight: 700; font-size: 18px; letter-spacing: .1em; text-transform: uppercase; }
 #c-medal .medal { font-size: 22px; }
 #c-medal small { font-weight: 600; font-size: 14px; color: var(--muted); margin-left: 8px; }
@@ -560,12 +561,14 @@ body.touch #racehud { top: calc(56px + env(safe-area-inset-top, 0px)); left: 10p
       <div id="h-medalbox"><dt>Medal</dt><dd id="h-medal"></dd></div>
     </dl>
     <p class="mrow" id="h-medals"></p>
+    <p class="hset" id="h-set" hidden></p>
     <div class="hact">
       <button id="play">Play <kbd>Enter</kbd></button>
       <button class="ghost" id="resume" hidden>Resume</button>
       <button class="ghost" id="restart" hidden>Restart</button>
       <button class="ghost" id="practice-play">Practice</button>
       <button class="ghost" id="watch" hidden>Watch best run</button>
+      <button class="ghost" id="set-play" hidden>Set run</button>
           </div>
   </section>
   <aside id="lb" class="lv" hidden aria-labelledby="lb-title">
@@ -5089,6 +5092,25 @@ window.STRAFE_ASSETS = {"city":"Z2xURgIAAABU+ggAYFIAAEpTT057ImFzc2V0Ijp7ImdlbmVy
       this.brushes = [];
       this.ziplines = [];
       this.triggers = [];
+      this.movers = [];
+    }
+
+    // Moving pieces: the brushes stay where they were built and carry an
+    // offset (brush.off) that traces apply. A mover goes out along `travel`
+    // and back, easing at both ends, taking `time` seconds each way.
+    // setTime(t) puts every mover where it is t seconds after the level
+    // loaded and keeps how far it moved since the last call (mv.delta).
+    addMover(brushes, travel, time) {
+      const mv = { travel, time: Math.max(0.2, time), off: [0, 0, 0], delta: [0, 0, 0], brushes };
+      for (const b of brushes) { b.mv = mv; b.off = mv.off; }
+      this.movers.push(mv);
+      return mv;
+    }
+    setTime(t) {
+      for (const mv of this.movers) {
+        const f = (1 - Math.cos(Math.PI * t / mv.time)) / 2;
+        for (let k = 0; k < 3; k++) { const o = mv.travel[k] * f; mv.delta[k] = o - mv.off[k]; mv.off[k] = o; }
+      }
     }
 
     // Convex prism: a 2D cross-section extruded along a world axis.
@@ -5198,6 +5220,13 @@ window.STRAFE_ASSETS = {"city":"Z2xURgIAAABU+ggAYFIAAEpTT057ImFzc2V0Ijp7ImdlbmVy
       for (let i = 0; i < brushes.length; i++) {
         const b = brushes[i];
         if (b.props.nonsolid) continue;
+        const o = b.off;
+        if (o) {
+          if (b.min[0] + o[0] > bx1 || b.max[0] + o[0] < bx0 || b.min[1] + o[1] > by1 || b.max[1] + o[1] < by0 || b.min[2] + o[2] > bz1 || b.max[2] + o[2] < bz0) continue;
+          clipBoxToBrush(b, [start[0] - o[0], start[1] - o[1], start[2] - o[2]], [end[0] - o[0], end[1] - o[1], end[2] - o[2]], hmin, hmax, tr);
+          if (tr.allsolid) break;
+          continue;
+        }
         if (b.min[0] > bx1 || b.max[0] < bx0 || b.min[1] > by1 || b.max[1] < by0 || b.min[2] > bz1 || b.max[2] < bz0) continue;
         clipBoxToBrush(b, start, end, hmin, hmax, tr);
         if (tr.allsolid) break;
@@ -5315,6 +5344,7 @@ window.STRAFE_ASSETS = {"city":"Z2xURgIAAABU+ggAYFIAAEpTT057ImFzc2V0Ijp7ImdlbmVy
       if (this.wallrunCooldown > 0) this.wallrunCooldown -= dt;
       if (this.zipCooldown > 0) this.zipCooldown -= dt;
       if (this.edgeBug > 0) this.edgeBug -= dt;
+      if (this.world.movers.length && !this.mantle) this.ride();
       const wasOnGround = this.onGround;
       const fallSpeed = -this.vel[1];
       this.fallIn = fallSpeed; // before a landing clips it away
@@ -5342,6 +5372,39 @@ window.STRAFE_ASSETS = {"city":"Z2xURgIAAABU+ggAYFIAAEpTT057ImFzc2V0Ijp7ImdlbmVy
       }
       this.prevJump = cmd.jump;
       this.prevDuck = cmd.duck;
+    }
+
+    // Moving pieces: standing on one carries you with it (up and down with a
+    // lift, and along with a platform unless a wall is in the way), and one
+    // that moves into you shoves you out of its way.
+    ride() {
+      const g = this.onGround && this.groundBrush && this.groundBrush.mv;
+      if (g) {
+        const d = g.delta;
+        this.pos[1] += d[1];
+        if (d[0] || d[2]) {
+          const to = [this.pos[0] + d[0], this.pos[1], this.pos[2] + d[2]];
+          const tr = this.trace(this.pos, to);
+          if (!tr.startsolid) this.pos = tr.endpos;
+        }
+      }
+      const h = this.hull;
+      for (const mv of this.world.movers) {
+        if (mv === g) continue;
+        const d = mv.delta;
+        if (!d[0] && !d[1] && !d[2]) continue;
+        for (const b of mv.brushes) {
+          const o = mv.off, p = [this.pos[0] - o[0], this.pos[1] - o[1], this.pos[2] - o[2]];
+          const tr = { fraction: 1, startsolid: false, allsolid: false };
+          clipBoxToBrush(b, p, p, h.min, h.max, tr);
+          if (!tr.startsolid) continue;
+          // out the way it's moving: its step, and a little more so you stand clear
+          const L = Math.hypot(d[0], d[1], d[2]);
+          for (let k = 0; k < 3; k++) this.pos[k] += d[k] + d[k] / L * 0.5;
+          if (d[1] > 0 && this.vel[1] < 0) this.vel[1] = 0;
+          break;
+        }
+      }
     }
 
     tryAbilities(cmd, jumpPressed) {
@@ -9238,7 +9301,7 @@ body.touch #menu button, body.touch #drawer button { min-height: 40px; }
   const game = {
     course: null, cp: 0, cpSpawn: null, running: false, inStart: false,
     startTick: 0, tick: 0, finished: null, mission: null, practice: false, save: null,
-    seg: null, segBest: {}, saves: 0,
+    seg: null, segBest: {}, saves: 0, moverTick: 0,
   };
   const prev = { pos: player.pos.slice(), eye: player.viewOffset };
 
@@ -9257,12 +9320,14 @@ body.touch #menu button, body.touch #drawer button { min-height: 40px; }
     place(map.hubSpawn);
     updateCourseHud();
   }
-  function goCourse(name, mission = null) {
+  function goCourse(name, mission = null, keepSet = false) {
     const c = map.courses[name];
+    if (!keepSet) { game.setRun = null; game.setDone = null; }
     if (name !== game.course) { game.save = null; game.segBest = {}; } // R keeps practice saves
     game.seg = null;
     if (!ghost.remoteFor(name)) ghost.useRemote(null, null); // a raced ghost lasts until you change level
     game.course = name; game.cp = 0; game.cpSpawn = c.spawn; game.running = false; game.finished = null;
+    game.moverTick = game.tick; world.setTime(0); world.setTime(0); // moving pieces start over, with no jump
     if (!userCourse(name) && !game.demo) save(LAST_KEY, name);
     game.mission = mission;
     ghost.stop();
@@ -9274,7 +9339,12 @@ body.touch #menu button, body.touch #drawer button { min-height: 40px; }
     toast(mission === null ? c.name : (mission ? 'Job ' + mission : 'Prologue') + ': ' + STORY[mission].title);
     A.play('teleport');
   }
-  function restartCourse() { if (game.course) { if (locked) careerCount('restarts'); goCourse(game.course, game.mission); } }
+  function restartCourse() {
+    if (!game.course) return;
+    if (locked) careerCount('restarts');
+    if (game.setRun) { startSet(game.setRun.set, game.setRun.race); return; } // a set run restarts from its first level
+    goCourse(game.course, game.mission);
+  }
   function respawn() {
     if (!game.course) return;
     if (game.practice && game.save) { practiceLoad(); return; }
@@ -9305,6 +9375,7 @@ body.touch #menu button, body.touch #drawer button { min-height: 40px; }
   // start) to here, against your best for that same stretch this session.
   function setPractice(on) {
     if (on === game.practice) return;
+    if (on && game.setRun) { game.setRun = null; toast('Set run stopped'); }
     game.practice = on; game.save = null; game.seg = null; game.segBest = {};
     $('practice').hidden = !on;
     document.body.classList.toggle('practicing', on);
@@ -9477,7 +9548,8 @@ body.touch #menu button, body.touch #drawer button { min-height: 40px; }
         A.play('finish');
         if (game.course === 'tutorial') finishTutorial();
         updateCourseHud();
-        showComplete(ticks, prevBest, isBest);
+        if (game.setRun && game.setRun.levels[game.setRun.legs.length] === game.course) setLegDone(ticks, runGhost);
+        else showComplete(ticks, prevBest, isBest);
         achCheck();
       }
     }
@@ -10337,9 +10409,10 @@ body.touch #menu button, body.touch #drawer button { min-height: 40px; }
 
     if (game.course) {
       const ticks = game.running ? game.tick - game.startTick : game.finished !== null ? game.finished : 0;
-      hud.timer.textContent = fmt(ticks);
+      const S = game.setRun;
+      hud.timer.textContent = fmt(S ? S.ticks + (game.running ? ticks : 0) : ticks);
       hud.timer.classList.toggle('idle', !game.running);
-      hud.stage.textContent = 'Stage ' + (game.cp + 1) + ' / ' + map.courses[game.course].stages;
+      hud.stage.textContent = (S ? SETS[S.set].name + ' ' + (S.levels.indexOf(game.course) + 1) + ' / ' + S.levels.length + ' · ' : '') + 'Stage ' + (game.cp + 1) + ' / ' + map.courses[game.course].stages;
     } else {
       hud.timer.textContent = '';
       hud.stage.textContent = '';
@@ -10485,7 +10558,7 @@ body.touch #menu button, body.touch #drawer button { min-height: 40px; }
       goCourse(t);
       startPlay();
     }
-    else if (what === 'retry') { restartCourse(); startPlay(); }
+    else if (what === 'retry') { if (game.setDone) startSet(game.setDone.set, game.setDone.race); else restartCourse(); startPlay(); }
     else if (what === 'watch') watchBest(game.course, 'levels');
     else if (ed.testing) edBack();
     else { showMenuState(); showScreen('levels'); } // levels: back to level select
@@ -10500,6 +10573,112 @@ body.touch #menu button, body.touch #drawer button { min-height: 40px; }
     else if (e.code === 'KeyV' && !userCourse(game.course) && ghost.has(game.course)) completeAction('watch');
     else if (e.code === 'KeyS' && !$('c-save').hidden) completeAction('save');
   });
+
+  // ------------------------------------------------------------ set runs
+  // A whole set (Gauntlet, Night City, Harbor or Cableway) back to back on one
+  // clock: the levels' run times added up, the walk-in at each start not
+  // counted. Restarting goes back to the set's first level, so each level is
+  // one unbroken attempt (checkpoint respawns count, as in any run). Your best
+  // set keeps every level's ghost, and the next set run races it.
+  const SETS = { gauntlet: { name: 'Gauntlet', levels: map.gauntlet }, night: { name: 'Night City', levels: map.night },
+    harbor: { name: 'Harbor', levels: map.harbor }, skyline: { name: 'Cableway', levels: map.skyline } };
+  const SET_KEY = 'strafe.sets.v1', SET_GHOST_KEY = 'strafe.setghost.v1.';
+  const setBest = load(SET_KEY) || {};
+  const setOf = (course) => { const c = map.courses[course]; return c && SETS[c.set] ? c.set : null; };
+  const sumTicks = (a) => a.reduce((t, x) => t + x, 0);
+  // race: someone's set from the online board ({ name, legs, legTicks }) to race instead of your best
+  function startSet(set, race = null) {
+    if (game.practice) setPractice(false);
+    const S = { set, levels: SETS[set].levels.slice(), legs: [], ticks: 0, top: 0, dist: 0, jumps: 0, race, net: null };
+    goCourse(S.levels[0]);
+    game.setRun = S;
+    setGhost(S);
+    toast(SETS[set].name + ' set: ' + S.levels.length + ' levels on one clock', 2600);
+  }
+  // the ghost for the level you're on: the raced set, else your best set
+  function setGhost(S) {
+    const i = S.legs.length, src = S.race ? S.race.legs : load(SET_GHOST_KEY + S.set);
+    if (src && src[i]) ghost.useRemote(S.levels[i], src[i]);
+  }
+  function setLegDone(ticks, g) {
+    const S = game.setRun, r = game.run || { top: 0, dist: 0, jumps: 0 };
+    S.legs.push({ course: game.course, ticks, g });
+    S.ticks += ticks; S.top = Math.max(S.top, r.top); S.dist += r.dist; S.jumps += r.jumps;
+    const n = S.legs.length, pb = S.race ? S.race.legTicks : setBest[S.set] && setBest[S.set].legs;
+    showSplit(SETS[S.set].name + ' ' + n + ' / ' + S.levels.length, S.ticks, pb && pb.length >= n ? sumTicks(pb.slice(0, n)) : null);
+    if (n === S.levels.length) { setFinish(S); return; }
+    // a moment on the finish pad, then straight on to the next level
+    setTimeout(() => {
+      if (game.setRun !== S || S.legs.length !== n) return;
+      goCourse(S.levels[n], null, true);
+      setGhost(S);
+    }, 1500);
+  }
+  function setFinish(S) {
+    const prev = setBest[S.set], isBest = !prev || S.ticks < prev.ticks;
+    game.setRun = null; game.setDone = S;
+    careerCount('sets');
+    if (isBest) {
+      setBest[S.set] = { ticks: S.ticks, legs: S.legs.map(l => l.ticks), at: Date.now() };
+      save(SET_KEY, setBest);
+      save(SET_GHOST_KEY + S.set, S.legs.map(l => l.g));
+    }
+    showSetComplete(S, prev, isBest);
+    setSubmit(S);
+  }
+  function showSetComplete(S, prev, isBest) {
+    const secs = S.ticks * TICK;
+    $('c-label').textContent = 'Set complete';
+    $('c-name').textContent = SETS[S.set].name + ' · ' + S.levels.length + ' levels';
+    $('c-time').textContent = fmt(S.ticks);
+    const badge = $('c-best');
+    badge.classList.toggle('new', isBest);
+    badge.textContent = isBest ? (prev ? 'New best set, -' + ((prev.ticks - S.ticks) * TICK).toFixed(2) + 's' : 'First set') : 'Best ' + fmt(prev.ticks) + '  (+' + ((S.ticks - prev.ticks) * TICK).toFixed(2) + 's)';
+    for (const id of ['c-medalbox', 'c-story', 'c-online', 'c-post', 'c-watch', 'c-save', 'c-like']) $(id).hidden = true;
+    $('c-top').textContent = Math.round(S.top);
+    $('c-avg').textContent = Math.round(S.dist / Math.max(secs, 0.01));
+    $('c-jumps').textContent = S.jumps;
+    $('c-dist').textContent = (S.dist * 0.0254).toFixed(0);
+    $('c-next').textContent = 'Back to levels';
+    $('c-next').dataset.target = 'levels';
+    clearTimeout(completeTimer);
+    completeTimer = setTimeout(() => {
+      document.body.classList.add('complete');
+      completeEl.hidden = false;
+      if (document.pointerLockElement) document.exitPointerLock();
+      else if (locked) softLock(false);
+      $('c-next').focus({ preventScroll: true });
+    }, 900);
+  }
+  async function setSubmit(S) {
+    if (!net.ok || !canPost()) return;
+    if (!net.token) { S.net = { error: 'pick a name under Online to post set times' }; setRenderComplete(); return; }
+    S.net = { posting: true };
+    setRenderComplete();
+    try {
+      S.net = await api('/setrun', { set: S.set, legs: S.legs.map(l => ({ course: lbKey(l.course), ticks: l.ticks, ghost: l.g })) });
+      delete net.boards['set:' + S.set];
+    } catch (e) { S.net = { error: e.message }; }
+    setRenderComplete();
+  }
+  function setRenderComplete() {
+    const S = game.setDone, el = $('c-online'), r = S && S.net;
+    if (!S) return;
+    el.hidden = !r;
+    if (r) el.textContent = r.error ? 'Set not posted: ' + r.error : r.posting ? 'Posting…' : 'Set rank #' + r.mine.rank + ' of ' + r.total;
+  }
+  // race someone's set run from the online board
+  async function raceSet(set, id, name) {
+    try {
+      const g = await api('/ghost?course=' + encodeURIComponent('set:' + set) + '&id=' + encodeURIComponent(id));
+      const legs = g.ghost.legs.map(l => ({ e: l.e, s: l.s }));
+      selected = SETS[set].levels[0];
+      A.init(); A.play('click');
+      startSet(set, { name, legs, legTicks: g.ghost.legs.map(l => l.t) });
+      startPlay();
+      toast('Racing ' + name + "'s " + SETS[set].name + ' set (' + fmt(g.ticks) + ')', 2600);
+    } catch (e) { $('on-boardmsg').textContent = 'Could not load that set run.'; }
+  }
 
   // ------------------------------------------------------------ tutorial
   const tut = { step: -1, done: false, hops: 0, surfTicks: 0 };
@@ -10656,7 +10835,7 @@ body.touch #menu button, body.touch #drawer button { min-height: 40px; }
   // bests come from the saved best times, so they go back further.
   const STATS_KEY = 'strafe.stats.v1';
   const career = Object.assign({ since: Date.now(), time: 0, jumps: 0, top: 0, dist: 0, runs: 0, finishes: 0, pbs: 0, restarts: 0, falls: 0,
-    wallruns: 0, walljumps: 0, slides: 0, vaults: 0, climbs: 0, zips: 0, rampslides: 0, edgebugs: 0, flawless: 0, community: 0, published: 0, races: 0, levels: {} }, load(STATS_KEY) || {});
+    wallruns: 0, walljumps: 0, slides: 0, vaults: 0, climbs: 0, zips: 0, rampslides: 0, edgebugs: 0, sets: 0, flawless: 0, community: 0, published: 0, races: 0, levels: {} }, load(STATS_KEY) || {});
   const CAREER_EVENTS = { jump: 'jumps', wallrun: 'wallruns', walljump: 'walljumps', climbjump: 'walljumps', slide: 'slides', vault: 'vaults', mantle: 'vaults', climb: 'climbs', zip: 'zips', rampslide: 'rampslides', edgebug: 'edgebugs' };
   let careerDirty = 0;
   const careerLevel = (c) => career.levels[c] || (career.levels[c] = { runs: 0, finishes: 0, time: 0 });
@@ -10686,6 +10865,7 @@ body.touch #menu button, body.touch #drawer button { min-height: 40px; }
 
   function step() {
     const cmd = buildCmd();
+    if (world.movers.length) world.setTime((game.tick - game.moverTick) * TICK);
     raceHold(cmd);
     prev.pos = player.pos.slice();
     prev.eye = player.viewOffset;
@@ -10728,6 +10908,16 @@ body.touch #menu button, body.touch #drawer button { min-height: 40px; }
     const alpha = acc / TICK;
     if (!replay.on) ghost.update(dt, game.running ? game.tick - game.startTick + alpha : game.inStart && game.course ? 0 : null);
     raceFrame(dt);
+    // moving pieces: in the editor they keep moving on the clock; in play
+    // they're drawn between their last two ticks, like you are
+    if (ed.moving && ed.moving.length) {
+      if (ed.on) world.setTime(now / 1000);
+      const k = ed.on ? 1 : alpha;
+      for (const m of ed.moving) {
+        const o = m.mv.off, d = m.mv.delta;
+        for (const ob of m.objs) ob.position.set(o[0] - d[0] * (1 - k), o[1] - d[1] * (1 - k), o[2] - d[2] * (1 - k));
+      }
+    }
 
     histTimer += dt;
     while (histTimer > 1 / 60) { speedHist[histIdx] = player.hspeed(); histIdx = (histIdx + 1) % speedHist.length; histTimer -= 1 / 60; }
@@ -10996,6 +11186,7 @@ body.touch #menu button, body.touch #drawer button { min-height: 40px; }
       !net.token ? 'Finish a run to post your time.' : '';
   }
   function netRenderComplete() {
+    if (game.setDone) { setRenderComplete(); return; }
     const el = $('c-online'), l = net.last;
     const here = l && l.course === game.course;
     el.hidden = !here;
@@ -11076,7 +11267,13 @@ body.touch #menu button, body.touch #drawer button { min-height: 40px; }
     $('on-name').value = net.name || '';
     $('on-namemsg').className = 'onmsg';
     $('on-namemsg').textContent = net.token ? '' : 'Pick a name to post your times and race.';
-    fillLevels($('on-level'), typeof selected === 'string' && selected !== 'custom' ? selected : null);
+    const ol = $('on-level');
+    fillLevels(ol, typeof selected === 'string' && selected !== 'custom' ? selected : null);
+    if (!ol.querySelector('optgroup')) {
+      const g = document.createElement('optgroup'); g.label = 'Set runs';
+      for (const k in SETS) g.appendChild(new Option(SETS[k].name + ' set', 'set:' + k));
+      ol.appendChild(g);
+    }
     renderRacePane();
     renderBoard();
   }
@@ -11089,10 +11286,16 @@ body.touch #menu button, body.touch #drawer button { min-height: 40px; }
     try { data = await getBoard(course, true); } catch (e) { if (token === boardToken) msg.textContent = 'Could not load times.'; return; }
     if (token !== boardToken) return;
     ol.textContent = '';
+    const set = course.startsWith('set:') ? course.slice(4) : null;
     for (const r of data.rows) {
       const btn = document.createElement('span');
       btn.className = 'rowbtns';
-      if (r.ghost) {
+      if (r.ghost && set) {
+        const b = document.createElement('button'); b.className = 'ghost small'; b.textContent = 'Race';
+        b.title = 'Race this set run';
+        b.addEventListener('click', () => raceSet(set, r.id, r.name));
+        btn.append(b);
+      } else if (r.ghost) {
         const w = document.createElement('button'); w.className = 'ghost small'; w.textContent = 'Watch';
         w.title = 'Watch this run';
         w.addEventListener('click', () => watchOnline(course, r.id, r.name));
@@ -11103,7 +11306,7 @@ body.touch #menu button, body.touch #drawer button { min-height: 40px; }
       }
       ol.appendChild(boardRow(r, net.id, btn));
     }
-    msg.textContent = !data.total ? 'No times yet.' : data.mine && data.mine.rank > data.rows.length ? 'You are #' + data.mine.rank + ' of ' + data.total + '.' : data.total + (data.total === 1 ? ' runner' : ' runners') + ' on this level.';
+    msg.textContent = !data.total ? 'No times yet.' : data.mine && data.mine.rank > data.rows.length ? 'You are #' + data.mine.rank + ' of ' + data.total + '.' : data.total + (data.total === 1 ? ' runner' : ' runners') + (set ? ' on this set.' : ' on this level.');
   }
   $('on-level').addEventListener('change', renderBoard);
   async function raceGhost(course, id, name) {
@@ -11729,7 +11932,15 @@ body.touch #menu button, body.touch #drawer button { min-height: 40px; }
     $('restart').hidden = !here || !game.course;
     $('menunote').hidden = paused;
     $('watch').hidden = !ghost.has(selected);
+    const set = setOf(selected), sb = set && setBest[set];
+    $('set-play').hidden = !set;
+    $('h-set').hidden = !set;
+    if (set) {
+      $('set-play').textContent = 'Set run: ' + SETS[set].name;
+      $('h-set').textContent = sb ? SETS[set].name + ' set best ' + fmt(sb.ticks) : 'Set run: all ' + SETS[set].levels.length + ' ' + SETS[set].name + ' levels back to back on one clock.';
+    }
   }
+  $('set-play').addEventListener('click', () => { const set = setOf(selected); if (!set) return; A.init(); A.play('click'); startSet(set); startPlay(); });
 
   // two screens: the title (main or pause menu) and level select behind Play
   let screen = 'title';
@@ -11878,6 +12089,8 @@ body.touch #menu button, body.touch #drawer button { min-height: 40px; }
     { id: 'night', n: 'Night owl', d: 'Finish all six Night City levels', t: () => map.night.every(n => best[n]) },
     { id: 'harbor', n: 'Harbor master', d: 'Finish all six Harbor levels', t: () => map.harbor.every(n => best[n]) },
     { id: 'skyline', n: 'Cable master', d: 'Finish all four Cableway levels', t: () => map.skyline.every(n => best[n]) },
+    { id: 'set', n: 'Long haul', d: 'Finish a set run', t: () => career.sets >= 1 },
+    { id: 'sets', n: 'Box set', d: 'Finish a set run of every set', t: () => Object.keys(SETS).every(k => setBest[k]) },
     { id: 'all', n: 'Completionist', d: 'Finish every level', t: () => ALL_LEVELS.every(n => best[n]) },
     { id: 'community', n: 'Tourist', d: 'Finish a community level', t: () => career.community >= 1 },
     { id: 'publish', n: 'Architect', d: 'Publish a level to Community', t: () => career.published >= 1 },
@@ -12301,7 +12514,7 @@ body.touch #menu button, body.touch #drawer button { min-height: 40px; }
   // field a key changes: rf is R/F, br is [ ], cp is , and ., wh is the wheel
   // and sw is Shift+wheel, each as [field, step, min, max].
   const ED_TYPES = ['block', 'floor', 'ramp', 'wall', 'start', 'checkpoint', 'finish',
-    'slope', 'half', 'curve', 'line', 'stairs', 'pillar', 'runwall', 'tunnel', 'beam', 'lava', 'boost', 'zip'];
+    'slope', 'half', 'curve', 'line', 'stairs', 'pillar', 'runwall', 'tunnel', 'beam', 'lava', 'boost', 'zip', 'mover', 'lift', 'gate'];
   const BOX_KEYS = { rf: ['h', 16, 16, 4096], wh: ['l', 32, 16, 12000], sw: ['w', 16, 16, 4096] };
   const RAMP_KEYS = { rf: ['a', 5, 35, 80], br: ['d', 100, -1000, 4000], wh: ['l', 200, 16, 12000], sw: ['w', 32, 16, 4096] };
   const ED = {
@@ -12328,7 +12541,22 @@ body.touch #menu button, body.touch #drawer button { min-height: 40px; }
     // two red posts and a cable from the near one's top (h up) down d to the far one, l away
     zip: { n: 'Zipline', c: 0xffffff, k: 'route', foot: true, def: { w: 32, l: 2400, h: 144, d: 600 },
       rf: ['h', 16, 112, 4096], br: ['d', 50, 0, 6000], wh: ['l', 100, 400, 12000], sw: ['l', 400, 400, 12000] },
+    // moving pieces: out d and back at about a units a second (see edTravel)
+    mover: { n: 'Moving platform', c: 0x9b5cf6, k: 'block', def: { w: 384, l: 384, h: 48, a: 300, d: 1200 },
+      rf: ['d', 64, 64, 8000], br: ['a', 25, 50, 1000], cp: ['h', 8, 16, 512], wh: ['l', 32, 32, 4096], sw: ['w', 32, 32, 4096] },
+    lift: { n: 'Lift', c: 0x9b5cf6, k: 'pad', def: { w: 384, l: 384, h: 48, a: 250, d: 512 },
+      rf: ['d', 32, 32, 6000], br: ['a', 25, 50, 1000], cp: ['h', 8, 16, 512], wh: ['l', 32, 32, 4096], sw: ['w', 32, 32, 4096] },
+    gate: { n: 'Gate', c: 0xff8a1f, k: 'wall', foot: true, def: { w: 32, l: 512, h: 384, a: 200, d: 384 },
+      rf: ['h', 16, 32, 4096], br: ['d', 32, 32, 4096], cp: ['a', 25, 50, 1000], wh: ['l', 32, 32, 8000], sw: ['w', 16, 16, 512] },
   };
+  const ED_MOVING = { mover: true, lift: true, gate: true };
+  // a moving piece's trip: where it goes (a platform slides ahead along its
+  // length, a lift and a gate go up) and how long each way takes
+  function edTravel(pc) {
+    const d = pc.d || 0, t = d / Math.max(50, pc.a || 50);
+    if (pc.t === 'mover') return { v: [-d * Math.sin(pc.r * DEG), 0, -d * Math.cos(pc.r * DEG)], t };
+    return { v: [0, d, 0], t };
+  }
   const ED_NAMES = {}, ED_COLOR = {}, ED_DEF = {};
   for (const t of ED_TYPES) { ED_NAMES[t] = ED[t].n; ED_COLOR[t] = ED[t].c; ED_DEF[t] = ED[t].def; }
   const ED_PAD = 24; // a launch pad's thickness
@@ -12370,7 +12598,7 @@ body.touch #menu button, body.touch #drawer button { min-height: 40px; }
     { t: 'finish', x: 0, y: 0, z: -1280, r: 0, w: 384, l: 384, h: 48 },
   ] });
   Object.assign(ed, { level: load(ED_LEVEL_KEY) || edBlank(), type: 'block', params: JSON.parse(JSON.stringify(ED_DEF)), rot: 0, plane: 0,
-    cam: [0, 400, 900], undo: [], aim: null, preview: null, previewKey: '', meshes: [], grid: null, course: null });
+    cam: [0, 400, 900], undo: [], aim: null, preview: null, previewKey: '', meshes: [], moving: [], grid: null, course: null });
 
   // the faces of the convex hull round a handful of points: every plane
   // through three of them with all the rest behind it (as in map.js)
@@ -12499,7 +12727,12 @@ body.touch #menu button, body.touch #drawer button { min-height: 40px; }
     return out;
   }
   // every face of a piece, for the placement preview
-  const edFaces = (pc) => [].concat(...edHulls(pc).map(h => h.f));
+  function edFaces(pc) {
+    const f = [].concat(...edHulls(pc).map(h => h.f));
+    if (!ED_MOVING[pc.t]) return f;
+    const v = edTravel(pc).v;
+    return f.concat(f.map(face => face.map(q => [q[0] + v[0], q[1] + v[1], q[2] + v[2]])));
+  }
   // the glowing chevrons on a launch pad, pointing the way it throws you
   function edChevrons(pc) {
     const c = Math.cos(pc.r * DEG), s = Math.sin(pc.r * DEG);
@@ -12517,8 +12750,9 @@ body.touch #menu button, body.touch #drawer button { min-height: 40px; }
     for (let i = world.brushes.length - 1; i >= 0; i--) if (world.brushes[i].props.custom) world.brushes.splice(i, 1);
     for (let i = world.triggers.length - 1; i >= 0; i--) if (world.triggers[i].custom) world.triggers.splice(i, 1);
     for (let i = world.ziplines.length - 1; i >= 0; i--) if (world.ziplines[i].custom) world.ziplines.splice(i, 1);
+    for (let i = world.movers.length - 1; i >= 0; i--) if (world.movers[i].custom) world.movers.splice(i, 1);
     for (const m of ed.meshes) { scene.remove(m); m.geometry.dispose(); }
-    ed.meshes = [];
+    ed.meshes = []; ed.moving = [];
   }
   // put a level into the world: brushes, triggers, a course and its meshes.
   // One player-made level is loaded at a time: the editor's or a community one.
@@ -12529,14 +12763,17 @@ body.touch #menu button, body.touch #drawer button { min-height: 40px; }
     const glow = [], cables = [];
     L.pieces.forEach((pc, i) => {
       let b = null;
+      const mine = [];
       for (const h of edHulls(pc)) {
         const props = { custom: true, piece: i, kind: h.k, color: ED_COLOR[pc.t] };
         if (pc.t === 'lava') props.edLava = true;
         if (pc.t === 'boost') props.boost = { dir: [-Math.sin(pc.r * DEG), -Math.cos(pc.r * DEG)], a: pc.a * DEG, power: pc.d };
         b = world.addHull(h.f, props);
+        mine.push(b);
         lowY = Math.min(lowY, b.min[1]);
         box = [Math.min(box[0], b.min[0]), Math.min(box[1], b.min[2]), Math.max(box[2], b.max[0]), Math.max(box[3], b.max[2])];
       }
+      if (ED_MOVING[pc.t]) { const tv = edTravel(pc); world.addMover(mine, tv.v, tv.t).custom = true; }
       if (pc.t === 'boost') glow.push(...edChevrons(pc));
       if (pc.t === 'zip') { const [a, b] = edZipEnds(pc); world.ziplines.push({ a, b, custom: true }); cables.push(...cableFaces(a, b, 1.5)); }
       if (pc.t === 'start' || pc.t === 'checkpoint' || pc.t === 'finish') {
@@ -12547,11 +12784,26 @@ body.touch #menu button, body.touch #drawer button { min-height: 40px; }
         else world.addTrigger(tmin, tmax, { type: 'end', course: id, custom: true });
       }
     });
-    fallUser = window.StrafeMap.fallGrid(world.brushes.filter(b => b.props.custom));
+    // a moving piece counts as solid ground all along its trip
+    const mine = world.brushes.filter(b => b.props.custom);
+    for (const b of mine.filter(b => b.mv)) { const v = b.mv.travel; mine.push({ props: b.props, faces: b.faces, min: b.min.map((x, k) => x + v[k]), max: b.max.map((x, k) => x + v[k]) }); }
+    fallUser = window.StrafeMap.fallGrid(mine);
     if (L.pieces.length) world.addTrigger([box[0] - 20000, lowY - 4000, box[1] - 20000], [box[2] + 20000, lowY - 1500, box[3] + 20000], { type: 'kill', custom: true });
     map.courses[id] = { name: L.name || 'Custom level', spawn: start || { pos: [EDO[0], EDO[1] + 200, EDO[2]], yaw: 0 }, stages: cps + 1, color: 0xe5533d, custom: true, hasStart: !!start,
       hasEnd: L.pieces.some(p => p.t === 'finish') };
-    const parts = buildGeometry(b => b.props.custom && !b.props.edLava, bucketFor);
+    const parts = buildGeometry(b => b.props.custom && !b.props.edLava && !b.mv, bucketFor);
+    // each moving piece is its own meshes, moved every frame
+    for (const mv of world.movers) {
+      if (!mv.custom) continue;
+      const objs = [];
+      for (const [name, part] of Object.entries(buildGeometry(b => b.mv === mv, bucketFor))) {
+        const mesh = new THREE.Mesh(part.g, MATS[name]);
+        mesh.castShadow = mesh.receiveShadow = true;
+        const lines = new THREE.LineSegments(part.lg, new THREE.LineBasicMaterial({ color: 0x1b2530, transparent: true, opacity: 0.18 }));
+        for (const o of [mesh, lines]) { scene.add(o); ed.meshes.push(o); objs.push(o); }
+      }
+      ed.moving.push({ mv, objs });
+    }
     if (L.pieces.some(p => p.t === 'lava') && animated.lava) { const lv = buildGeometry(b => b.props.custom && b.props.edLava); const m = new THREE.Mesh(lv.g, animated.lava); scene.add(m); ed.meshes.push(m); }
     if (glow.length) { const m = new THREE.Mesh(facesToGeo(glow), chevronMat); scene.add(m); ed.meshes.push(m); }
     if (cables.length) { const m = new THREE.Mesh(facesToGeo(cables), cableMat); scene.add(m); ed.meshes.push(m); }
@@ -12610,12 +12862,12 @@ body.editing.playing #edhelp { display: block; }
   document.head.appendChild(edCss);
   const edHud = document.createElement('div');
   edHud.id = 'edhud';
-  const edSlot = (i) => i < 9 ? String(i + 1) : i === 9 ? '0' : '⇧' + (i - 9);
+  const edSlot = (i) => i < 9 ? String(i + 1) : i === 9 ? '0' : i < 19 ? '⇧' + (i - 9) : 'Alt' + (i - 18);
   edHud.innerHTML = '<ol>' + ED_TYPES.map((t, i) => '<li data-t="' + t + '"><b>' + edSlot(i) + '</b>' + ED_NAMES[t] + '</li>').join('') + '</ol><div id="edinfo"></div>';
   document.body.appendChild(edHud);
   const edHelp = document.createElement('div');
   edHelp.id = 'edhelp';
-  edHelp.innerHTML = 'WASD fly · Space up · C down · Shift fast · 1-0, Shift+1-9 or - and = pick a piece · Click place · Right click delete · Middle click copy · Q/E rotate<br>Wheel and Shift+wheel size · R/F, [ ] and , . change the piece (top left says how) · T/G build height · Z undo · Enter test · Esc menu';
+  edHelp.innerHTML = 'WASD fly · Space up · C down · Shift fast · 1-0, Shift+1-9, Alt+1-3 or - and = pick a piece · Click place · Right click delete · Middle click copy · Q/E rotate<br>Wheel and Shift+wheel size · R/F, [ ] and , . change the piece (top left says how) · T/G build height · Z undo · Enter test · Esc menu';
   document.body.appendChild(edHelp);
   const edPanel = document.createElement('div');
   edPanel.id = 'edpanel'; edPanel.hidden = true;
@@ -12846,6 +13098,9 @@ body.editing.playing #edhelp { display: block; }
       case 'lava': return pr.w + ' × ' + pr.l + ', kills on touch';
       case 'boost': return pr.w + ' × ' + pr.l + ', throws you ' + pr.d + ' u/s [ ], ' + pr.a + '° up R/F';
       case 'zip': return pr.l + ' long, cable ' + pr.h + ' up R/F, drops ' + pr.d + ' [ ]. Jump to grab it';
+      case 'mover': return pr.w + ' × ' + pr.l + ', slides ' + pr.d + ' ahead and back R/F, ' + pr.a + ' u/s [ ], ' + pr.h + ' thick , .';
+      case 'lift': return pr.w + ' × ' + pr.l + ', rises ' + pr.d + ' and back R/F, ' + pr.a + ' u/s [ ], ' + pr.h + ' thick , .';
+      case 'gate': return pr.l + ' long, ' + pr.h + ' tall R/F, opens ' + pr.d + ' up [ ], ' + pr.a + ' u/s , .';
       default: return pr.w + ' × ' + pr.l + ', ' + pr.h + ' tall';
     }
   }
@@ -12885,7 +13140,8 @@ body.editing.playing #edhelp { display: block; }
   }
   function edKey(e) {
     let i = /^Digit[0-9]$/.test(e.code) ? (+e.code.slice(5) + 9) % 10 : -1;
-    if (i >= 0 && e.shiftKey) i = i >= 0 && i <= 8 ? 10 + i : -1;
+    if (i >= 0 && e.altKey) { e.preventDefault(); i = i <= 8 ? 19 + i : -1; }
+    else if (i >= 0 && e.shiftKey) i = i >= 0 && i <= 8 ? 10 + i : -1;
     if (i >= 0) { if (ED_TYPES[i]) ed.type = ED_TYPES[i]; return; }
     if (e.code === 'Minus' || e.code === 'Equal') { ed.type = ED_TYPES[(ED_TYPES.indexOf(ed.type) + (e.code === 'Equal' ? 1 : ED_TYPES.length - 1)) % ED_TYPES.length]; return; }
     if (e.code === 'KeyQ') ed.rot = (ed.rot + 15) % 360;
@@ -13285,7 +13541,7 @@ body.editing.playing #edhelp { display: block; }
   previewCourse(map.order[0]);
   showMenuState();
   if (location.hash === '#demo') game.demo = true; // headless screenshot mode
-  window.__strafe = { courses: map.courses, mats: MATS, lights: { hemi, sun }, setNight, setTheme, player, game, keys, eff, faceInsets, practice: { set: setPractice, save: practiceSave, load: practiceLoad }, goCourse, place, attract, previewCourse, body, ghost, cosmetics, preview, step, modelChunks, renderer, setView: (y, p) => { yaw = y; pitch = p; }, editor: { ed, enter: enterEditor, test: edTest, back: edBack, code: edCode, decode: edDecode, publish: edPublish }, community: { cm, open: cmOpen, show: cmShow, play: cmPlay }, daily: { daily, weekly, open: dailyOpen, play: dailyPlay, load: dailyLoad, finish: dailyFinish }, practiceJump,
+  window.__strafe = { courses: map.courses, mats: MATS, lights: { hemi, sun }, setNight, setTheme, player, game, keys, eff, faceInsets, practice: { set: setPractice, save: practiceSave, load: practiceLoad }, goCourse, place, attract, previewCourse, body, ghost, cosmetics, preview, step, modelChunks, renderer, setView: (y, p) => { yaw = y; pitch = p; }, editor: { ed, build: edBuild, enter: enterEditor, test: edTest, back: edBack, code: edCode, decode: edDecode, publish: edPublish }, community: { cm, open: cmOpen, show: cmShow, play: cmPlay }, daily: { daily, weekly, open: dailyOpen, play: dailyPlay, load: dailyLoad, finish: dailyFinish }, practiceJump, sets: { start: startSet, best: setBest, list: SETS }, world,
     online: { net, race, submit: netSubmit, raceFinish, showComplete, openDrawer },
     replay: { state: replay, open: replayOpen, close: replayClose, watchBest }, career, ach: { check: achCheck, done: achDone, list: ACH, render: achRender }, binds: { binds, set: (id, code) => { rebinding = id; setBind(code); }, keyName }, settings, applyColors, saved: { save: saveLastRun, render: replaysRender } };
   requestAnimationFrame((t) => { last = t; frame(t); });

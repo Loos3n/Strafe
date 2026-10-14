@@ -6,6 +6,7 @@ import { DurableObject } from 'cloudflare:workers';
 import { checkRun, cleanName } from './check.js';
 import { decodeLevel, levelChecks, cleanLevelName } from './community.js';
 import LEVELS from './levels.json';
+import SETS from './sets.json';
 
 const CORS = {
   'access-control-allow-origin': '*',
@@ -93,6 +94,8 @@ export class Board extends DurableObject {
   levelFor(course) {
     if (typeof course !== 'string') return null;
     if (LEVELS[course]) return LEVELS[course];
+    const set = course.match(/^set:([a-z]+)$/);
+    if (set) return SETS[set[1]] ? { set: SETS[set[1]] } : null; // a set run's board: not a level you can post a run to
     const d = course.match(/^d:(\d{4}-\d\d-\d\d)$/);
     if (d) { const r = this.one('SELECT course FROM daily WHERE day = ?', d[1]); return r ? this.levelFor(r.course) : null; }
     const w = course.match(/^w:(\d{4}-\d\d-\d\d)$/);
@@ -295,7 +298,7 @@ export class Board extends DurableObject {
     if (path === '/run' && req.method === 'POST') {
       const { course, ticks, ghost } = body;
       if (this.limited('run:' + me.id, 30, 60000)) return fail('slow down', 429);
-      if (typeof course === 'string' && /^[dw]:/.test(course)) return fail('Post the level, not the challenge board.');
+      if (typeof course === 'string' && /^([dw]|set):/.test(course)) return fail('Post the level, not the challenge board.');
       const err = checkRun(this.levelFor(course), ticks, ghost);
       if (err) return fail('Run not accepted: ' + err + '.', 422);
       const cur = this.one('SELECT ticks, legacy FROM times WHERE course = ? AND player = ?', course, me.id);
@@ -305,6 +308,28 @@ export class Board extends DurableObject {
         this.sql.exec('INSERT OR REPLACE INTO ghosts (course, player, data) VALUES (?, ?, ?)', course, me.id, JSON.stringify({ e: ghost.e, s: ghost.s }));
       }
       return json({ best: better, total: this.total(course), mine: this.standing(course, me.id), daily: this.dailyRun(course, me.id, ticks, ghost), weekly: this.weeklyRun(course, me.id, ticks, ghost) });
+    }
+    // a set run: every level of a set in order, each one a whole run that
+    // passes the usual checks. Its time is the levels' times added up.
+    if (path === '/setrun' && req.method === 'POST') {
+      const order = SETS[body.set], legs = body.legs;
+      if (!order) return fail('unknown set', 404);
+      if (this.limited('run:' + me.id, 30, 60000)) return fail('slow down', 429);
+      if (!Array.isArray(legs) || legs.length !== order.length) return fail('Run not accepted: every level of the set is needed.', 422);
+      for (let i = 0; i < legs.length; i++) {
+        const L = legs[i] || {};
+        if (L.course !== order[i]) return fail('Run not accepted: the levels are out of order.', 422);
+        const err = checkRun(LEVELS[L.course], L.ticks, L.ghost);
+        if (err) return fail('Run not accepted: ' + LEVELS[L.course].name + ': ' + err + '.', 422);
+      }
+      const key = 'set:' + body.set, ticks = legs.reduce((t, L) => t + L.ticks, 0);
+      const cur = this.one('SELECT ticks FROM times WHERE course = ? AND player = ?', key, me.id);
+      const better = !cur || ticks < cur.ticks;
+      if (better) {
+        this.sql.exec('INSERT OR REPLACE INTO times (course, player, ticks, at, legacy) VALUES (?, ?, ?, ?, 0)', key, me.id, ticks, Date.now());
+        this.sql.exec('INSERT OR REPLACE INTO ghosts (course, player, data) VALUES (?, ?, ?)', key, me.id, JSON.stringify({ legs: legs.map(L => ({ t: L.ticks, e: L.ghost.e, s: L.ghost.s })) }));
+      }
+      return json({ best: better, ticks, total: this.total(key), mine: this.standing(key, me.id) });
     }
     // once per player: bring over best times set before the online board
     // existed, which have no replay to check. They show as older times.

@@ -5,7 +5,7 @@ const fs = require('fs'), path = require('path');
 const root = path.join(__dirname, '..');
 require(path.join(root, 'src/physics.js')); require(path.join(root, 'src/map.js'));
 const P = globalThis.StrafePhysics;
-const { world, courses } = globalThis.StrafeMap.buildMap(P);
+const M = globalThis.StrafeMap.buildMap(P), { world, courses } = M;
 // reworked levels post under a new key, same as the game's lbKey
 const game = fs.readFileSync(path.join(root, 'src/game.js'), 'utf8');
 const REBUILT = Function('return ' + game.match(/const REBUILT = (\{[^}]*\})/)[1])();
@@ -19,4 +19,9 @@ for (const [name, c] of Object.entries(courses)) {
   out[REBUILT[name] ? name + REBUILT[name] : name] = { name: c.name, start: box(start), end: box(end), spawns };
 }
 fs.writeFileSync(path.join(__dirname, 'src/levels.json'), JSON.stringify(out) + '\n');
-console.log('levels', Object.keys(out).length);
+// set runs: each set's levels in play order, by board key
+const key = (name) => REBUILT[name] ? name + REBUILT[name] : name;
+const sets = { gauntlet: M.gauntlet, night: M.night, harbor: M.harbor, skyline: M.skyline };
+for (const k in sets) sets[k] = sets[k].map(key);
+fs.writeFileSync(path.join(__dirname, 'src/sets.json'), JSON.stringify(sets) + '\n');
+console.log('levels', Object.keys(out).length, 'sets', Object.keys(sets).length);

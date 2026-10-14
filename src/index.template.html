@@ -128,6 +128,7 @@ body.complete #menu { display: none; }
 .mrow:empty { display: none; }
 .mrow .mt { opacity: .5; white-space: nowrap; }
 .mrow .mt.got { opacity: 1; }
+.hset { margin: 8px 0 0; font-size: 13px; opacity: .8; font-variant-numeric: tabular-nums; }
 #c-medal { margin: 10px 0 0; font-family: var(--display); font-weight: 700; font-size: 18px; letter-spacing: .1em; text-transform: uppercase; }
 #c-medal .medal { font-size: 22px; }
 #c-medal small { font-weight: 600; font-size: 14px; color: var(--muted); margin-left: 8px; }
@@ -560,12 +561,14 @@ body.touch #racehud { top: calc(56px + env(safe-area-inset-top, 0px)); left: 10p
       <div id="h-medalbox"><dt>Medal</dt><dd id="h-medal"></dd></div>
     </dl>
     <p class="mrow" id="h-medals"></p>
+    <p class="hset" id="h-set" hidden></p>
     <div class="hact">
       <button id="play">Play <kbd>Enter</kbd></button>
       <button class="ghost" id="resume" hidden>Resume</button>
       <button class="ghost" id="restart" hidden>Restart</button>
       <button class="ghost" id="practice-play">Practice</button>
       <button class="ghost" id="watch" hidden>Watch best run</button>
+      <button class="ghost" id="set-play" hidden>Set run</button>
           </div>
   </section>
   <aside id="lb" class="lv" hidden aria-labelledby="lb-title">

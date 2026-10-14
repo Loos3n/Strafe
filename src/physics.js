@@ -81,6 +81,25 @@
       this.brushes = [];
       this.ziplines = [];
       this.triggers = [];
+      this.movers = [];
+    }
+
+    // Moving pieces: the brushes stay where they were built and carry an
+    // offset (brush.off) that traces apply. A mover goes out along `travel`
+    // and back, easing at both ends, taking `time` seconds each way.
+    // setTime(t) puts every mover where it is t seconds after the level
+    // loaded and keeps how far it moved since the last call (mv.delta).
+    addMover(brushes, travel, time) {
+      const mv = { travel, time: Math.max(0.2, time), off: [0, 0, 0], delta: [0, 0, 0], brushes };
+      for (const b of brushes) { b.mv = mv; b.off = mv.off; }
+      this.movers.push(mv);
+      return mv;
+    }
+    setTime(t) {
+      for (const mv of this.movers) {
+        const f = (1 - Math.cos(Math.PI * t / mv.time)) / 2;
+        for (let k = 0; k < 3; k++) { const o = mv.travel[k] * f; mv.delta[k] = o - mv.off[k]; mv.off[k] = o; }
+      }
     }
 
     // Convex prism: a 2D cross-section extruded along a world axis.
@@ -190,6 +209,13 @@
       for (let i = 0; i < brushes.length; i++) {
         const b = brushes[i];
         if (b.props.nonsolid) continue;
+        const o = b.off;
+        if (o) {
+          if (b.min[0] + o[0] > bx1 || b.max[0] + o[0] < bx0 || b.min[1] + o[1] > by1 || b.max[1] + o[1] < by0 || b.min[2] + o[2] > bz1 || b.max[2] + o[2] < bz0) continue;
+          clipBoxToBrush(b, [start[0] - o[0], start[1] - o[1], start[2] - o[2]], [end[0] - o[0], end[1] - o[1], end[2] - o[2]], hmin, hmax, tr);
+          if (tr.allsolid) break;
+          continue;
+        }
         if (b.min[0] > bx1 || b.max[0] < bx0 || b.min[1] > by1 || b.max[1] < by0 || b.min[2] > bz1 || b.max[2] < bz0) continue;
         clipBoxToBrush(b, start, end, hmin, hmax, tr);
         if (tr.allsolid) break;
@@ -307,6 +333,7 @@
       if (this.wallrunCooldown > 0) this.wallrunCooldown -= dt;
       if (this.zipCooldown > 0) this.zipCooldown -= dt;
       if (this.edgeBug > 0) this.edgeBug -= dt;
+      if (this.world.movers.length && !this.mantle) this.ride();
       const wasOnGround = this.onGround;
       const fallSpeed = -this.vel[1];
       this.fallIn = fallSpeed; // before a landing clips it away
@@ -334,6 +361,39 @@
       }
       this.prevJump = cmd.jump;
       this.prevDuck = cmd.duck;
+    }
+
+    // Moving pieces: standing on one carries you with it (up and down with a
+    // lift, and along with a platform unless a wall is in the way), and one
+    // that moves into you shoves you out of its way.
+    ride() {
+      const g = this.onGround && this.groundBrush && this.groundBrush.mv;
+      if (g) {
+        const d = g.delta;
+        this.pos[1] += d[1];
+        if (d[0] || d[2]) {
+          const to = [this.pos[0] + d[0], this.pos[1], this.pos[2] + d[2]];
+          const tr = this.trace(this.pos, to);
+          if (!tr.startsolid) this.pos = tr.endpos;
+        }
+      }
+      const h = this.hull;
+      for (const mv of this.world.movers) {
+        if (mv === g) continue;
+        const d = mv.delta;
+        if (!d[0] && !d[1] && !d[2]) continue;
+        for (const b of mv.brushes) {
+          const o = mv.off, p = [this.pos[0] - o[0], this.pos[1] - o[1], this.pos[2] - o[2]];
+          const tr = { fraction: 1, startsolid: false, allsolid: false };
+          clipBoxToBrush(b, p, p, h.min, h.max, tr);
+          if (!tr.startsolid) continue;
+          // out the way it's moving: its step, and a little more so you stand clear
+          const L = Math.hypot(d[0], d[1], d[2]);
+          for (let k = 0; k < 3; k++) this.pos[k] += d[k] + d[k] / L * 0.5;
+          if (d[1] > 0 && this.vel[1] < 0) this.vel[1] = 0;
+          break;
+        }
+      }
     }
 
     tryAbilities(cmd, jumpPressed) {
