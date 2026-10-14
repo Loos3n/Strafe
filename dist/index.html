@@ -554,6 +554,7 @@ body.touch #racehud { top: calc(56px + env(safe-area-inset-top, 0px)); left: 10p
       <button class="mbtn" data-open="story" aria-expanded="false" aria-controls="drawer"><span>Story</span><small id="m-story-sub"></small></button>
       <button class="mbtn" id="m-play"><span>Play</span><small id="m-play-sub"></small></button>
       <button class="mbtn" data-open="daily" aria-expanded="false" aria-controls="drawer"><span>Challenges</span><small id="m-daily-sub">Daily and weekly levels</small></button>
+      <button class="mbtn" data-open="endless" aria-expanded="false" aria-controls="drawer"><span>Endless</span><small id="m-endless-sub">One life, no finish line</small></button>
       <button class="mbtn" id="m-tutorial"><span>Tutorial</span><small id="m-tut-sub"></small></button>
       <button class="mbtn" data-open="online" aria-expanded="false" aria-controls="drawer"><span>Online</span><small id="m-online-sub">Top times and races</small></button>
       <button class="mbtn" data-open="replays" aria-expanded="false" aria-controls="drawer"><span>Replays</span><small>Saved runs and bests</small></button>
@@ -690,6 +691,9 @@ body.touch #racehud { top: calc(56px + env(safe-area-inset-top, 0px)); left: 10p
             <input type="range" id="s-aa" min="10" max="1000" step="10">
             <p class="hint">Stock CS:GO is 12. KZ servers run 100, surf servers 150 or more.</p>
           </div>
+          <div class="checks" style="margin-top:10px">
+            <label><input type="checkbox" id="s-nocp"> No checkpoints: a fall sends you back to the start (the marker still shows the way)</label>
+          </div>
         </div>
         <div class="group">
           <p class="label">Controller</p>
@@ -808,6 +812,23 @@ body.touch #racehud { top: calc(56px + env(safe-area-inset-top, 0px)); left: 10p
         <p class="onmsg">Everyone gets the same level, picked from the built-in levels and the top rated community levels. Every run you finish on it while it's up counts, and your best stays on the board. A new daily level comes up at midnight UTC and a new weekly one on Monday. Your streak counts the days (or weeks) in a row you've finished it.</p>
       </div>
     </div>
+    <div data-pane="endless" hidden>
+      <p class="label" id="en-date"></p>
+      <h3 class="cmname">Today's course</h3>
+      <p class="onmsg">A course with no finish line, built as you go from block lines, surf ramps, cables, wallruns and bends. Every gate you reach is a section cleared, and the sections get harder. There are no checkpoints: fall once and the run is over. Updraft pads throw you back up when the course has dropped too far.</p>
+      <div class="onrow"><button class="cprimary" id="en-play">Run today's course</button><button class="ghost" id="en-random">Random course</button></div>
+      <dl class="dystats">
+        <div><dt>Today</dt><dd id="en-today"></dd></div>
+        <div><dt>Best ever</dt><dd id="en-best"></dd></div>
+        <div><dt>New course in</dt><dd id="en-left"></dd></div>
+      </dl>
+      <div class="group" id="en-boardgrp">
+        <p class="label">Today's board</p>
+        <ol class="onboard" id="en-board"></ol>
+        <p class="onmsg" id="en-boardmsg"></p>
+      </div>
+      <p class="onmsg">Everyone gets the same course each day (midnight UTC), and the board ranks the most sections, then the quicker time. A random course is a new one every time, for practice, and isn't posted.</p>
+    </div>
     <div data-pane="community" hidden>
       <div class="group" id="cm-off" hidden><p class="onmsg">Can't reach the Strafe server from here, so community levels are off. You can play them at <a href="https://strafe-online.strafe-game.workers.dev" target="_blank" rel="noopener">strafe-online.strafe-game.workers.dev</a>.</p></div>
       <div id="cm-listview">
@@ -825,7 +846,7 @@ body.touch #racehud { top: calc(56px + env(safe-area-inset-top, 0px)); left: 10p
         <p class="onmsg" id="cm-meta"></p>
         <p class="mrow" id="cm-medals"></p>
         <div class="onrow" id="cm-actions"><button class="cprimary" id="cm-play">Play</button><button class="ghost" id="cm-like"></button></div>
-        <div class="onrow" id="cm-tools"><button class="ghost small" id="cm-edit">Open in editor</button><button class="ghost small" id="cm-link">Copy link</button><button class="ghost small" id="cm-copy">Copy level code</button><button class="ghost small" id="cm-follow"></button><button class="ghost small" id="cm-byauthor"></button><button class="ghost small" id="cm-del" hidden>Take down</button></div>
+        <div class="onrow" id="cm-tools"><button class="ghost small" id="cm-edit">Open in editor</button><button class="ghost small" id="cm-link">Copy link</button><button class="ghost small" id="cm-copy">Copy level code</button><button class="ghost small" id="cm-follow"></button><button class="ghost small" id="cm-byauthor"></button><button class="ghost small" id="cm-falls" hidden>Fall map</button><button class="ghost small" id="cm-del" hidden>Take down</button></div>
         <p class="onmsg" id="cm-dmsg"></p>
         <div class="group">
           <p class="label">Top times</p>
@@ -890,7 +911,7 @@ body.touch #racehud { top: calc(56px + env(safe-area-inset-top, 0px)); left: 10p
     </dl>
     <div class="cbtns">
       <button class="cprimary" id="c-next" data-act="next"></button>
-      <button class="ghost" data-act="retry">Retry <kbd>R</kbd></button>
+      <button class="ghost" data-act="retry" id="c-retry">Retry <kbd>R</kbd></button>
       <button class="ghost" data-act="levels" id="c-back">Levels <kbd>Esc</kbd></button>
       <button class="ghost" data-act="menu" id="c-menu">Main menu</button>
       <button class="ghost" data-act="save" id="c-save" hidden>Save replay <kbd>S</kbd></button>
@@ -5406,6 +5427,14 @@ window.STRAFE_ASSETS = {"city":"Z2xURgIAAABU+ggAYFIAAEpTT057ImFzc2V0Ijp7ImdlbmVy
       const k = 1 - Math.exp(-dt * 18);
       this.viewOffset += (this.eyeTarget - this.viewOffset) * k;
 
+      // an updraft pad (Endless) throws you up and on along its arrow, the same arc every time
+      const ud = this.onGround && this.groundBrush && this.groundBrush.props.updraft;
+      if (ud) {
+        this.vel = [ud.dir[0] * ud.flat, ud.up, ud.dir[1] * ud.flat];
+        this.onGround = false; this.groundNormal = null; this.groundBrush = null;
+        this.slide = null; this.rampSlide = false;
+        this.events.push({ type: 'updraft' });
+      }
       if (!this.onGround) this.airTime += dt; else this.airTime = 0;
       if (!wasOnGround && this.onGround) {
         this.climbAvailable = true;
@@ -7126,7 +7155,10 @@ window.STRAFE_ASSETS = {"city":"Z2xURgIAAABU+ggAYFIAAEpTT057ImFzc2V0Ijp7ImdlbmVy
     // sloped roof) and wall (a gap crossed by wallrunning a billboard).
     // Every leg keeps its plan in local coordinates (x right, z forward is
     // negative) so a bot can ride any level.
-    function routeKit(name, ox, oz, top, def) {
+    // updraft pads (Endless): straight up at UP and on at FLAT, which lands you on a roof
+    // RISE higher that starts GAP past the pad (you pass that height on the way up well short of it)
+    const UPDRAFT = { up: 2000, flat: 700, rise: 2000, gap: 1500 };
+    function routeBuilder(name, ox, oz, top, def) {
       const DIRS = [[0, -1], [1, 0], [0, 1], [-1, 0]];
       const legs = [];
       let L = null;
@@ -7136,7 +7168,7 @@ window.STRAFE_ASSETS = {"city":"Z2xURgIAAABU+ggAYFIAAEpTT057ImFzc2V0Ijp7ImdlbmVy
           at: (x, z) => [fx + r[0] * x + f[0] * -z, fz + r[1] * x + f[1] * -z] };
         legs.push(L);
       }
-      frame(ox, oz, 0);
+      frame(ox, oz, def.h || 0);
       const W3 = (x, y, z) => { const p = L.at(x, z); return [p[0], y, p[1]]; };
       const lbox = (x0, x1, y0, y1, z0, z1, props) => {
         const a = L.at(x0, z0), b = L.at(x1, z1);
@@ -7161,7 +7193,7 @@ window.STRAFE_ASSETS = {"city":"Z2xURgIAAABU+ggAYFIAAEpTT057ImFzc2V0Ijp7ImdlbmVy
       let ni = 0;
       const neon = () => ({ color: NEON[ni++ % NEON.length], nonsolid: true, glow: true });
       const solidProps = (props) => def.night ? Object.assign(props, { neon: true }) : props;
-      def.segs.forEach((sg, si) => {
+      function add(sg, si, next) {
         const col = pal[si % pal.length];
         if (sg.t === 'turn') {
           // pivot on the pad we stand on: its centre becomes the new origin
@@ -7171,6 +7203,25 @@ window.STRAFE_ASSETS = {"city":"Z2xURgIAAABU+ggAYFIAAEpTT057ImFzc2V0Ijp7ImdlbmVy
           if (p.trig) p.trig.spawn = { pos: [c[0], p.y, c[1]], yaw: L.yaw };
           L.items.push({ t: 'pad', x: 0, y: p.y, z0: p.w / 2, z1: -p.w / 2, w: p.len, corner: true });
           x = 0; z = -p.w / 2; prev = sg;
+          return;
+        }
+        if (sg.t === 'updraft') {
+          // a launch pad on the end of the pad you stand on: it throws you up
+          // (UPDRAFT, the same arc every time) onto a long roof RISE higher
+          const f = DIRS[L.h], w = 640, len = 400;
+          lbox(x - w / 2, x + w / 2, y - 60, y, z - len, z, solidProps({ color: 0xffc21a, kind: 'pad', updraft: { dir: [f[0], f[1]], up: UPDRAFT.up, flat: UPDRAFT.flat } }));
+          for (const u of [-1, 1]) lbox(x + u * (w / 2 + 2), x + u * (w / 2 + 14), y - 30, y + 2, z - len, z, { color: 0xfff3b0, nonsolid: true, glow: true });
+          L.items.push({ t: 'pad', x, y, z0: z, z1: z - len, w, len, launch: true });
+          z -= len + UPDRAFT.gap; y += UPDRAFT.rise;
+          const lw = 1400, ll = 2600;
+          lbox(x - lw / 2, x + lw / 2, y - 60, y, z - ll, z, solidProps({ color: def.padColor || COLORS.bhopPad, kind: 'pad' }));
+          const here = { pos: W3(x, y, z - 300), yaw: L.yaw };
+          let trig = null;
+          if (sg.cp) { cp++; trig = ltrig(x - lw / 2, x + lw / 2, y, y + 160, z - ll, z, { type: 'checkpoint', idx: cp, spawn: here }); }
+          const it = { t: 'pad', x, y, z0: z, z1: z - ll, w: lw, len: ll };
+          Object.defineProperty(it, 'trig', { value: trig, enumerable: false });
+          L.items.push(it); prevPad = it;
+          z -= ll; prev = sg;
           return;
         }
         if (sg.t === 'pad' || sg.t === 'lane') {
@@ -7266,7 +7317,7 @@ window.STRAFE_ASSETS = {"city":"Z2xURgIAAABU+ggAYFIAAEpTT057ImFzc2V0Ijp7ImdlbmVy
             // each piece runs 40 units into its neighbours, so the joins are
             // buried under the face instead of standing up as edges to catch on
             const ex = (q, k) => [q[0] + fx * 40 * k, q[1] - sg.drop / N * 40 / len * k, q[2] + fz * 40 * k];
-            const k0 = j || sg.join ? -1 : 0, k1 = j < N - 1 || (def.segs[si + 1] || {}).join ? 1 : 0;
+            const k0 = j || sg.join ? -1 : 0, k1 = j < N - 1 || (next || {}).join ? 1 : 0;
             hullPts([ex(s0.l, k0), ex(s0.p, k0), ex(s0.r, k0), ex(s1.l, k1), ex(s1.p, k1), ex(s1.r, k1)], solidProps({ color: col, kind: 'ramp', pylons: j % 6 === 3 ? [[s0.p[0], s0.p[2]]] : [] }));
             if (g) for (const k of ['gl', 'gr', 'gp']) hullPts(s0[k].concat(s1[k]), g);
             chords.push({ x: s0.p[0], z: s0.p[2], apex: s0.p[1], fx, fz, rx: -fz, rz: fx, hd: Math.atan2(-fx, -fz), len, W, H });
@@ -7310,7 +7361,8 @@ window.STRAFE_ASSETS = {"city":"Z2xURgIAAABU+ggAYFIAAEpTT057ImFzc2V0Ijp7ImdlbmVy
         }
         if (sg.t === 'pad' || sg.t === 'lane') lo = Math.min(lo, y);
         prev = sg;
-      });
+      }
+      function finish() {
       const kill = lo - 600;
       // the whole route's footprint, for the kill volume and the skyline gaps
       const pts = [];
@@ -7365,6 +7417,14 @@ window.STRAFE_ASSETS = {"city":"Z2xURgIAAABU+ggAYFIAAEpTT057ImFzc2V0Ijp7ImdlbmVy
       courses[name] = Object.assign({ spawn, stages: cp + 1, legs: legs.map(lg => ({ ox: lg.ox, oz: lg.oz, h: lg.h, items: lg.items, curveIn: !!lg.curveIn })),
         preview: { pos: (() => { const p = legs[0].at(0, 400); return [p[0], top, p[1]]; })(), yaw: legs[0].yaw } },
         { name: def.name, type: def.type, difficulty: def.difficulty, color: def.color, desc: def.desc, route: true, set: def.set });
+      }
+      return { add, finish, legs, get lo() { return lo; }, get y() { return y; }, get pos() { return L.at(x, z); }, get h() { return L.h; }, get cp() { return cp; }, get prevPad() { return prevPad; }, get leg() { return L; },
+        get spawn() { return spawn; } };
+    }
+    function routeKit(name, ox, oz, top, def) {
+      const rk = routeBuilder(name, ox, oz, top, def);
+      def.segs.forEach((sg, si) => rk.add(sg, si, def.segs[si + 1]));
+      rk.finish();
     }
 
     // ------------------------------------------------------------ surf
@@ -7885,6 +7945,123 @@ window.STRAFE_ASSETS = {"city":"Z2xURgIAAABU+ggAYFIAAEpTT057ImFzc2V0Ijp7ImdlbmVy
         { t: 'pad', rise: 120, len: 900, w: 900, lip: true, end: true },
       ] });
 
+    // ------------------------------------------------------------ endless
+    // A course with no end, built a section at a time ahead of the runner
+    // (and taken down behind) from a seed, so everyone who gets the day's
+    // seed runs the same course. A section is a few pieces from the route
+    // levels (block lines, surf runs, cables, wallruns, bends), each ending on
+    // a pad, and the last pad is its gate (a checkpoint). Sections get harder
+    // as you go. When the course has dropped too far, updraft pads throw you
+    // back up, and turns steer it round a centre so it never wanders off.
+    const ENDLESS = { x: 0, z: 300000, top: 20000, low: 13000, roam: 40000 };
+    const EPAL = [0x2fb5c7, 0xf08a24, 0x8f55e0, 0xe0457b, 0x22b38a, 0x4f74ee];
+    function endless(seed) {
+      let s = (seed >>> 0) || 1;
+      const rnd = () => { s = (s + 0x6D2B79F5) >>> 0; let t = s; t = Math.imul(t ^ (t >>> 15), t | 1); t ^= t + Math.imul(t ^ (t >>> 7), t | 61); return ((t ^ (t >>> 14)) >>> 0) / 4294967296; };
+      const pick = (a) => a[(rnd() * a.length) | 0];
+      const range = (a, b) => a + rnd() * (b - a);
+      const sign = () => rnd() < 0.5 ? -1 : 1;
+      const rk = routeBuilder('endless', ENDLESS.x, ENDLESS.z, ENDLESS.top, { palette: EPAL, padColor: 0xc9d2da });
+      let si = 0, k = 0;
+      let segs = [];
+      const add = (sg) => { segs.push(sg); rk.add(sg, si++); };
+      // tiers 0 (gentle) to 5 (Harbor hard), by section
+      const tierOf = (n) => Math.min(5, Math.floor(n / 3));
+      const lerp = (t, a, b) => Math.round(a + (b - a) * t / 5);
+      // which way a turn should go to head back toward the centre (0: no need)
+      const DIRS = [[0, -1], [1, 0], [0, 1], [-1, 0]];
+      function steer(force) {
+        const p = rk.pos, dx = ENDLESS.x - p[0], dz = ENDLESS.z - p[1], d = Math.hypot(dx, dz);
+        const f = DIRS[rk.h], r = DIRS[(rk.h + 1) % 4];
+        if (!force && (d < ENDLESS.roam * 0.5 || (f[0] * dx + f[1] * dz) / d > 0.3)) return 0;
+        return r[0] * dx + r[1] * dz >= 0 ? 1 : -1;
+      }
+      const PIECES = {
+        bhop(t) {
+          const sz = lerp(t, 160, 100), step = lerp(t, 245, 302), gap = lerp(t, 44, 84), n = 7 + ((rnd() * (3 + t / 2)) | 0);
+          const sg = { t: 'bhop', gap, n, size: sz, step };
+          if (t >= 1) { if (rnd() < 0.5) sg.zig = lerp(t, 40, 100); else { const a = lerp(t, 50, 100); sg.lat = [0, a, -a, Math.round(a / 2), -Math.round(a / 2)]; } }
+          add(sg);
+          add({ t: 'pad', gap: 125, len: 800, w: 900 });
+        },
+        surf(t) {
+          // a steeper first ramp on the harder tiers, for the speed the transfers need
+          add({ t: 'surf', face: t < 2 ? 55 : t < 4 ? 60 : 65, len: 3200, drop: lerp(t, 400, 600) });
+          const m = t < 1 ? 0 : t < 3 ? 1 : 1 + (rnd() < 0.5 ? 1 : 0);
+          let side = sign();
+          // transfers as wide as Harbor's, no wider
+          for (let j = 0; j < m; j++) { add({ t: 'surf', face: t < 3 ? 60 : 65, len: 3200, drop: lerp(t, 400, 450), dx: side * lerp(t, 300, 470), gap: lerp(t, 900, 1000), fall: 600 }); side = -side; }
+          add({ t: 'pad', len: 3000, w: 1400 });
+        },
+        zip(t) {
+          add({ t: 'zip', len: Math.round(range(2400, 3200)), drop: Math.round(range(700, 1000)), dx: t >= 2 ? sign() * 200 : 0 });
+          add({ t: 'pad', len: 1600, w: 900 });
+        },
+        wall(t) {
+          add({ t: 'wall', side: sign(), len: 700, gap: 550 });
+          add({ t: 'pad', rise: 120, len: 900, w: 900, lip: true });
+        },
+        curve(t) {
+          const dir = steer(true) || sign();
+          add({ t: 'curve', dir, face: t < 2 ? 55 : t < 4 ? 60 : 65, R: lerp(t, 4200, 3000), drop: 600 });
+          if (t >= 2) add({ t: 'surf', face: 65, len: 3000, drop: 400, dx: sign() * lerp(t, 250, 350), gap: 900, fall: 600 });
+          add({ t: 'pad', len: 3000, w: 1400 });
+        },
+      };
+      const POOL = [['bhop', 'surf', 'zip'], ['bhop', 'surf', 'zip', 'wall'], ['bhop', 'surf', 'zip', 'wall', 'curve']];
+      // one section: build it, and tell what it added to the world
+      function section() {
+        const b0 = world.brushes.length, t0 = world.triggers.length, z0 = world.ziplines.length;
+        const l0 = Math.max(0, rk.legs.length - 1); // the leg you're on carries on into this section
+        segs = [];
+        const t = tierOf(k), pool = POOL[Math.min(2, t)];
+        if (k === 0) add({ t: 'pad', len: 900, w: 900 });
+        const n = 2 + (t >= 2 && rnd() < 0.5 ? 1 : 0);
+        let last = null;
+        for (let j = 0; j < n; j++) {
+          // a turn pivots on the pad you're on; a short run-up after it, to pick up speed the new way
+          if (j) { const d = steer(false); if (d) { add({ t: 'turn', dir: d }); add({ t: 'pad', len: 600, w: 900 }); } }
+          // back up to a safe height before the next piece
+          while (rk.y < ENDLESS.low) add({ t: 'updraft' });
+          let kind = pick(pool);
+          if (kind === last && rnd() < 0.7) kind = pick(pool);
+          PIECES[kind](t);
+          last = kind;
+        }
+        // the gate: the last pad becomes a checkpoint
+        if (rk.y < ENDLESS.low) add({ t: 'updraft' });
+        gate();
+        // a city far below, for depth (scenery: landing on it is a fall). Its own
+        // random numbers, so the course is the same with or without it.
+        {
+          let q = (Math.imul(seed >>> 0, 2654435761) ^ Math.imul(k + 1, 40503)) >>> 0 || 1;
+          const r2 = () => { q = Math.imul(q ^ (q >>> 15), 0x2c1b3c6d) >>> 0; q = (q + 0x6D2B79F5) >>> 0; return ((q ^ (q >>> 13)) >>> 0) / 4294967296; };
+          let x0 = Infinity, z0 = Infinity, x1 = -Infinity, z1 = -Infinity;
+          for (const b of world.brushes.slice(b0)) if (!b.props.nonsolid) { x0 = Math.min(x0, b.min[0]); z0 = Math.min(z0, b.min[2]); x1 = Math.max(x1, b.max[0]); z1 = Math.max(z1, b.max[2]); }
+          const STEP = 2400;
+          for (let gx = Math.floor((x0 - 3000) / STEP) * STEP; gx < x1 + 3000; gx += STEP) for (let gz = Math.floor((z0 - 3000) / STEP) * STEP; gz < z1 + 3000; gz += STEP) {
+            if (r2() < 0.45) continue;
+            const w = 700 + r2() * 900, d = 700 + r2() * 900, ax = gx + r2() * (STEP - w - 100), az = gz + r2() * (STEP - d - 100);
+            world.addBox([ax, -200, az], [ax + w, 2500 + r2() * (ENDLESS.low - 8500), az + d], { color: r2() < 0.3 ? COLORS.glass : COLORS.roofSide, kind: 'building', far: true });
+          }
+        }
+        const out = { k, tier: t, segs, legs: [l0, rk.legs.length], brushes: world.brushes.slice(b0), triggers: world.triggers.slice(t0), ziplines: world.ziplines.slice(z0) };
+        for (const b of out.brushes) b.endless = k;
+        for (const tr of out.triggers) tr.endless = k;
+        for (const z of out.ziplines) z.endless = k;
+        k++;
+        return out;
+      }
+      // the pad just built becomes the gate
+      function gate() {
+        const it = rk.prevPad, L = rk.leg, a = L.at(it.x - it.w / 2, it.z0), b = L.at(it.x + it.w / 2, it.z1);
+        const spawn = { pos: (() => { const q = L.at(it.x, it.z0 - Math.min(300, it.len / 2)); return [q[0], it.y, q[1]]; })(), yaw: L.yaw };
+        world.addTrigger([Math.min(a[0], b[0]), it.y, Math.min(a[1], b[1])], [Math.max(a[0], b[0]), it.y + 160, Math.max(a[1], b[1])],
+          { type: 'checkpoint', course: 'endless', idx: k + 1, spawn });
+      }
+      return { section, builder: rk, get k() { return k; } };
+    }
+
     // ------------------------------------------------------------ level order and keys
     const order = ['surf', 'bhop', 'roofs', 'canyon', 'stairway', 'crossover', 'downtown', 'cascade', 'spire', 'freerun'];
     order.forEach((name, i) => { courses[name].key = String((i + 1) % 10); }); // the tenth level is on 0
@@ -7902,7 +8079,7 @@ window.STRAFE_ASSETS = {"city":"Z2xURgIAAABU+ggAYFIAAEpTT057ImFzc2V0Ijp7ImdlbmVy
     const skylineOrder = ['s1', 's2', 's3', 's4'];
     skylineOrder.forEach((name, i) => { courses[name].key = 'S' + (i + 1); });
 
-    return { world, courses, order, gauntlet: gauntletOrder, night: nightOrder, harbor: harborOrder, skyline: skylineOrder, hubSpawn, COLORS };
+    return { world, courses, endless, ENDLESS, order, gauntlet: gauntletOrder, night: nightOrder, harbor: harborOrder, skyline: skylineOrder, hubSpawn, COLORS };
   }
 
   // Falling off. For any spot, the lowest a rider can be while still on the course near it:
@@ -7958,7 +8135,7 @@ window.STRAFE_ASSETS = {"city":"Z2xURgIAAABU+ggAYFIAAEpTT057ImFzc2V0Ijp7ImdlbmVy
     fovKick: true, shadows: true, bob: true, keys: true, body: true, ghost: true,
     speedLines: true, landKick: true, scale: 100, fps: false, strafeMeter: true,
     master: 80, music: 50, sfx: 80, padSens: 1, padAutoStrafe: true, padInvert: false,
-    colors: 'standard', roll: 100, flip: true, flash: true, hudSize: 100, crosshair: 'dot', cpMarker: true,
+    colors: 'standard', roll: 100, flip: true, flash: true, hudSize: 100, crosshair: 'dot', cpMarker: true, noCp: false,
   }, TOUCH ? { lookSens: 1, autoStrafe: true, scale: 70, shadows: false } : {}, load(SETTINGS_KEY) || {});
   const best = load(BEST_KEY) || {};
   // ------------------------------------------------------------ story
@@ -8013,7 +8190,7 @@ window.STRAFE_ASSETS = {"city":"Z2xURgIAAABU+ggAYFIAAEpTT057ImFzc2V0Ijp7ImdlbmVy
   const REBUILT = { surf: '_v3', bhop: '_v3', canyon: '_v3', stairway: '_v3', crossover: '_v4', cascade: '_v6', g1: '_v2', g2: '_v2', g3: '_v2', g4: '_v2', g5: '_v2', g6: '_v2', n1: '_v2', n2: '_v2', n3: '_v2', n4: '_v2', n5: '_v2', n6: '_v2' };
   // levels players build: the editor's own ('custom') and community ones ('c:<id>')
   const isCommunity = (c) => typeof c === 'string' && c.startsWith('c:');
-  const userCourse = (c) => c === 'custom' || isCommunity(c);
+  const userCourse = (c) => c === 'custom' || c === 'endless' || isCommunity(c);
   // Medals: bronze, silver, gold and platinum times on every level. Story
   // levels use their star targets for gold and silver; the rest scale from the
   // time the test bots take (MEDAL_PAR, seconds: re-time a level when it is
@@ -9395,6 +9572,49 @@ body.touch #menu button, body.touch #drawer button { min-height: 40px; }
     seg: null, segBest: {}, saves: 0, moverTick: 0,
   };
   const prev = { pos: player.pos.slice(), eye: player.viewOffset };
+  var enReady = false; // the Endless menu line can show (set once that code has run)
+  var fallView = { mesh: null, level: null }; // the fall map on show (see fall map view)
+
+  // ------------------------------------------------------------ fall map
+  // On community levels: where runners fall off (from just before the drop)
+  // and where they give up (restart or leave part way through a run). Sent
+  // to the server in batches, so the level's maker can see what stops people.
+  const falls = {
+    pts: [], trail: [], level: null, back: 0,
+    // every tick: a couple of seconds of where you've been
+    track() {
+      if (!game.running || game.tick % 10 || !isCommunity(game.course)) return;
+      this.trail.push([player.pos[0], player.pos[1], player.pos[2]]);
+      if (this.trail.length > 30) this.trail.shift();
+    },
+    // just before a respawn for a fall: where you were 1.5 s ago, about when you left the course
+    // (now: lava, which catches you where you are)
+    fell(now) {
+      if (!game.running || !isCommunity(game.course)) return;
+      const t = this.trail, p = now || !t.length ? player.pos : t[Math.max(0, t.length - 15)];
+      this.add(p, 0);
+      this.trail = []; this.back = game.tick;
+    },
+    // leaving a run (restart, another level, the menu), unless it only just began or you just respawned
+    quit() {
+      if (!game.running || !isCommunity(game.course) || game.tick - game.startTick < 300 || game.tick - this.back < 200) return;
+      this.add(player.pos, 1);
+      this.trail = [];
+    },
+    add(p, quit) {
+      const id = game.course.slice(2);
+      if (this.level !== id) { this.flush(); this.level = id; }
+      this.pts.push([Math.round(p[0]), Math.round(p[1]), Math.round(p[2]), quit]);
+      if (this.pts.length >= 20) this.flush();
+    },
+    flush() {
+      const pts = this.pts;
+      this.pts = [];
+      if (!pts.length || net.ok === false || game.demo) return;
+      api('/falls', { id: this.level, pts }).catch(() => {});
+    },
+  };
+  window.addEventListener('pagehide', () => falls.flush());
 
   function place(spawn) {
     player.reset(spawn.pos, spawn.yaw);
@@ -9405,6 +9625,9 @@ body.touch #menu button, body.touch #drawer button { min-height: 40px; }
   }
   // no level loaded: the menu is showing
   function goIdle() {
+    falls.quit(); falls.flush();
+    if (!ed.on) fallMapHide();
+    if (game.course === 'endless') enClear();
     game.course = null; game.running = false; game.finished = null; game.mission = null;
     ghost.useRemote(null, null);
     resetTutorial();
@@ -9412,6 +9635,7 @@ body.touch #menu button, body.touch #drawer button { min-height: 40px; }
     updateCourseHud();
   }
   function goCourse(name, mission = null, keepSet = false) {
+    falls.quit();
     const c = map.courses[name];
     if (!keepSet) { game.setRun = null; game.setDone = null; }
     if (name !== game.course) { game.save = null; game.segBest = {}; } // R keeps practice saves
@@ -9430,14 +9654,19 @@ body.touch #menu button, body.touch #drawer button { min-height: 40px; }
     toast(mission === null ? c.name : (mission ? 'Job ' + mission : 'Prologue') + ': ' + STORY[mission].title);
     A.play('teleport');
   }
+  // checkpoints off (Settings): only in real runs, practice keeps its saves
+  const noCp = () => !!settings.noCp && !game.practice;
   function restartCourse() {
     if (!game.course) return;
     if (locked) careerCount('restarts');
+    if (game.course === 'endless') { if (en.day) enDaily(); else enStart(en.seed, null); return; }
     if (game.setRun) { startSet(game.setRun.set, game.setRun.race); return; } // a set run restarts from its first level
     goCourse(game.course, game.mission);
   }
   function respawn() {
     if (!game.course) return;
+    if (game.course === 'endless' && game.running) { enOver(); return; }
+    if (game.course === 'endless' && game.finished !== null) return; // the run is over: the card is up
     if (game.practice && game.save) { practiceLoad(); return; }
     if (game.running && game.run) game.run.resets = (game.run.resets || 0) + 1;
     place(game.cpSpawn);
@@ -9466,6 +9695,7 @@ body.touch #menu button, body.touch #drawer button { min-height: 40px; }
   // start) to here, against your best for that same stretch this session.
   function setPractice(on) {
     if (on === game.practice) return;
+    if (on && game.course === 'endless') { toast('Endless has no practice mode'); return; }
     if (on && game.setRun) { game.setRun = null; toast('Set run stopped'); }
     game.practice = on; game.save = null; game.seg = null; game.segBest = {};
     $('practice').hidden = !on;
@@ -9571,7 +9801,7 @@ body.touch #menu button, body.touch #drawer button { min-height: 40px; }
     UNDER[0] = p[0]; UNDER[1] = p[1] - 6; UNDER[2] = p[2];
     const tr = player.trace(p, UNDER), b = tr.fraction < 1 && tr.brush;
     if (!b || !b.props.custom) return false;
-    if (b.props.edLava) { careerCount('falls'); respawn(); return true; }
+    if (b.props.edLava) { careerCount('falls'); falls.fell(true); respawn(); return true; }
     const bo = b.props.boost;
     if (bo) {
       const v = player.vel, flat = bo.power * Math.cos(bo.a), along = v[0] * bo.dir[0] + v[2] * bo.dir[1];
@@ -9584,17 +9814,22 @@ body.touch #menu button, body.touch #drawer button { min-height: 40px; }
   }
 
   function handleTriggers() {
-    if (game.course && fellOff()) { careerCount('falls'); respawn(); return; }
+    if (game.course === 'endless' && game.finished !== null) return; // that run is over
+    falls.track();
+    if (game.course && fellOff()) { careerCount('falls'); falls.fell(); respawn(); return; }
     if (game.course && userCourse(game.course) && userHazards()) return;
     let inStart = false;
     for (const t of player.triggersTouching()) {
       if (t.type === 'teleport') { goCourse(t.course); return; }
-      if (t.type === 'kill') { careerCount('falls'); respawn(); return; }
+      if (t.type === 'kill') { careerCount('falls'); falls.fell(); respawn(); return; }
       if (t.course !== game.course) continue;
       if (t.type === 'start') inStart = true;
       else if (t.type === 'hint') enterStep(t);
+      else if (t.type === 'checkpoint' && t.idx > game.cp && game.course === 'endless') enGate(t);
       else if (t.type === 'checkpoint' && t.idx > game.cp) {
-        game.cp = t.idx; game.cpSpawn = t.spawn;
+        // with checkpoints off you still pass them (splits, the marker moves on), but a fall goes back to the start
+        game.cp = t.idx;
+        if (!noCp()) game.cpSpawn = t.spawn;
         const c = map.courses[game.course];
         A.play('checkpoint');
         if (game.running && game.practice) {
@@ -9622,6 +9857,7 @@ body.touch #menu button, body.touch #drawer button { min-height: 40px; }
         showSplit('Finish', ticks, prevBest);
         careerCount('finishes', game.course);
         if (!game.run.resets && map.courses[game.course].stages >= 3) careerCount('flawless');
+        if (noCp() && map.courses[game.course].stages >= 2) careerCount('nocp');
         if (isCommunity(game.course)) careerCount('community');
         if (isBest) {
           careerCount('pbs');
@@ -10412,6 +10648,11 @@ body.touch #menu button, body.touch #drawer button { min-height: 40px; }
   function updateCourseHud() {
     const c = game.course && map.courses[game.course];
     hud.course.textContent = c ? c.name : '';
+    if (c && c.endless) {
+      const mine = en.day ? enSave.days[en.day] : enSave.best;
+      hud.bestEl.textContent = mine ? (en.day ? 'Today ' : 'Best ') + enFmt(mine) : 'No run yet';
+      return;
+    }
     hud.bestEl.textContent = c && best[game.course] ? 'Best ' + fmt(best[game.course]) : c ? 'No time yet' : 'Pick a beacon or press 1, 2, 3';
   }
   updateCourseHud();
@@ -10503,7 +10744,9 @@ body.touch #menu button, body.touch #drawer button { min-height: 40px; }
       const S = game.setRun;
       hud.timer.textContent = fmt(S ? S.ticks + (game.running ? ticks : 0) : ticks);
       hud.timer.classList.toggle('idle', !game.running);
-      hud.stage.textContent = (S ? SETS[S.set].name + ' ' + (S.levels.indexOf(game.course) + 1) + ' / ' + S.levels.length + ' · ' : '') + 'Stage ' + (game.cp + 1) + ' / ' + map.courses[game.course].stages;
+      const c = map.courses[game.course];
+      hud.stage.textContent = c.endless ? 'Section ' + (game.cp + 1) : (S ? SETS[S.set].name + ' ' + (S.levels.indexOf(game.course) + 1) + ' / ' + S.levels.length + ' · ' : '') +
+        'Stage ' + (game.cp + 1) + ' / ' + c.stages + (c.stages > 1 && noCp() ? ' · no checkpoints' : '');
     } else {
       hud.timer.textContent = '';
       hud.stage.textContent = '';
@@ -10610,6 +10853,7 @@ body.touch #menu button, body.touch #drawer button { min-height: 40px; }
     $('c-back').innerHTML = (job ? 'Story' : 'Levels') + ' <kbd>Esc</kbd>';
     $('c-back').dataset.to = job ? 'story' : 'levels';
     $('c-menu').hidden = game.course === 'custom';
+    $('c-retry').hidden = false;
     $('c-label').textContent = job ? (game.mission ? 'Job ' + game.mission : 'Prologue') + ' complete' : 'Level complete';
     $('c-story').hidden = !job;
     if (job) {
@@ -10648,6 +10892,7 @@ body.touch #menu button, body.touch #drawer button { min-height: 40px; }
       const t = $('c-next').dataset.target;
       if (t === 'story') { goIdle(); game.started = false; showMenuState(); openDrawer('story'); return; }
       if (t === 'editor') { edBack(); return; }
+      if (t === 'endless') { if (en.day) enDaily(); else enStart(en.seed, null); return; }
       if (t === 'community') { goIdle(); game.started = false; showMenuState(); openDrawer('community'); return; }
       if (t === 'levels') { goIdle(); game.started = false; showMenuState(); showScreen('levels'); return; }
       if (t.startsWith('job:')) { startJob(+t.slice(4)); return; }
@@ -10659,6 +10904,7 @@ body.touch #menu button, body.touch #drawer button { min-height: 40px; }
     else if (ed.testing) edBack();
     else if (what === 'menu') { goIdle(); game.started = false; showMenuState(); }
     else if ($('c-back').dataset.to === 'story') { goIdle(); game.started = false; showMenuState(); openDrawer('story'); }
+    else if ($('c-back').dataset.to === 'endless') { goIdle(); game.started = false; showMenuState(); openDrawer('endless'); }
     else { showMenuState(); showScreen('levels'); } // levels: back to level select
   }
   for (const b of completeEl.querySelectorAll('[data-act]')) b.addEventListener('click', () => completeAction(b.dataset.act));
@@ -10745,6 +10991,7 @@ body.touch #menu button, body.touch #drawer button { min-height: 40px; }
     $('c-back').innerHTML = 'Levels <kbd>Esc</kbd>';
     $('c-back').dataset.to = 'levels';
     $('c-menu').hidden = false;
+    $('c-retry').hidden = false;
     clearTimeout(completeTimer);
     completeTimer = setTimeout(() => {
       document.body.classList.add('complete');
@@ -10939,7 +11186,7 @@ body.touch #menu button, body.touch #drawer button { min-height: 40px; }
   // bests come from the saved best times, so they go back further.
   const STATS_KEY = 'strafe.stats.v1';
   const career = Object.assign({ since: Date.now(), time: 0, jumps: 0, top: 0, dist: 0, runs: 0, finishes: 0, pbs: 0, restarts: 0, falls: 0,
-    wallruns: 0, walljumps: 0, slides: 0, vaults: 0, climbs: 0, zips: 0, rampslides: 0, edgebugs: 0, sets: 0, flawless: 0, community: 0, published: 0, races: 0, levels: {} }, load(STATS_KEY) || {});
+    wallruns: 0, walljumps: 0, slides: 0, vaults: 0, climbs: 0, zips: 0, rampslides: 0, edgebugs: 0, sets: 0, flawless: 0, nocp: 0, community: 0, published: 0, races: 0, levels: {} }, load(STATS_KEY) || {});
   const CAREER_EVENTS = { jump: 'jumps', wallrun: 'wallruns', walljump: 'walljumps', climbjump: 'walljumps', slide: 'slides', vault: 'vaults', mantle: 'vaults', climb: 'climbs', zip: 'zips', rampslide: 'rampslides', edgebug: 'edgebugs' };
   let careerDirty = 0;
   const careerLevel = (c) => career.levels[c] || (career.levels[c] = { runs: 0, finishes: 0, time: 0 });
@@ -12057,6 +12304,7 @@ body.touch #menu button, body.touch #drawer button { min-height: 40px; }
     let stars = 0, max = 0;
     STORY.forEach((job, i) => { if (job.stars) { stars += (storyProgress[i] || { stars: 0 }).stars; max += 3; } });
     $('m-story-sub').textContent = stars ? stars + ' / ' + max + ' ★' : 'New';
+    if (enReady) enSub();
     const done = ALL_LEVELS.filter(n => best[n]).length;
     $('m-play-sub').textContent = done + ' / ' + ALL_LEVELS.length + ' levels';
     $('m-tut-sub').textContent = best.tutorial ? 'Done' : 'Start here';
@@ -12082,7 +12330,7 @@ body.touch #menu button, body.touch #drawer button { min-height: 40px; }
       const c = game.course && map.courses[game.course];
       $('p-course').textContent = c ? c.name : '';
       $('p-time').textContent = c ? fmt(game.running ? game.tick - game.startTick : game.finished || 0) : '';
-      $('p-stage').textContent = c ? 'Stage ' + (game.cp + 1) + ' / ' + c.stages : '';
+      $('p-stage').textContent = !c ? '' : c.endless ? 'Section ' + (game.cp + 1) : 'Stage ' + (game.cp + 1) + ' / ' + c.stages + (noCp() && c.stages > 1 ? ' · no checkpoints' : '');
       if (game.course && !userCourse(game.course)) selected = game.course;
     }
     buildLevelList();
@@ -12179,6 +12427,9 @@ body.touch #menu button, body.touch #drawer button { min-height: 40px; }
     { id: 'marathon', n: 'Marathon', d: 'Cover 42 km', t: () => km() >= 42 },
     { id: 'hours', n: 'Regular', d: 'Play for 5 hours', t: () => career.time >= 5 * 3600 },
     { id: 'falls', n: 'Gravity check', d: 'Fall 500 times', t: () => career.falls >= 500 },
+    { id: 'nocp', n: 'No safety net', d: 'Finish a level of two or more stages with checkpoints turned off', t: () => career.nocp >= 1 },
+    { id: 'endless10', n: 'Long way round', d: 'Clear 10 sections in one Endless run', t: () => !!enSave.best && enSave.best.sections >= 10 },
+    { id: 'endless25', n: 'No finish line', d: 'Clear 25 sections in one Endless run', t: () => !!enSave.best && enSave.best.sections >= 25 },
     { id: 'flawless', n: 'Flawless', d: 'Finish a level with two or more checkpoints without a respawn', t: () => career.flawless >= 1 },
     { id: 'pbs', n: 'Self improvement', d: 'Set 50 personal bests', t: () => career.pbs >= 50 },
     { id: 'stars10', n: 'Rising star', d: 'Earn 10 story stars', t: () => storyStars() >= 10 },
@@ -12253,8 +12504,9 @@ body.touch #menu button, body.touch #drawer button { min-height: 40px; }
   function openDrawer(which) {
     A.play('click');
     drawer.hidden = false;
-    $('d-title').textContent = { settings: 'Settings', story: 'Story', cosmetics: 'Cosmetics', controls: 'Controls', online: 'Online', replays: 'Replays', stats: 'Stats', community: 'Community', daily: 'Challenges' }[which];
+    $('d-title').textContent = { settings: 'Settings', story: 'Story', cosmetics: 'Cosmetics', controls: 'Controls', online: 'Online', replays: 'Replays', stats: 'Stats', community: 'Community', daily: 'Challenges', endless: 'Endless' }[which];
     if (which === 'online') onlineOpen();
+    if (which === 'endless') enOpen();
     if (which === 'daily') dailyOpen();
     if (which === 'community') cmOpen();
     if (which === 'stats') statsRender();
@@ -12449,6 +12701,7 @@ body.touch #menu button, body.touch #drawer button { min-height: 40px; }
   bindCheck('s-keys', 'keys', () => hud.keys.hidden = !settings.keys);
   bindCheck('s-strafe', 'strafeMeter');
   bindCheck('s-cpmark', 'cpMarker');
+  bindCheck('s-nocp', 'noCp', () => { toast(settings.noCp ? 'Checkpoints off: a fall goes back to the start' : 'Checkpoints on'); });
   const applyCrosshair = () => { $('crosshair').dataset.style = settings.crosshair; };
   applyCrosshair();
   $('s-xhair').value = settings.crosshair;
@@ -12859,6 +13112,9 @@ body.touch #menu button, body.touch #drawer button { min-height: 40px; }
   // put a level into the world: brushes, triggers, a course and its meshes.
   // One player-made level is loaded at a time: the editor's or a community one.
   function userBuild(L, id) {
+    // the fall map stays up over the same level (or the editor's copy of it)
+    if (fallView.level && id !== 'c:' + fallView.level && !(id === 'custom' && ed.level && ed.level.pub === fallView.level)) fallMapHide();
+    enClear();
     edClear();
     for (const k in map.courses) if (userCourse(k)) delete map.courses[k];
     let lowY = Infinity, box = [Infinity, Infinity, -Infinity, -Infinity], cps = 0, start = null;
@@ -13067,6 +13323,12 @@ body.editing.playing #edhelp { display: block; }
       btn('Test play', edTest);
       btn('Save', () => { const all = load(ED_SAVES_KEY) || {}; all[ed.level.name || 'My level'] = ed.level; save(ED_SAVES_KEY, all); edMsg('Saved as "' + (ed.level.name || 'My level') + '".'); edSaves(); });
       btn('Publish', edPublish);
+      // the published level's fall map, over the level you're building
+      if (ed.level.pub) btn(fallView.mesh && fallView.level === ed.level.pub ? 'Hide fall map' : 'Fall map', async () => {
+        if (fallView.mesh && fallView.level === ed.level.pub) { fallMapHide(); edShowPanel(); return; }
+        try { const d = await fallMapLoad(ed.level.pub); edMsg('Fall map of level ' + ed.level.pub + ': ' + fallSummary(d)); edShowPanel(); }
+        catch (e) { edMsg(e.status === 404 ? 'Level ' + ed.level.pub + ' is not in Community any more.' : 'Could not load the fall map.'); }
+      });
       btn('New level', () => { if (confirm('Start a new level? Unsaved changes are lost.')) { edChange(() => { ed.level = edBlank(); }); edShowPanel(); } });
     }
     btn('Exit editor', exitEditor, 'ebtn red');
@@ -13123,6 +13385,7 @@ body.editing.playing #edhelp { display: block; }
       const r = await api('/levels/publish', { name: ed.level.name || '', code: await edCode(), ticks, ghost: run });
       cm.stale = true;
       careerCount('published'); achCheck();
+      ed.level.pub = r.id; save(ED_LEVEL_KEY, ed.level);
       edMsg('Published "' + r.name + '" (level ' + r.id + '). It is in Community now, with your ' + fmt(ticks) + ' as the time to beat.');
       toast('Published', 1800);
     } catch (e) { edMsg(e.message); }
@@ -13391,6 +13654,7 @@ body.editing.playing #edhelp { display: block; }
     lk.disabled = mine;
     lk.title = mine ? 'Your level' : L.liked ? 'Take back your like' : 'Give this level a thumbs up';
     $('cm-del').hidden = !mine;
+    $('cm-falls').hidden = !mine;
     const fb = $('cm-follow');
     fb.hidden = mine;
     fb.textContent = following(L.authorId) ? 'Following ' + L.author + ' ✓' : 'Follow ' + L.author;
@@ -13483,7 +13747,7 @@ body.editing.playing #edhelp { display: block; }
   $('cm-edit').addEventListener('click', async () => {
     const L = cm.level;
     if (!confirm('Open "' + L.name + '" in the editor? It replaces the level open there, so save yours first in the editor menu if you want to keep it.')) return;
-    try { const lv = await edDecode(L.code); ed.undo.push(JSON.stringify(ed.level)); ed.level = Object.assign(lv, { name: L.name }); }
+    try { const lv = await edDecode(L.code); ed.undo.push(JSON.stringify(ed.level)); ed.level = Object.assign(lv, { name: L.name, pub: L.id }); }
     catch (e) { $('cm-dmsg').textContent = 'This level did not load.'; return; }
     closeDrawer();
     enterEditor();
@@ -13639,6 +13903,236 @@ body.editing.playing #edhelp { display: block; }
   for (const b of $('dy-tabs').children) b.addEventListener('click', () => { A.play('click'); dailyOpen(b.dataset.kind === 'week' ? weekly : daily); });
   setInterval(() => { if (chal.data && !$('dy-body').closest('[data-pane]').hidden && !drawer.hidden) $('dy-left').textContent = dailyLeft(chal); }, 15000);
 
+  // ------------------------------------------------------------ endless
+  // A course with no finish (StrafeMap endless()), built a few sections
+  // ahead of you and taken down behind. Every gate you reach is a section
+  // cleared; fall once and the run is over. Today's course comes from the
+  // date, so everyone runs the same one and the server keeps a board of how
+  // far people got. A random course is the same thing from a random seed,
+  // just for practice (it has no board).
+  const ENDLESS_KEY = 'strafe.endless.v1';
+  const enSave = Object.assign({ best: null, days: {} }, load(ENDLESS_KEY) || {});
+  const EN_AHEAD = 2; // sections built past the one you're on
+  const en = { gen: null, seed: 0, day: null, built: [], objs: new Map(), reached: 0, data: null, skew: 0, token: 0, splits: [] };
+  const enHash = (str) => { let h = 2166136261; for (const c of str) h = Math.imul(h ^ c.charCodeAt(0), 16777619) >>> 0; return h; };
+  const enToday = () => en.data && Date.now() + en.skew < en.data.ends ? en.data.day : utcDay(Date.now() + en.skew);
+  const enFmt = (r) => r.sections + (r.sections === 1 ? ' section' : ' sections') + ' · ' + fmt(r.ticks);
+  const enBetter = (a, b) => !b || a.sections > b.sections || (a.sections === b.sections && a.ticks < b.ticks);
+  function enDrop(sec) {
+    for (const key of ['brushes', 'triggers', 'ziplines']) {
+      const arr = world[key], gone = new Set(sec[key]);
+      for (let i = arr.length - 1; i >= 0; i--) if (gone.has(arr[i])) arr.splice(i, 1);
+    }
+    for (const o of en.objs.get(sec.k) || []) { scene.remove(o); o.geometry.dispose(); }
+    en.objs.delete(sec.k);
+  }
+  function enClear() {
+    for (const sec of en.built) enDrop(sec);
+    if (en.built.length) fallUser = null;
+    en.built = []; en.gen = null;
+    delete map.courses.endless;
+  }
+  // the next section: into the world, and its meshes into the scene
+  function enBuild() {
+    const sec = en.gen.section(), mine = new Set(sec.brushes), objs = [];
+    en.built.push(sec);
+    const solid = buildGeometry(b => mine.has(b) && !b.props.nonsolid, bucketFor);
+    for (const [name, part] of Object.entries(solid)) {
+      const mesh = new THREE.Mesh(part.g, MATS[name]);
+      mesh.castShadow = mesh.receiveShadow = true;
+      const lines = new THREE.LineSegments(part.lg, new THREE.LineBasicMaterial({ color: 0x1b2530, transparent: true, opacity: 0.18 }));
+      objs.push(mesh, lines);
+    }
+    if (sec.brushes.some(b => b.props.glow)) objs.push(new THREE.Mesh(buildGeometry(b => mine.has(b) && b.props.glow).g, enGlowMat));
+    if (sec.ziplines.length) objs.push(new THREE.Mesh(facesToGeo([].concat(...sec.ziplines.map(z => cableFaces(z.a, z.b, 2)))), cableMat));
+    for (const o of objs) scene.add(o);
+    en.objs.set(sec.k, objs);
+  }
+  const enGlowMat = new THREE.MeshBasicMaterial({ vertexColors: true, transparent: true, opacity: 0.9 });
+  const enFall = () => { fallUser = window.StrafeMap.fallGrid([].concat(...en.built.map(x => x.brushes))); };
+  // start a run: today's course (day) or a random one (day null)
+  function enStart(seed, day) {
+    if (ed.on || ed.testing) exitEditor();
+    if (game.practice) setPractice(false);
+    falls.flush();
+    edClear();
+    for (const k in map.courses) if (userCourse(k)) delete map.courses[k];
+    cm.playing = null;
+    if (game.course === 'endless') game.course = null;
+    enClear();
+    Object.assign(en, { gen: map.endless(seed), seed, day, reached: 0, splits: [] });
+    for (let i = 0; i <= EN_AHEAD; i++) enBuild();
+    enFall();
+    map.courses.endless = { name: day ? 'Endless · today' : 'Endless · random', spawn: en.gen.builder.spawn, stages: 1, color: 0xffc21a, endless: true };
+    ghost.useRemote(null, null);
+    goCourse('endless');
+    startPlay();
+    toast(day ? "Today's course. One life: fall and the run is over." : 'A random course. One life: fall and the run is over.', 2800);
+  }
+  const enDaily = () => { const day = enToday(); enStart(enHash('endless:' + day), day); };
+  const enRandom = () => enStart((Math.random() * 4294967296) >>> 0, null);
+  // a gate: one more section cleared, build ahead and take down behind
+  function enGate(t) {
+    game.cp = t.idx; game.cpSpawn = t.spawn;
+    en.reached = t.idx;
+    A.play('checkpoint');
+    if (game.running) {
+      const ticks = game.tick - game.startTick;
+      en.splits[t.idx] = ticks;
+      const mine = en.day && enSave.days[en.day], pb = mine && mine.splits && mine.splits[t.idx];
+      showSplit('Section ' + t.idx, ticks, pb);
+    }
+    updateCourseHud();
+    // a frame later, so the gate itself doesn't hitch
+    setTimeout(() => {
+      if (game.course !== 'endless' || !en.gen) return;
+      while (en.gen.k < t.idx + EN_AHEAD + 1) enBuild();
+      while (en.built.length && en.built[0].k < t.idx - 1) enDrop(en.built.shift());
+      enFall();
+    }, 0);
+  }
+  // a fall: the run is over
+  function enOver() {
+    const ticks = game.tick - game.startTick, run = { sections: en.reached, ticks };
+    game.running = false; game.finished = ticks;
+    ghost.stop();
+    A.play('respawn');
+    let isBest = false, dayBest = false;
+    if (run.sections) {
+      if (enBetter(run, enSave.best)) { isBest = true; enSave.best = run; }
+      if (en.day && enBetter(run, enSave.days[en.day])) { dayBest = true; enSave.days[en.day] = Object.assign({ splits: en.splits.slice() }, run); }
+      // keep a week of days
+      for (const d of Object.keys(enSave.days).sort().slice(0, -7)) delete enSave.days[d];
+      save(ENDLESS_KEY, enSave);
+    }
+    achCheck();
+    enShowOver(run, isBest, dayBest);
+    if (en.day && run.sections && dayBest) enPost(run, en.day);
+  }
+  async function enPost(run, day) {
+    const el = $('c-online');
+    if (net.ok === false) return;
+    if (!canPost()) { el.hidden = false; el.textContent = 'Air acceleration is not ' + LB_AA + ', so this run is not posted.'; return; }
+    if (!net.token) { el.hidden = false; el.textContent = 'Pick a name under Online to post your Endless runs.'; return; }
+    try {
+      const r = await api('/endless', { day, sections: run.sections, ticks: run.ticks });
+      if (en.data && en.data.day === day) Object.assign(en.data, { rows: r.rows, total: r.total, mine: r.mine });
+      if (game.course === 'endless' && r.mine) { el.hidden = false; el.textContent = "Today's board: #" + r.mine.rank + ' of ' + r.total; }
+    } catch (e) { el.hidden = false; el.textContent = e.message; }
+  }
+  // the end of a run, on the level complete card
+  function enShowOver(run, isBest, dayBest) {
+    const r = game.run || { top: 0, dist: 0, jumps: 0 }, secs = Math.max(run.ticks * TICK, 0.01);
+    $('c-label').textContent = en.day ? "Endless · today's course" : 'Endless · random course';
+    $('c-name').textContent = run.sections ? run.sections + (run.sections === 1 ? ' section' : ' sections') : 'Fell in the first section';
+    $('c-time').textContent = fmt(run.ticks);
+    const badge = $('c-best'), prev = en.day ? enSave.days[en.day] : enSave.best;
+    badge.classList.toggle('new', isBest || dayBest);
+    badge.textContent = isBest ? 'Best ever' : dayBest ? 'Best today' : prev ? (en.day ? 'Today ' : 'Best ') + enFmt(prev) : '';
+    $('c-online').hidden = true;
+    for (const k of ['c-medalbox', 'c-story', 'c-post', 'c-watch', 'c-save', 'c-like', 'c-share']) $(k).hidden = true;
+    $('c-top').textContent = Math.round(r.top);
+    $('c-avg').textContent = Math.round(r.dist / secs);
+    $('c-jumps').textContent = r.jumps;
+    $('c-dist').textContent = (r.dist * 0.0254).toFixed(0);
+    $('c-next').innerHTML = (en.day ? 'Run it again' : 'Same course again') + ' <kbd>R</kbd>';
+    $('c-retry').hidden = true; // the same as the button above
+    $('c-next').dataset.target = 'endless';
+    $('c-back').innerHTML = 'Endless <kbd>Esc</kbd>';
+    $('c-back').dataset.to = 'endless';
+    $('c-menu').hidden = false;
+    clearTimeout(completeTimer);
+    completeTimer = setTimeout(() => {
+      document.body.classList.add('complete');
+      completeEl.hidden = false;
+      if (document.pointerLockElement) document.exitPointerLock();
+      else if (locked) softLock(false);
+      $('c-next').focus({ preventScroll: true });
+    }, 700);
+  }
+  // the drawer: today's course, its board, your bests
+  async function enLoad() {
+    const d = await api('/endless' + (net.id ? '?me=' + encodeURIComponent(net.id) : ''));
+    Object.assign(en, { data: d, skew: d.now - Date.now() });
+    return d;
+  }
+  async function enOpen() {
+    const token = ++en.token;
+    enRender();
+    if (net.ok === false) return;
+    $('en-boardmsg').textContent = 'Loading…';
+    try { await enLoad(); } catch (e) { if (token === en.token) $('en-boardmsg').textContent = 'Could not load the board.'; return; }
+    if (token === en.token) enRender();
+  }
+  function enRender() {
+    const day = enToday(), d = en.data && en.data.day === day ? en.data : null, mine = enSave.days[day];
+    $('en-date').textContent = new Date(Date.parse(day)).toLocaleDateString(undefined, { timeZone: 'UTC', weekday: 'long', day: 'numeric', month: 'long' });
+    $('en-today').textContent = d && d.mine ? enFmt(d.mine) + ' · #' + d.mine.rank : mine ? enFmt(mine) : 'No run yet';
+    $('en-best').textContent = enSave.best ? enFmt(enSave.best) : 'No run yet';
+    const ms = Math.max(0, Date.parse(day) + 86400000 - (Date.now() + en.skew)), h = Math.floor(ms / 3600000), m = Math.floor(ms / 60000) % 60;
+    $('en-left').textContent = h ? h + 'h ' + m + 'm' : m ? m + 'm' : '<1m';
+    const ol = $('en-board');
+    ol.textContent = '';
+    $('en-boardgrp').hidden = net.ok === false;
+    if (!d) return;
+    for (const r of d.rows) {
+      const li = boardRow(r, net.id);
+      li.querySelector('.t').textContent = enFmt(r);
+      ol.appendChild(li);
+    }
+    $('en-boardmsg').textContent = !d.total ? 'Nobody has run today\'s course yet. Set the first mark.' :
+      (d.mine && d.mine.rank > d.rows.length ? 'You are #' + d.mine.rank + ' of ' + d.total + '. ' : d.total + (d.total === 1 ? ' runner today. ' : ' runners today. ')) +
+      (!canPost() ? 'Your air acceleration is not ' + LB_AA + ', so your runs are not posted.' : !net.token ? 'Pick a name under Online to post yours.' : '');
+  }
+  $('en-play').addEventListener('click', () => { A.init(); A.play('click'); enDaily(); });
+  $('en-random').addEventListener('click', () => { A.init(); A.play('click'); enRandom(); });
+  function enSub() { const m = enSave.days[enToday()]; $('m-endless-sub').textContent = m ? 'Today: ' + enFmt(m) : 'One life, no finish line'; }
+  enSub();
+  enReady = true;
+
+  // ------------------------------------------------------------ fall map view
+  // For a level's maker: a ball where runners fell (yellow, through to red
+  // where most fell) or gave up (purple), bigger where more did. Drawn
+  // through walls. Shown on the level from Community, or in the editor.
+  function fallMapHide() {
+    if (!fallView.mesh) return;
+    scene.remove(fallView.mesh); fallView.mesh.geometry.dispose(); fallView.mesh.material.dispose();
+    fallView.mesh = null; fallView.level = null;
+  }
+  async function fallMapLoad(id) {
+    const d = await api('/falls?id=' + encodeURIComponent(id));
+    fallMapHide();
+    fallView.level = id;
+    const n = d.falls.length;
+    if (!n) return d;
+    const mesh = new THREE.InstancedMesh(new THREE.SphereGeometry(1, 14, 10), new THREE.MeshBasicMaterial({ transparent: true, opacity: 0.55, depthTest: false, depthWrite: false }), n);
+    const most = Math.max(...d.falls.map(f => f[4])), m4 = new THREE.Matrix4(), col = new THREE.Color();
+    d.falls.forEach((f, i) => {
+      const r = 36 + 100 * Math.sqrt(f[4] / most);
+      m4.makeScale(r, r, r).setPosition(f[0] * d.cell, f[1] * d.cell + 36, f[2] * d.cell);
+      mesh.setMatrixAt(i, m4);
+      if (f[3]) col.setHex(0xa45cff); else col.setHSL(0.15 * (1 - f[4] / most), 1, 0.52);
+      mesh.setColorAt(i, col);
+    });
+    mesh.renderOrder = 20; mesh.frustumCulled = false;
+    scene.add(mesh);
+    fallView.mesh = mesh;
+    return d;
+  }
+  const fallSummary = (d) => {
+    const f = d.falls.filter(x => !x[3]).reduce((t, x) => t + x[4], 0), q = d.total - f;
+    return !d.total ? 'No falls recorded on this level yet.' : f + (f === 1 ? ' fall' : ' falls') + ' (yellow to red) and ' + q + (q === 1 ? ' give-up' : ' give-ups') + ' (purple) recorded.';
+  };
+  $('cm-falls').addEventListener('click', async () => {
+    const L = cm.level;
+    if (!L) return;
+    A.init(); A.play('click');
+    let d;
+    try { d = await fallMapLoad(L.id); } catch (e) { $('cm-dmsg').textContent = 'Could not load the fall map.'; return; }
+    if (!(await cmPlay(L))) return;
+    toast('Fall map: ' + fallSummary(d), 4200);
+  });
+
   // ------------------------------------------------------------ share links
   // Links to the game page on the Strafe server that open a level, a race
   // room, a community level or the challenges. A level link can carry vs=<a
@@ -13726,7 +14220,8 @@ body.editing.playing #edhelp { display: block; }
   if (location.hash === '#demo') game.demo = true; // headless screenshot mode
   window.__strafe = { courses: map.courses, mats: MATS, lights: { hemi, sun }, setNight, setTheme, player, game, keys, eff, faceInsets, practice: { set: setPractice, save: practiceSave, load: practiceLoad }, goCourse, place, attract, previewCourse, body, ghost, cosmetics, preview, step, modelChunks, renderer, setView: (y, p) => { yaw = y; pitch = p; }, editor: { ed, build: edBuild, enter: enterEditor, test: edTest, back: edBack, code: edCode, decode: edDecode, publish: edPublish }, community: { cm, open: cmOpen, show: cmShow, play: cmPlay }, daily: { daily, weekly, open: dailyOpen, play: dailyPlay, load: dailyLoad, finish: dailyFinish }, practiceJump, sets: { start: startSet, best: setBest, list: SETS }, world,
     online: { net, race, submit: netSubmit, raceFinish, showComplete, openDrawer },
-    replay: { state: replay, open: replayOpen, close: replayClose, watchBest }, career, ach: { check: achCheck, done: achDone, list: ACH, render: achRender }, binds: { binds, set: (id, code) => { rebinding = id; setBind(code); }, keyName }, settings, applyColors, saved: { save: saveLastRun, render: replaysRender } };
+    replay: { state: replay, open: replayOpen, close: replayClose, watchBest }, career, ach: { check: achCheck, done: achDone, list: ACH, render: achRender }, binds: { binds, set: (id, code) => { rebinding = id; setBind(code); }, keyName }, settings, applyColors, saved: { save: saveLastRun, render: replaysRender },
+    endless: { en, start: enStart, daily: enDaily, random: enRandom, open: enOpen, save: enSave }, falls, fallMap: { load: fallMapLoad, hide: fallMapHide, view: fallView }, respawn };
   requestAnimationFrame((t) => { last = t; frame(t); });
 })();
 

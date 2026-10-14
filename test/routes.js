@@ -5,7 +5,7 @@
 // wallrun gaps, and the Night City's curved ramps. Usage: node test/routes.js [level] [checkpoint]   V=50 traces
 require('../src/physics.js'); require('../src/map.js');
 const noisy = require('./noise.js')();
-const P = globalThis.StrafePhysics; const { world, courses } = globalThis.StrafeMap.buildMap(P);
+const P = globalThis.StrafePhysics; const M = globalThis.StrafeMap.buildMap(P), { world, courses } = M;
 const DIRS = [[0, -1], [1, 0], [0, 1], [-1, 0]];
 const wrap = a => Math.atan2(Math.sin(a), Math.cos(a));
 const LEVELS = ['surf', 'bhop', 'canyon', 'stairway', 'crossover'].concat(globalThis.StrafeMap.buildMap(P).night, globalThis.StrafeMap.buildMap(P).harbor, globalThis.StrafeMap.buildMap(P).skyline);
@@ -101,7 +101,8 @@ function brain(F, st) {
       if (!p.onGround) return { forward: 1, yaw: Math.atan2(-(ln.x - q.pos[0]), -(ln.z1 - 400 - z)), jump: hop };
       return { forward: 1, yaw: Math.atan2(-(ln.x - q.pos[0]), 400), jump: hop };
     }
-    const tz = t.t === 'block' ? t.cz : Math.max(t.z1 + 100, Math.min(t.z0 - 120, z - 300));
+    // off an updraft: aim well onto the roof, not its front edge
+    const tz = t.t === 'block' ? t.cz : Math.max(t.z1 + 100, Math.min(t.z0 - (here && here.launch || (!p.onGround && plan[k - 1] && plan[k - 1].launch) ? 700 : 120), z - 300));
     const dx = t.x - q.pos[0], dz = tz - z;
     const yaw = Math.atan2(-dx, -dz);
     if (p.onGround && here && here.t === 'pad' && q.hspeed > 420) return { yaw: Math.atan2(-q.vel[0], -q.vel[2]) }; // brake
@@ -142,7 +143,7 @@ function run(name, cpArg) {
   const curves = [].concat(...c.legs.map(lg => lg.items.filter(it => it.t === 'curve')));
   const brains = frames.map((F, j) => brain(F, states[j]));
   const seen = []; let res = 'timeout';
-  for (let i = 0; i < 30000; i++) {
+  for (let i = 0; i < (+process.env.MAXT || 30000); i++) {
     // step onto the next leg once standing on its corner pad
     if (k < frames.length - 1 && frames[k + 1].curveIn) {
       // past a bend's exit
@@ -192,6 +193,8 @@ function run(name, cpArg) {
   return res.startsWith('FINISHED');
 }
 
+module.exports = { run, M, P };
+if (require.main === module) {
 // no checkpoint given: run from the start and then from every checkpoint
 const only = process.argv[2], cpArg = process.argv[3];
 let ok = true;
@@ -201,3 +204,4 @@ for (const name of LEVELS) {
   for (const cp of cps) ok = run(name, cp) && ok;
 }
 process.exit(ok ? 0 : 1);
+}

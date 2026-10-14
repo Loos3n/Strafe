@@ -718,7 +718,10 @@
     // sloped roof) and wall (a gap crossed by wallrunning a billboard).
     // Every leg keeps its plan in local coordinates (x right, z forward is
     // negative) so a bot can ride any level.
-    function routeKit(name, ox, oz, top, def) {
+    // updraft pads (Endless): straight up at UP and on at FLAT, which lands you on a roof
+    // RISE higher that starts GAP past the pad (you pass that height on the way up well short of it)
+    const UPDRAFT = { up: 2000, flat: 700, rise: 2000, gap: 1500 };
+    function routeBuilder(name, ox, oz, top, def) {
       const DIRS = [[0, -1], [1, 0], [0, 1], [-1, 0]];
       const legs = [];
       let L = null;
@@ -728,7 +731,7 @@
           at: (x, z) => [fx + r[0] * x + f[0] * -z, fz + r[1] * x + f[1] * -z] };
         legs.push(L);
       }
-      frame(ox, oz, 0);
+      frame(ox, oz, def.h || 0);
       const W3 = (x, y, z) => { const p = L.at(x, z); return [p[0], y, p[1]]; };
       const lbox = (x0, x1, y0, y1, z0, z1, props) => {
         const a = L.at(x0, z0), b = L.at(x1, z1);
@@ -753,7 +756,7 @@
       let ni = 0;
       const neon = () => ({ color: NEON[ni++ % NEON.length], nonsolid: true, glow: true });
       const solidProps = (props) => def.night ? Object.assign(props, { neon: true }) : props;
-      def.segs.forEach((sg, si) => {
+      function add(sg, si, next) {
         const col = pal[si % pal.length];
         if (sg.t === 'turn') {
           // pivot on the pad we stand on: its centre becomes the new origin
@@ -763,6 +766,25 @@
           if (p.trig) p.trig.spawn = { pos: [c[0], p.y, c[1]], yaw: L.yaw };
           L.items.push({ t: 'pad', x: 0, y: p.y, z0: p.w / 2, z1: -p.w / 2, w: p.len, corner: true });
           x = 0; z = -p.w / 2; prev = sg;
+          return;
+        }
+        if (sg.t === 'updraft') {
+          // a launch pad on the end of the pad you stand on: it throws you up
+          // (UPDRAFT, the same arc every time) onto a long roof RISE higher
+          const f = DIRS[L.h], w = 640, len = 400;
+          lbox(x - w / 2, x + w / 2, y - 60, y, z - len, z, solidProps({ color: 0xffc21a, kind: 'pad', updraft: { dir: [f[0], f[1]], up: UPDRAFT.up, flat: UPDRAFT.flat } }));
+          for (const u of [-1, 1]) lbox(x + u * (w / 2 + 2), x + u * (w / 2 + 14), y - 30, y + 2, z - len, z, { color: 0xfff3b0, nonsolid: true, glow: true });
+          L.items.push({ t: 'pad', x, y, z0: z, z1: z - len, w, len, launch: true });
+          z -= len + UPDRAFT.gap; y += UPDRAFT.rise;
+          const lw = 1400, ll = 2600;
+          lbox(x - lw / 2, x + lw / 2, y - 60, y, z - ll, z, solidProps({ color: def.padColor || COLORS.bhopPad, kind: 'pad' }));
+          const here = { pos: W3(x, y, z - 300), yaw: L.yaw };
+          let trig = null;
+          if (sg.cp) { cp++; trig = ltrig(x - lw / 2, x + lw / 2, y, y + 160, z - ll, z, { type: 'checkpoint', idx: cp, spawn: here }); }
+          const it = { t: 'pad', x, y, z0: z, z1: z - ll, w: lw, len: ll };
+          Object.defineProperty(it, 'trig', { value: trig, enumerable: false });
+          L.items.push(it); prevPad = it;
+          z -= ll; prev = sg;
           return;
         }
         if (sg.t === 'pad' || sg.t === 'lane') {
@@ -858,7 +880,7 @@
             // each piece runs 40 units into its neighbours, so the joins are
             // buried under the face instead of standing up as edges to catch on
             const ex = (q, k) => [q[0] + fx * 40 * k, q[1] - sg.drop / N * 40 / len * k, q[2] + fz * 40 * k];
-            const k0 = j || sg.join ? -1 : 0, k1 = j < N - 1 || (def.segs[si + 1] || {}).join ? 1 : 0;
+            const k0 = j || sg.join ? -1 : 0, k1 = j < N - 1 || (next || {}).join ? 1 : 0;
             hullPts([ex(s0.l, k0), ex(s0.p, k0), ex(s0.r, k0), ex(s1.l, k1), ex(s1.p, k1), ex(s1.r, k1)], solidProps({ color: col, kind: 'ramp', pylons: j % 6 === 3 ? [[s0.p[0], s0.p[2]]] : [] }));
             if (g) for (const k of ['gl', 'gr', 'gp']) hullPts(s0[k].concat(s1[k]), g);
             chords.push({ x: s0.p[0], z: s0.p[2], apex: s0.p[1], fx, fz, rx: -fz, rz: fx, hd: Math.atan2(-fx, -fz), len, W, H });
@@ -902,7 +924,8 @@
         }
         if (sg.t === 'pad' || sg.t === 'lane') lo = Math.min(lo, y);
         prev = sg;
-      });
+      }
+      function finish() {
       const kill = lo - 600;
       // the whole route's footprint, for the kill volume and the skyline gaps
       const pts = [];
@@ -957,6 +980,14 @@
       courses[name] = Object.assign({ spawn, stages: cp + 1, legs: legs.map(lg => ({ ox: lg.ox, oz: lg.oz, h: lg.h, items: lg.items, curveIn: !!lg.curveIn })),
         preview: { pos: (() => { const p = legs[0].at(0, 400); return [p[0], top, p[1]]; })(), yaw: legs[0].yaw } },
         { name: def.name, type: def.type, difficulty: def.difficulty, color: def.color, desc: def.desc, route: true, set: def.set });
+      }
+      return { add, finish, legs, get lo() { return lo; }, get y() { return y; }, get pos() { return L.at(x, z); }, get h() { return L.h; }, get cp() { return cp; }, get prevPad() { return prevPad; }, get leg() { return L; },
+        get spawn() { return spawn; } };
+    }
+    function routeKit(name, ox, oz, top, def) {
+      const rk = routeBuilder(name, ox, oz, top, def);
+      def.segs.forEach((sg, si) => rk.add(sg, si, def.segs[si + 1]));
+      rk.finish();
     }
 
     // ------------------------------------------------------------ surf
@@ -1477,6 +1508,123 @@
         { t: 'pad', rise: 120, len: 900, w: 900, lip: true, end: true },
       ] });
 
+    // ------------------------------------------------------------ endless
+    // A course with no end, built a section at a time ahead of the runner
+    // (and taken down behind) from a seed, so everyone who gets the day's
+    // seed runs the same course. A section is a few pieces from the route
+    // levels (block lines, surf runs, cables, wallruns, bends), each ending on
+    // a pad, and the last pad is its gate (a checkpoint). Sections get harder
+    // as you go. When the course has dropped too far, updraft pads throw you
+    // back up, and turns steer it round a centre so it never wanders off.
+    const ENDLESS = { x: 0, z: 300000, top: 20000, low: 13000, roam: 40000 };
+    const EPAL = [0x2fb5c7, 0xf08a24, 0x8f55e0, 0xe0457b, 0x22b38a, 0x4f74ee];
+    function endless(seed) {
+      let s = (seed >>> 0) || 1;
+      const rnd = () => { s = (s + 0x6D2B79F5) >>> 0; let t = s; t = Math.imul(t ^ (t >>> 15), t | 1); t ^= t + Math.imul(t ^ (t >>> 7), t | 61); return ((t ^ (t >>> 14)) >>> 0) / 4294967296; };
+      const pick = (a) => a[(rnd() * a.length) | 0];
+      const range = (a, b) => a + rnd() * (b - a);
+      const sign = () => rnd() < 0.5 ? -1 : 1;
+      const rk = routeBuilder('endless', ENDLESS.x, ENDLESS.z, ENDLESS.top, { palette: EPAL, padColor: 0xc9d2da });
+      let si = 0, k = 0;
+      let segs = [];
+      const add = (sg) => { segs.push(sg); rk.add(sg, si++); };
+      // tiers 0 (gentle) to 5 (Harbor hard), by section
+      const tierOf = (n) => Math.min(5, Math.floor(n / 3));
+      const lerp = (t, a, b) => Math.round(a + (b - a) * t / 5);
+      // which way a turn should go to head back toward the centre (0: no need)
+      const DIRS = [[0, -1], [1, 0], [0, 1], [-1, 0]];
+      function steer(force) {
+        const p = rk.pos, dx = ENDLESS.x - p[0], dz = ENDLESS.z - p[1], d = Math.hypot(dx, dz);
+        const f = DIRS[rk.h], r = DIRS[(rk.h + 1) % 4];
+        if (!force && (d < ENDLESS.roam * 0.5 || (f[0] * dx + f[1] * dz) / d > 0.3)) return 0;
+        return r[0] * dx + r[1] * dz >= 0 ? 1 : -1;
+      }
+      const PIECES = {
+        bhop(t) {
+          const sz = lerp(t, 160, 100), step = lerp(t, 245, 302), gap = lerp(t, 44, 84), n = 7 + ((rnd() * (3 + t / 2)) | 0);
+          const sg = { t: 'bhop', gap, n, size: sz, step };
+          if (t >= 1) { if (rnd() < 0.5) sg.zig = lerp(t, 40, 100); else { const a = lerp(t, 50, 100); sg.lat = [0, a, -a, Math.round(a / 2), -Math.round(a / 2)]; } }
+          add(sg);
+          add({ t: 'pad', gap: 125, len: 800, w: 900 });
+        },
+        surf(t) {
+          // a steeper first ramp on the harder tiers, for the speed the transfers need
+          add({ t: 'surf', face: t < 2 ? 55 : t < 4 ? 60 : 65, len: 3200, drop: lerp(t, 400, 600) });
+          const m = t < 1 ? 0 : t < 3 ? 1 : 1 + (rnd() < 0.5 ? 1 : 0);
+          let side = sign();
+          // transfers as wide as Harbor's, no wider
+          for (let j = 0; j < m; j++) { add({ t: 'surf', face: t < 3 ? 60 : 65, len: 3200, drop: lerp(t, 400, 450), dx: side * lerp(t, 300, 470), gap: lerp(t, 900, 1000), fall: 600 }); side = -side; }
+          add({ t: 'pad', len: 3000, w: 1400 });
+        },
+        zip(t) {
+          add({ t: 'zip', len: Math.round(range(2400, 3200)), drop: Math.round(range(700, 1000)), dx: t >= 2 ? sign() * 200 : 0 });
+          add({ t: 'pad', len: 1600, w: 900 });
+        },
+        wall(t) {
+          add({ t: 'wall', side: sign(), len: 700, gap: 550 });
+          add({ t: 'pad', rise: 120, len: 900, w: 900, lip: true });
+        },
+        curve(t) {
+          const dir = steer(true) || sign();
+          add({ t: 'curve', dir, face: t < 2 ? 55 : t < 4 ? 60 : 65, R: lerp(t, 4200, 3000), drop: 600 });
+          if (t >= 2) add({ t: 'surf', face: 65, len: 3000, drop: 400, dx: sign() * lerp(t, 250, 350), gap: 900, fall: 600 });
+          add({ t: 'pad', len: 3000, w: 1400 });
+        },
+      };
+      const POOL = [['bhop', 'surf', 'zip'], ['bhop', 'surf', 'zip', 'wall'], ['bhop', 'surf', 'zip', 'wall', 'curve']];
+      // one section: build it, and tell what it added to the world
+      function section() {
+        const b0 = world.brushes.length, t0 = world.triggers.length, z0 = world.ziplines.length;
+        const l0 = Math.max(0, rk.legs.length - 1); // the leg you're on carries on into this section
+        segs = [];
+        const t = tierOf(k), pool = POOL[Math.min(2, t)];
+        if (k === 0) add({ t: 'pad', len: 900, w: 900 });
+        const n = 2 + (t >= 2 && rnd() < 0.5 ? 1 : 0);
+        let last = null;
+        for (let j = 0; j < n; j++) {
+          // a turn pivots on the pad you're on; a short run-up after it, to pick up speed the new way
+          if (j) { const d = steer(false); if (d) { add({ t: 'turn', dir: d }); add({ t: 'pad', len: 600, w: 900 }); } }
+          // back up to a safe height before the next piece
+          while (rk.y < ENDLESS.low) add({ t: 'updraft' });
+          let kind = pick(pool);
+          if (kind === last && rnd() < 0.7) kind = pick(pool);
+          PIECES[kind](t);
+          last = kind;
+        }
+        // the gate: the last pad becomes a checkpoint
+        if (rk.y < ENDLESS.low) add({ t: 'updraft' });
+        gate();
+        // a city far below, for depth (scenery: landing on it is a fall). Its own
+        // random numbers, so the course is the same with or without it.
+        {
+          let q = (Math.imul(seed >>> 0, 2654435761) ^ Math.imul(k + 1, 40503)) >>> 0 || 1;
+          const r2 = () => { q = Math.imul(q ^ (q >>> 15), 0x2c1b3c6d) >>> 0; q = (q + 0x6D2B79F5) >>> 0; return ((q ^ (q >>> 13)) >>> 0) / 4294967296; };
+          let x0 = Infinity, z0 = Infinity, x1 = -Infinity, z1 = -Infinity;
+          for (const b of world.brushes.slice(b0)) if (!b.props.nonsolid) { x0 = Math.min(x0, b.min[0]); z0 = Math.min(z0, b.min[2]); x1 = Math.max(x1, b.max[0]); z1 = Math.max(z1, b.max[2]); }
+          const STEP = 2400;
+          for (let gx = Math.floor((x0 - 3000) / STEP) * STEP; gx < x1 + 3000; gx += STEP) for (let gz = Math.floor((z0 - 3000) / STEP) * STEP; gz < z1 + 3000; gz += STEP) {
+            if (r2() < 0.45) continue;
+            const w = 700 + r2() * 900, d = 700 + r2() * 900, ax = gx + r2() * (STEP - w - 100), az = gz + r2() * (STEP - d - 100);
+            world.addBox([ax, -200, az], [ax + w, 2500 + r2() * (ENDLESS.low - 8500), az + d], { color: r2() < 0.3 ? COLORS.glass : COLORS.roofSide, kind: 'building', far: true });
+          }
+        }
+        const out = { k, tier: t, segs, legs: [l0, rk.legs.length], brushes: world.brushes.slice(b0), triggers: world.triggers.slice(t0), ziplines: world.ziplines.slice(z0) };
+        for (const b of out.brushes) b.endless = k;
+        for (const tr of out.triggers) tr.endless = k;
+        for (const z of out.ziplines) z.endless = k;
+        k++;
+        return out;
+      }
+      // the pad just built becomes the gate
+      function gate() {
+        const it = rk.prevPad, L = rk.leg, a = L.at(it.x - it.w / 2, it.z0), b = L.at(it.x + it.w / 2, it.z1);
+        const spawn = { pos: (() => { const q = L.at(it.x, it.z0 - Math.min(300, it.len / 2)); return [q[0], it.y, q[1]]; })(), yaw: L.yaw };
+        world.addTrigger([Math.min(a[0], b[0]), it.y, Math.min(a[1], b[1])], [Math.max(a[0], b[0]), it.y + 160, Math.max(a[1], b[1])],
+          { type: 'checkpoint', course: 'endless', idx: k + 1, spawn });
+      }
+      return { section, builder: rk, get k() { return k; } };
+    }
+
     // ------------------------------------------------------------ level order and keys
     const order = ['surf', 'bhop', 'roofs', 'canyon', 'stairway', 'crossover', 'downtown', 'cascade', 'spire', 'freerun'];
     order.forEach((name, i) => { courses[name].key = String((i + 1) % 10); }); // the tenth level is on 0
@@ -1494,7 +1642,7 @@
     const skylineOrder = ['s1', 's2', 's3', 's4'];
     skylineOrder.forEach((name, i) => { courses[name].key = 'S' + (i + 1); });
 
-    return { world, courses, order, gauntlet: gauntletOrder, night: nightOrder, harbor: harborOrder, skyline: skylineOrder, hubSpawn, COLORS };
+    return { world, courses, endless, ENDLESS, order, gauntlet: gauntletOrder, night: nightOrder, harbor: harborOrder, skyline: skylineOrder, hubSpawn, COLORS };
   }
 
   // Falling off. For any spot, the lowest a rider can be while still on the course near it:

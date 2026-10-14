@@ -172,12 +172,35 @@ check('run on a community level', lr.status === 200 && lr.body.mine.rank === 1, 
 check('community board', (await call('/api/board?course=' + lkey)).body.rows.length === 2);
 check('community cheat refused', (await call('/api/run', { course: lkey, ticks: 200, ghost: { e: 4, s: lrun.s.slice(0, 255) } }, b.body.token)).status === 422);
 check('unlike', (await call('/api/levels/like', { id: lid, on: false }, b.body.token)).body.likes === 0);
+// the fall map: anyone playing posts where they fell or gave up, counted per cell
+const fp = await call('/api/falls', { id: lid, pts: [[100, 50, -300, 0], [110, 60, -310, 0], [900, 0, -2000, 1], ['x', 0, 0, 0]] });
+check('falls posted', fp.status === 200 && fp.body.saved === 3, JSON.stringify(fp.body));
+const fm = await call('/api/falls?id=' + lid);
+check('fall map', fm.status === 200 && fm.body.cell === 128 && fm.body.total === 3 && fm.body.falls[0][4] === 2 && fm.body.falls.some(f => f[3] === 1), JSON.stringify(fm.body));
+check('falls on a missing level', (await call('/api/falls', { id: 'NOPE22', pts: [[0, 0, 0, 0]] })).status === 404);
 check('only the author takes it down', (await call('/api/levels/delete', { id: lid }, b.body.token)).status === 403);
 check('take down', (await call('/api/levels/delete', { id: lid }, a.body.token)).body.deleted);
 check('level gone', (await call('/api/level?id=' + lid)).status === 404 && (await call('/api/board?course=' + lkey)).status === 404);
+check('fall map goes with it', (await call('/api/falls?id=' + lid)).status === 404);
+
+// Endless: a board per day, most sections first, then time
+const en0 = await call('/api/endless');
+check('endless board', en0.status === 200 && /^\d{4}-\d\d-\d\d$/.test(en0.body.day) && Array.isArray(en0.body.rows) && en0.body.ends > en0.body.now, JSON.stringify(en0.body).slice(0, 200));
+const eday = en0.body.day;
+check('endless needs a name', (await call('/api/endless', { day: eday, sections: 3, ticks: 6000 })).status === 401);
+check('endless refuses an old day', (await call('/api/endless', { day: '2020-01-01', sections: 3, ticks: 6000 }, a.body.token)).status === 422);
+check('endless refuses an impossible time', (await call('/api/endless', { day: eday, sections: 30, ticks: 2000 }, a.body.token)).status === 422);
+const ea = await call('/api/endless', { day: eday, sections: 4, ticks: 9000 }, a.body.token);
+check('endless run', ea.status === 200 && ea.body.best && ea.body.mine.sections === 4, JSON.stringify(ea.body).slice(0, 300));
+check('endless shorter run keeps best', (await call('/api/endless', { day: eday, sections: 3, ticks: 5000 }, a.body.token)).body.best === false);
+await call('/api/endless', { day: eday, sections: 4, ticks: 8000 }, b.body.token);
+const eb = await call('/api/endless?me=' + a.body.id);
+const emine = eb.body.rows.filter(r => r.name.endsWith(tag));
+check('endless order', emine.length === 2 && emine[0].id === b.body.id && emine[1].id === a.body.id && eb.body.mine.rank === emine[1].rank, JSON.stringify(emine));
 
 // clean up: the test players remove themselves
 for (const p of [a, b]) check('delete me', (await call('/api/delete-me', {}, p.body.token)).body.deleted);
 check('gone from board', !(await call('/api/board?course=' + run.key)).body.rows.some(r => r.name.endsWith(tag)));
+check('gone from endless', !(await call('/api/endless')).body.rows.some(r => r.name.endsWith(tag)));
 console.log(ok ? 'ALL PASS' : 'SOME FAILED');
 process.exit(ok ? 0 : 1);

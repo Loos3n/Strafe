@@ -353,6 +353,14 @@
       const k = 1 - Math.exp(-dt * 18);
       this.viewOffset += (this.eyeTarget - this.viewOffset) * k;
 
+      // an updraft pad (Endless) throws you up and on along its arrow, the same arc every time
+      const ud = this.onGround && this.groundBrush && this.groundBrush.props.updraft;
+      if (ud) {
+        this.vel = [ud.dir[0] * ud.flat, ud.up, ud.dir[1] * ud.flat];
+        this.onGround = false; this.groundNormal = null; this.groundBrush = null;
+        this.slide = null; this.rampSlide = false;
+        this.events.push({ type: 'updraft' });
+      }
       if (!this.onGround) this.airTime += dt; else this.airTime = 0;
       if (!wasOnGround && this.onGround) {
         this.climbAvailable = true;

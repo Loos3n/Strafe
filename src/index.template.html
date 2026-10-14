@@ -554,6 +554,7 @@ body.touch #racehud { top: calc(56px + env(safe-area-inset-top, 0px)); left: 10p
       <button class="mbtn" data-open="story" aria-expanded="false" aria-controls="drawer"><span>Story</span><small id="m-story-sub"></small></button>
       <button class="mbtn" id="m-play"><span>Play</span><small id="m-play-sub"></small></button>
       <button class="mbtn" data-open="daily" aria-expanded="false" aria-controls="drawer"><span>Challenges</span><small id="m-daily-sub">Daily and weekly levels</small></button>
+      <button class="mbtn" data-open="endless" aria-expanded="false" aria-controls="drawer"><span>Endless</span><small id="m-endless-sub">One life, no finish line</small></button>
       <button class="mbtn" id="m-tutorial"><span>Tutorial</span><small id="m-tut-sub"></small></button>
       <button class="mbtn" data-open="online" aria-expanded="false" aria-controls="drawer"><span>Online</span><small id="m-online-sub">Top times and races</small></button>
       <button class="mbtn" data-open="replays" aria-expanded="false" aria-controls="drawer"><span>Replays</span><small>Saved runs and bests</small></button>
@@ -690,6 +691,9 @@ body.touch #racehud { top: calc(56px + env(safe-area-inset-top, 0px)); left: 10p
             <input type="range" id="s-aa" min="10" max="1000" step="10">
             <p class="hint">Stock CS:GO is 12. KZ servers run 100, surf servers 150 or more.</p>
           </div>
+          <div class="checks" style="margin-top:10px">
+            <label><input type="checkbox" id="s-nocp"> No checkpoints: a fall sends you back to the start (the marker still shows the way)</label>
+          </div>
         </div>
         <div class="group">
           <p class="label">Controller</p>
@@ -808,6 +812,23 @@ body.touch #racehud { top: calc(56px + env(safe-area-inset-top, 0px)); left: 10p
         <p class="onmsg">Everyone gets the same level, picked from the built-in levels and the top rated community levels. Every run you finish on it while it's up counts, and your best stays on the board. A new daily level comes up at midnight UTC and a new weekly one on Monday. Your streak counts the days (or weeks) in a row you've finished it.</p>
       </div>
     </div>
+    <div data-pane="endless" hidden>
+      <p class="label" id="en-date"></p>
+      <h3 class="cmname">Today's course</h3>
+      <p class="onmsg">A course with no finish line, built as you go from block lines, surf ramps, cables, wallruns and bends. Every gate you reach is a section cleared, and the sections get harder. There are no checkpoints: fall once and the run is over. Updraft pads throw you back up when the course has dropped too far.</p>
+      <div class="onrow"><button class="cprimary" id="en-play">Run today's course</button><button class="ghost" id="en-random">Random course</button></div>
+      <dl class="dystats">
+        <div><dt>Today</dt><dd id="en-today"></dd></div>
+        <div><dt>Best ever</dt><dd id="en-best"></dd></div>
+        <div><dt>New course in</dt><dd id="en-left"></dd></div>
+      </dl>
+      <div class="group" id="en-boardgrp">
+        <p class="label">Today's board</p>
+        <ol class="onboard" id="en-board"></ol>
+        <p class="onmsg" id="en-boardmsg"></p>
+      </div>
+      <p class="onmsg">Everyone gets the same course each day (midnight UTC), and the board ranks the most sections, then the quicker time. A random course is a new one every time, for practice, and isn't posted.</p>
+    </div>
     <div data-pane="community" hidden>
       <div class="group" id="cm-off" hidden><p class="onmsg">Can't reach the Strafe server from here, so community levels are off. You can play them at <a href="https://strafe-online.strafe-game.workers.dev" target="_blank" rel="noopener">strafe-online.strafe-game.workers.dev</a>.</p></div>
       <div id="cm-listview">
@@ -825,7 +846,7 @@ body.touch #racehud { top: calc(56px + env(safe-area-inset-top, 0px)); left: 10p
         <p class="onmsg" id="cm-meta"></p>
         <p class="mrow" id="cm-medals"></p>
         <div class="onrow" id="cm-actions"><button class="cprimary" id="cm-play">Play</button><button class="ghost" id="cm-like"></button></div>
-        <div class="onrow" id="cm-tools"><button class="ghost small" id="cm-edit">Open in editor</button><button class="ghost small" id="cm-link">Copy link</button><button class="ghost small" id="cm-copy">Copy level code</button><button class="ghost small" id="cm-follow"></button><button class="ghost small" id="cm-byauthor"></button><button class="ghost small" id="cm-del" hidden>Take down</button></div>
+        <div class="onrow" id="cm-tools"><button class="ghost small" id="cm-edit">Open in editor</button><button class="ghost small" id="cm-link">Copy link</button><button class="ghost small" id="cm-copy">Copy level code</button><button class="ghost small" id="cm-follow"></button><button class="ghost small" id="cm-byauthor"></button><button class="ghost small" id="cm-falls" hidden>Fall map</button><button class="ghost small" id="cm-del" hidden>Take down</button></div>
         <p class="onmsg" id="cm-dmsg"></p>
         <div class="group">
           <p class="label">Top times</p>
@@ -890,7 +911,7 @@ body.touch #racehud { top: calc(56px + env(safe-area-inset-top, 0px)); left: 10p
     </dl>
     <div class="cbtns">
       <button class="cprimary" id="c-next" data-act="next"></button>
-      <button class="ghost" data-act="retry">Retry <kbd>R</kbd></button>
+      <button class="ghost" data-act="retry" id="c-retry">Retry <kbd>R</kbd></button>
       <button class="ghost" data-act="levels" id="c-back">Levels <kbd>Esc</kbd></button>
       <button class="ghost" data-act="menu" id="c-menu">Main menu</button>
       <button class="ghost" data-act="save" id="c-save" hidden>Save replay <kbd>S</kbd></button>

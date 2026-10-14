@@ -16,7 +16,7 @@
     fovKick: true, shadows: true, bob: true, keys: true, body: true, ghost: true,
     speedLines: true, landKick: true, scale: 100, fps: false, strafeMeter: true,
     master: 80, music: 50, sfx: 80, padSens: 1, padAutoStrafe: true, padInvert: false,
-    colors: 'standard', roll: 100, flip: true, flash: true, hudSize: 100, crosshair: 'dot', cpMarker: true,
+    colors: 'standard', roll: 100, flip: true, flash: true, hudSize: 100, crosshair: 'dot', cpMarker: true, noCp: false,
   }, TOUCH ? { lookSens: 1, autoStrafe: true, scale: 70, shadows: false } : {}, load(SETTINGS_KEY) || {});
   const best = load(BEST_KEY) || {};
   // ------------------------------------------------------------ story
@@ -71,7 +71,7 @@
   const REBUILT = { surf: '_v3', bhop: '_v3', canyon: '_v3', stairway: '_v3', crossover: '_v4', cascade: '_v6', g1: '_v2', g2: '_v2', g3: '_v2', g4: '_v2', g5: '_v2', g6: '_v2', n1: '_v2', n2: '_v2', n3: '_v2', n4: '_v2', n5: '_v2', n6: '_v2' };
   // levels players build: the editor's own ('custom') and community ones ('c:<id>')
   const isCommunity = (c) => typeof c === 'string' && c.startsWith('c:');
-  const userCourse = (c) => c === 'custom' || isCommunity(c);
+  const userCourse = (c) => c === 'custom' || c === 'endless' || isCommunity(c);
   // Medals: bronze, silver, gold and platinum times on every level. Story
   // levels use their star targets for gold and silver; the rest scale from the
   // time the test bots take (MEDAL_PAR, seconds: re-time a level when it is
@@ -1453,6 +1453,49 @@ body.touch #menu button, body.touch #drawer button { min-height: 40px; }
     seg: null, segBest: {}, saves: 0, moverTick: 0,
   };
   const prev = { pos: player.pos.slice(), eye: player.viewOffset };
+  var enReady = false; // the Endless menu line can show (set once that code has run)
+  var fallView = { mesh: null, level: null }; // the fall map on show (see fall map view)
+
+  // ------------------------------------------------------------ fall map
+  // On community levels: where runners fall off (from just before the drop)
+  // and where they give up (restart or leave part way through a run). Sent
+  // to the server in batches, so the level's maker can see what stops people.
+  const falls = {
+    pts: [], trail: [], level: null, back: 0,
+    // every tick: a couple of seconds of where you've been
+    track() {
+      if (!game.running || game.tick % 10 || !isCommunity(game.course)) return;
+      this.trail.push([player.pos[0], player.pos[1], player.pos[2]]);
+      if (this.trail.length > 30) this.trail.shift();
+    },
+    // just before a respawn for a fall: where you were 1.5 s ago, about when you left the course
+    // (now: lava, which catches you where you are)
+    fell(now) {
+      if (!game.running || !isCommunity(game.course)) return;
+      const t = this.trail, p = now || !t.length ? player.pos : t[Math.max(0, t.length - 15)];
+      this.add(p, 0);
+      this.trail = []; this.back = game.tick;
+    },
+    // leaving a run (restart, another level, the menu), unless it only just began or you just respawned
+    quit() {
+      if (!game.running || !isCommunity(game.course) || game.tick - game.startTick < 300 || game.tick - this.back < 200) return;
+      this.add(player.pos, 1);
+      this.trail = [];
+    },
+    add(p, quit) {
+      const id = game.course.slice(2);
+      if (this.level !== id) { this.flush(); this.level = id; }
+      this.pts.push([Math.round(p[0]), Math.round(p[1]), Math.round(p[2]), quit]);
+      if (this.pts.length >= 20) this.flush();
+    },
+    flush() {
+      const pts = this.pts;
+      this.pts = [];
+      if (!pts.length || net.ok === false || game.demo) return;
+      api('/falls', { id: this.level, pts }).catch(() => {});
+    },
+  };
+  window.addEventListener('pagehide', () => falls.flush());
 
   function place(spawn) {
     player.reset(spawn.pos, spawn.yaw);
@@ -1463,6 +1506,9 @@ body.touch #menu button, body.touch #drawer button { min-height: 40px; }
   }
   // no level loaded: the menu is showing
   function goIdle() {
+    falls.quit(); falls.flush();
+    if (!ed.on) fallMapHide();
+    if (game.course === 'endless') enClear();
     game.course = null; game.running = false; game.finished = null; game.mission = null;
     ghost.useRemote(null, null);
     resetTutorial();
@@ -1470,6 +1516,7 @@ body.touch #menu button, body.touch #drawer button { min-height: 40px; }
     updateCourseHud();
   }
   function goCourse(name, mission = null, keepSet = false) {
+    falls.quit();
     const c = map.courses[name];
     if (!keepSet) { game.setRun = null; game.setDone = null; }
     if (name !== game.course) { game.save = null; game.segBest = {}; } // R keeps practice saves
@@ -1488,14 +1535,19 @@ body.touch #menu button, body.touch #drawer button { min-height: 40px; }
     toast(mission === null ? c.name : (mission ? 'Job ' + mission : 'Prologue') + ': ' + STORY[mission].title);
     A.play('teleport');
   }
+  // checkpoints off (Settings): only in real runs, practice keeps its saves
+  const noCp = () => !!settings.noCp && !game.practice;
   function restartCourse() {
     if (!game.course) return;
     if (locked) careerCount('restarts');
+    if (game.course === 'endless') { if (en.day) enDaily(); else enStart(en.seed, null); return; }
     if (game.setRun) { startSet(game.setRun.set, game.setRun.race); return; } // a set run restarts from its first level
     goCourse(game.course, game.mission);
   }
   function respawn() {
     if (!game.course) return;
+    if (game.course === 'endless' && game.running) { enOver(); return; }
+    if (game.course === 'endless' && game.finished !== null) return; // the run is over: the card is up
     if (game.practice && game.save) { practiceLoad(); return; }
     if (game.running && game.run) game.run.resets = (game.run.resets || 0) + 1;
     place(game.cpSpawn);
@@ -1524,6 +1576,7 @@ body.touch #menu button, body.touch #drawer button { min-height: 40px; }
   // start) to here, against your best for that same stretch this session.
   function setPractice(on) {
     if (on === game.practice) return;
+    if (on && game.course === 'endless') { toast('Endless has no practice mode'); return; }
     if (on && game.setRun) { game.setRun = null; toast('Set run stopped'); }
     game.practice = on; game.save = null; game.seg = null; game.segBest = {};
     $('practice').hidden = !on;
@@ -1629,7 +1682,7 @@ body.touch #menu button, body.touch #drawer button { min-height: 40px; }
     UNDER[0] = p[0]; UNDER[1] = p[1] - 6; UNDER[2] = p[2];
     const tr = player.trace(p, UNDER), b = tr.fraction < 1 && tr.brush;
     if (!b || !b.props.custom) return false;
-    if (b.props.edLava) { careerCount('falls'); respawn(); return true; }
+    if (b.props.edLava) { careerCount('falls'); falls.fell(true); respawn(); return true; }
     const bo = b.props.boost;
     if (bo) {
       const v = player.vel, flat = bo.power * Math.cos(bo.a), along = v[0] * bo.dir[0] + v[2] * bo.dir[1];
@@ -1642,17 +1695,22 @@ body.touch #menu button, body.touch #drawer button { min-height: 40px; }
   }
 
   function handleTriggers() {
-    if (game.course && fellOff()) { careerCount('falls'); respawn(); return; }
+    if (game.course === 'endless' && game.finished !== null) return; // that run is over
+    falls.track();
+    if (game.course && fellOff()) { careerCount('falls'); falls.fell(); respawn(); return; }
     if (game.course && userCourse(game.course) && userHazards()) return;
     let inStart = false;
     for (const t of player.triggersTouching()) {
       if (t.type === 'teleport') { goCourse(t.course); return; }
-      if (t.type === 'kill') { careerCount('falls'); respawn(); return; }
+      if (t.type === 'kill') { careerCount('falls'); falls.fell(); respawn(); return; }
       if (t.course !== game.course) continue;
       if (t.type === 'start') inStart = true;
       else if (t.type === 'hint') enterStep(t);
+      else if (t.type === 'checkpoint' && t.idx > game.cp && game.course === 'endless') enGate(t);
       else if (t.type === 'checkpoint' && t.idx > game.cp) {
-        game.cp = t.idx; game.cpSpawn = t.spawn;
+        // with checkpoints off you still pass them (splits, the marker moves on), but a fall goes back to the start
+        game.cp = t.idx;
+        if (!noCp()) game.cpSpawn = t.spawn;
         const c = map.courses[game.course];
         A.play('checkpoint');
         if (game.running && game.practice) {
@@ -1680,6 +1738,7 @@ body.touch #menu button, body.touch #drawer button { min-height: 40px; }
         showSplit('Finish', ticks, prevBest);
         careerCount('finishes', game.course);
         if (!game.run.resets && map.courses[game.course].stages >= 3) careerCount('flawless');
+        if (noCp() && map.courses[game.course].stages >= 2) careerCount('nocp');
         if (isCommunity(game.course)) careerCount('community');
         if (isBest) {
           careerCount('pbs');
@@ -2470,6 +2529,11 @@ body.touch #menu button, body.touch #drawer button { min-height: 40px; }
   function updateCourseHud() {
     const c = game.course && map.courses[game.course];
     hud.course.textContent = c ? c.name : '';
+    if (c && c.endless) {
+      const mine = en.day ? enSave.days[en.day] : enSave.best;
+      hud.bestEl.textContent = mine ? (en.day ? 'Today ' : 'Best ') + enFmt(mine) : 'No run yet';
+      return;
+    }
     hud.bestEl.textContent = c && best[game.course] ? 'Best ' + fmt(best[game.course]) : c ? 'No time yet' : 'Pick a beacon or press 1, 2, 3';
   }
   updateCourseHud();
@@ -2561,7 +2625,9 @@ body.touch #menu button, body.touch #drawer button { min-height: 40px; }
       const S = game.setRun;
       hud.timer.textContent = fmt(S ? S.ticks + (game.running ? ticks : 0) : ticks);
       hud.timer.classList.toggle('idle', !game.running);
-      hud.stage.textContent = (S ? SETS[S.set].name + ' ' + (S.levels.indexOf(game.course) + 1) + ' / ' + S.levels.length + ' · ' : '') + 'Stage ' + (game.cp + 1) + ' / ' + map.courses[game.course].stages;
+      const c = map.courses[game.course];
+      hud.stage.textContent = c.endless ? 'Section ' + (game.cp + 1) : (S ? SETS[S.set].name + ' ' + (S.levels.indexOf(game.course) + 1) + ' / ' + S.levels.length + ' · ' : '') +
+        'Stage ' + (game.cp + 1) + ' / ' + c.stages + (c.stages > 1 && noCp() ? ' · no checkpoints' : '');
     } else {
       hud.timer.textContent = '';
       hud.stage.textContent = '';
@@ -2668,6 +2734,7 @@ body.touch #menu button, body.touch #drawer button { min-height: 40px; }
     $('c-back').innerHTML = (job ? 'Story' : 'Levels') + ' <kbd>Esc</kbd>';
     $('c-back').dataset.to = job ? 'story' : 'levels';
     $('c-menu').hidden = game.course === 'custom';
+    $('c-retry').hidden = false;
     $('c-label').textContent = job ? (game.mission ? 'Job ' + game.mission : 'Prologue') + ' complete' : 'Level complete';
     $('c-story').hidden = !job;
     if (job) {
@@ -2706,6 +2773,7 @@ body.touch #menu button, body.touch #drawer button { min-height: 40px; }
       const t = $('c-next').dataset.target;
       if (t === 'story') { goIdle(); game.started = false; showMenuState(); openDrawer('story'); return; }
       if (t === 'editor') { edBack(); return; }
+      if (t === 'endless') { if (en.day) enDaily(); else enStart(en.seed, null); return; }
       if (t === 'community') { goIdle(); game.started = false; showMenuState(); openDrawer('community'); return; }
       if (t === 'levels') { goIdle(); game.started = false; showMenuState(); showScreen('levels'); return; }
       if (t.startsWith('job:')) { startJob(+t.slice(4)); return; }
@@ -2717,6 +2785,7 @@ body.touch #menu button, body.touch #drawer button { min-height: 40px; }
     else if (ed.testing) edBack();
     else if (what === 'menu') { goIdle(); game.started = false; showMenuState(); }
     else if ($('c-back').dataset.to === 'story') { goIdle(); game.started = false; showMenuState(); openDrawer('story'); }
+    else if ($('c-back').dataset.to === 'endless') { goIdle(); game.started = false; showMenuState(); openDrawer('endless'); }
     else { showMenuState(); showScreen('levels'); } // levels: back to level select
   }
   for (const b of completeEl.querySelectorAll('[data-act]')) b.addEventListener('click', () => completeAction(b.dataset.act));
@@ -2803,6 +2872,7 @@ body.touch #menu button, body.touch #drawer button { min-height: 40px; }
     $('c-back').innerHTML = 'Levels <kbd>Esc</kbd>';
     $('c-back').dataset.to = 'levels';
     $('c-menu').hidden = false;
+    $('c-retry').hidden = false;
     clearTimeout(completeTimer);
     completeTimer = setTimeout(() => {
       document.body.classList.add('complete');
@@ -2997,7 +3067,7 @@ body.touch #menu button, body.touch #drawer button { min-height: 40px; }
   // bests come from the saved best times, so they go back further.
   const STATS_KEY = 'strafe.stats.v1';
   const career = Object.assign({ since: Date.now(), time: 0, jumps: 0, top: 0, dist: 0, runs: 0, finishes: 0, pbs: 0, restarts: 0, falls: 0,
-    wallruns: 0, walljumps: 0, slides: 0, vaults: 0, climbs: 0, zips: 0, rampslides: 0, edgebugs: 0, sets: 0, flawless: 0, community: 0, published: 0, races: 0, levels: {} }, load(STATS_KEY) || {});
+    wallruns: 0, walljumps: 0, slides: 0, vaults: 0, climbs: 0, zips: 0, rampslides: 0, edgebugs: 0, sets: 0, flawless: 0, nocp: 0, community: 0, published: 0, races: 0, levels: {} }, load(STATS_KEY) || {});
   const CAREER_EVENTS = { jump: 'jumps', wallrun: 'wallruns', walljump: 'walljumps', climbjump: 'walljumps', slide: 'slides', vault: 'vaults', mantle: 'vaults', climb: 'climbs', zip: 'zips', rampslide: 'rampslides', edgebug: 'edgebugs' };
   let careerDirty = 0;
   const careerLevel = (c) => career.levels[c] || (career.levels[c] = { runs: 0, finishes: 0, time: 0 });
@@ -4115,6 +4185,7 @@ body.touch #menu button, body.touch #drawer button { min-height: 40px; }
     let stars = 0, max = 0;
     STORY.forEach((job, i) => { if (job.stars) { stars += (storyProgress[i] || { stars: 0 }).stars; max += 3; } });
     $('m-story-sub').textContent = stars ? stars + ' / ' + max + ' ★' : 'New';
+    if (enReady) enSub();
     const done = ALL_LEVELS.filter(n => best[n]).length;
     $('m-play-sub').textContent = done + ' / ' + ALL_LEVELS.length + ' levels';
     $('m-tut-sub').textContent = best.tutorial ? 'Done' : 'Start here';
@@ -4140,7 +4211,7 @@ body.touch #menu button, body.touch #drawer button { min-height: 40px; }
       const c = game.course && map.courses[game.course];
       $('p-course').textContent = c ? c.name : '';
       $('p-time').textContent = c ? fmt(game.running ? game.tick - game.startTick : game.finished || 0) : '';
-      $('p-stage').textContent = c ? 'Stage ' + (game.cp + 1) + ' / ' + c.stages : '';
+      $('p-stage').textContent = !c ? '' : c.endless ? 'Section ' + (game.cp + 1) : 'Stage ' + (game.cp + 1) + ' / ' + c.stages + (noCp() && c.stages > 1 ? ' · no checkpoints' : '');
       if (game.course && !userCourse(game.course)) selected = game.course;
     }
     buildLevelList();
@@ -4237,6 +4308,9 @@ body.touch #menu button, body.touch #drawer button { min-height: 40px; }
     { id: 'marathon', n: 'Marathon', d: 'Cover 42 km', t: () => km() >= 42 },
     { id: 'hours', n: 'Regular', d: 'Play for 5 hours', t: () => career.time >= 5 * 3600 },
     { id: 'falls', n: 'Gravity check', d: 'Fall 500 times', t: () => career.falls >= 500 },
+    { id: 'nocp', n: 'No safety net', d: 'Finish a level of two or more stages with checkpoints turned off', t: () => career.nocp >= 1 },
+    { id: 'endless10', n: 'Long way round', d: 'Clear 10 sections in one Endless run', t: () => !!enSave.best && enSave.best.sections >= 10 },
+    { id: 'endless25', n: 'No finish line', d: 'Clear 25 sections in one Endless run', t: () => !!enSave.best && enSave.best.sections >= 25 },
     { id: 'flawless', n: 'Flawless', d: 'Finish a level with two or more checkpoints without a respawn', t: () => career.flawless >= 1 },
     { id: 'pbs', n: 'Self improvement', d: 'Set 50 personal bests', t: () => career.pbs >= 50 },
     { id: 'stars10', n: 'Rising star', d: 'Earn 10 story stars', t: () => storyStars() >= 10 },
@@ -4311,8 +4385,9 @@ body.touch #menu button, body.touch #drawer button { min-height: 40px; }
   function openDrawer(which) {
     A.play('click');
     drawer.hidden = false;
-    $('d-title').textContent = { settings: 'Settings', story: 'Story', cosmetics: 'Cosmetics', controls: 'Controls', online: 'Online', replays: 'Replays', stats: 'Stats', community: 'Community', daily: 'Challenges' }[which];
+    $('d-title').textContent = { settings: 'Settings', story: 'Story', cosmetics: 'Cosmetics', controls: 'Controls', online: 'Online', replays: 'Replays', stats: 'Stats', community: 'Community', daily: 'Challenges', endless: 'Endless' }[which];
     if (which === 'online') onlineOpen();
+    if (which === 'endless') enOpen();
     if (which === 'daily') dailyOpen();
     if (which === 'community') cmOpen();
     if (which === 'stats') statsRender();
@@ -4507,6 +4582,7 @@ body.touch #menu button, body.touch #drawer button { min-height: 40px; }
   bindCheck('s-keys', 'keys', () => hud.keys.hidden = !settings.keys);
   bindCheck('s-strafe', 'strafeMeter');
   bindCheck('s-cpmark', 'cpMarker');
+  bindCheck('s-nocp', 'noCp', () => { toast(settings.noCp ? 'Checkpoints off: a fall goes back to the start' : 'Checkpoints on'); });
   const applyCrosshair = () => { $('crosshair').dataset.style = settings.crosshair; };
   applyCrosshair();
   $('s-xhair').value = settings.crosshair;
@@ -4917,6 +4993,9 @@ body.touch #menu button, body.touch #drawer button { min-height: 40px; }
   // put a level into the world: brushes, triggers, a course and its meshes.
   // One player-made level is loaded at a time: the editor's or a community one.
   function userBuild(L, id) {
+    // the fall map stays up over the same level (or the editor's copy of it)
+    if (fallView.level && id !== 'c:' + fallView.level && !(id === 'custom' && ed.level && ed.level.pub === fallView.level)) fallMapHide();
+    enClear();
     edClear();
     for (const k in map.courses) if (userCourse(k)) delete map.courses[k];
     let lowY = Infinity, box = [Infinity, Infinity, -Infinity, -Infinity], cps = 0, start = null;
@@ -5125,6 +5204,12 @@ body.editing.playing #edhelp { display: block; }
       btn('Test play', edTest);
       btn('Save', () => { const all = load(ED_SAVES_KEY) || {}; all[ed.level.name || 'My level'] = ed.level; save(ED_SAVES_KEY, all); edMsg('Saved as "' + (ed.level.name || 'My level') + '".'); edSaves(); });
       btn('Publish', edPublish);
+      // the published level's fall map, over the level you're building
+      if (ed.level.pub) btn(fallView.mesh && fallView.level === ed.level.pub ? 'Hide fall map' : 'Fall map', async () => {
+        if (fallView.mesh && fallView.level === ed.level.pub) { fallMapHide(); edShowPanel(); return; }
+        try { const d = await fallMapLoad(ed.level.pub); edMsg('Fall map of level ' + ed.level.pub + ': ' + fallSummary(d)); edShowPanel(); }
+        catch (e) { edMsg(e.status === 404 ? 'Level ' + ed.level.pub + ' is not in Community any more.' : 'Could not load the fall map.'); }
+      });
       btn('New level', () => { if (confirm('Start a new level? Unsaved changes are lost.')) { edChange(() => { ed.level = edBlank(); }); edShowPanel(); } });
     }
     btn('Exit editor', exitEditor, 'ebtn red');
@@ -5181,6 +5266,7 @@ body.editing.playing #edhelp { display: block; }
       const r = await api('/levels/publish', { name: ed.level.name || '', code: await edCode(), ticks, ghost: run });
       cm.stale = true;
       careerCount('published'); achCheck();
+      ed.level.pub = r.id; save(ED_LEVEL_KEY, ed.level);
       edMsg('Published "' + r.name + '" (level ' + r.id + '). It is in Community now, with your ' + fmt(ticks) + ' as the time to beat.');
       toast('Published', 1800);
     } catch (e) { edMsg(e.message); }
@@ -5449,6 +5535,7 @@ body.editing.playing #edhelp { display: block; }
     lk.disabled = mine;
     lk.title = mine ? 'Your level' : L.liked ? 'Take back your like' : 'Give this level a thumbs up';
     $('cm-del').hidden = !mine;
+    $('cm-falls').hidden = !mine;
     const fb = $('cm-follow');
     fb.hidden = mine;
     fb.textContent = following(L.authorId) ? 'Following ' + L.author + ' ✓' : 'Follow ' + L.author;
@@ -5541,7 +5628,7 @@ body.editing.playing #edhelp { display: block; }
   $('cm-edit').addEventListener('click', async () => {
     const L = cm.level;
     if (!confirm('Open "' + L.name + '" in the editor? It replaces the level open there, so save yours first in the editor menu if you want to keep it.')) return;
-    try { const lv = await edDecode(L.code); ed.undo.push(JSON.stringify(ed.level)); ed.level = Object.assign(lv, { name: L.name }); }
+    try { const lv = await edDecode(L.code); ed.undo.push(JSON.stringify(ed.level)); ed.level = Object.assign(lv, { name: L.name, pub: L.id }); }
     catch (e) { $('cm-dmsg').textContent = 'This level did not load.'; return; }
     closeDrawer();
     enterEditor();
@@ -5697,6 +5784,236 @@ body.editing.playing #edhelp { display: block; }
   for (const b of $('dy-tabs').children) b.addEventListener('click', () => { A.play('click'); dailyOpen(b.dataset.kind === 'week' ? weekly : daily); });
   setInterval(() => { if (chal.data && !$('dy-body').closest('[data-pane]').hidden && !drawer.hidden) $('dy-left').textContent = dailyLeft(chal); }, 15000);
 
+  // ------------------------------------------------------------ endless
+  // A course with no finish (StrafeMap endless()), built a few sections
+  // ahead of you and taken down behind. Every gate you reach is a section
+  // cleared; fall once and the run is over. Today's course comes from the
+  // date, so everyone runs the same one and the server keeps a board of how
+  // far people got. A random course is the same thing from a random seed,
+  // just for practice (it has no board).
+  const ENDLESS_KEY = 'strafe.endless.v1';
+  const enSave = Object.assign({ best: null, days: {} }, load(ENDLESS_KEY) || {});
+  const EN_AHEAD = 2; // sections built past the one you're on
+  const en = { gen: null, seed: 0, day: null, built: [], objs: new Map(), reached: 0, data: null, skew: 0, token: 0, splits: [] };
+  const enHash = (str) => { let h = 2166136261; for (const c of str) h = Math.imul(h ^ c.charCodeAt(0), 16777619) >>> 0; return h; };
+  const enToday = () => en.data && Date.now() + en.skew < en.data.ends ? en.data.day : utcDay(Date.now() + en.skew);
+  const enFmt = (r) => r.sections + (r.sections === 1 ? ' section' : ' sections') + ' · ' + fmt(r.ticks);
+  const enBetter = (a, b) => !b || a.sections > b.sections || (a.sections === b.sections && a.ticks < b.ticks);
+  function enDrop(sec) {
+    for (const key of ['brushes', 'triggers', 'ziplines']) {
+      const arr = world[key], gone = new Set(sec[key]);
+      for (let i = arr.length - 1; i >= 0; i--) if (gone.has(arr[i])) arr.splice(i, 1);
+    }
+    for (const o of en.objs.get(sec.k) || []) { scene.remove(o); o.geometry.dispose(); }
+    en.objs.delete(sec.k);
+  }
+  function enClear() {
+    for (const sec of en.built) enDrop(sec);
+    if (en.built.length) fallUser = null;
+    en.built = []; en.gen = null;
+    delete map.courses.endless;
+  }
+  // the next section: into the world, and its meshes into the scene
+  function enBuild() {
+    const sec = en.gen.section(), mine = new Set(sec.brushes), objs = [];
+    en.built.push(sec);
+    const solid = buildGeometry(b => mine.has(b) && !b.props.nonsolid, bucketFor);
+    for (const [name, part] of Object.entries(solid)) {
+      const mesh = new THREE.Mesh(part.g, MATS[name]);
+      mesh.castShadow = mesh.receiveShadow = true;
+      const lines = new THREE.LineSegments(part.lg, new THREE.LineBasicMaterial({ color: 0x1b2530, transparent: true, opacity: 0.18 }));
+      objs.push(mesh, lines);
+    }
+    if (sec.brushes.some(b => b.props.glow)) objs.push(new THREE.Mesh(buildGeometry(b => mine.has(b) && b.props.glow).g, enGlowMat));
+    if (sec.ziplines.length) objs.push(new THREE.Mesh(facesToGeo([].concat(...sec.ziplines.map(z => cableFaces(z.a, z.b, 2)))), cableMat));
+    for (const o of objs) scene.add(o);
+    en.objs.set(sec.k, objs);
+  }
+  const enGlowMat = new THREE.MeshBasicMaterial({ vertexColors: true, transparent: true, opacity: 0.9 });
+  const enFall = () => { fallUser = window.StrafeMap.fallGrid([].concat(...en.built.map(x => x.brushes))); };
+  // start a run: today's course (day) or a random one (day null)
+  function enStart(seed, day) {
+    if (ed.on || ed.testing) exitEditor();
+    if (game.practice) setPractice(false);
+    falls.flush();
+    edClear();
+    for (const k in map.courses) if (userCourse(k)) delete map.courses[k];
+    cm.playing = null;
+    if (game.course === 'endless') game.course = null;
+    enClear();
+    Object.assign(en, { gen: map.endless(seed), seed, day, reached: 0, splits: [] });
+    for (let i = 0; i <= EN_AHEAD; i++) enBuild();
+    enFall();
+    map.courses.endless = { name: day ? 'Endless · today' : 'Endless · random', spawn: en.gen.builder.spawn, stages: 1, color: 0xffc21a, endless: true };
+    ghost.useRemote(null, null);
+    goCourse('endless');
+    startPlay();
+    toast(day ? "Today's course. One life: fall and the run is over." : 'A random course. One life: fall and the run is over.', 2800);
+  }
+  const enDaily = () => { const day = enToday(); enStart(enHash('endless:' + day), day); };
+  const enRandom = () => enStart((Math.random() * 4294967296) >>> 0, null);
+  // a gate: one more section cleared, build ahead and take down behind
+  function enGate(t) {
+    game.cp = t.idx; game.cpSpawn = t.spawn;
+    en.reached = t.idx;
+    A.play('checkpoint');
+    if (game.running) {
+      const ticks = game.tick - game.startTick;
+      en.splits[t.idx] = ticks;
+      const mine = en.day && enSave.days[en.day], pb = mine && mine.splits && mine.splits[t.idx];
+      showSplit('Section ' + t.idx, ticks, pb);
+    }
+    updateCourseHud();
+    // a frame later, so the gate itself doesn't hitch
+    setTimeout(() => {
+      if (game.course !== 'endless' || !en.gen) return;
+      while (en.gen.k < t.idx + EN_AHEAD + 1) enBuild();
+      while (en.built.length && en.built[0].k < t.idx - 1) enDrop(en.built.shift());
+      enFall();
+    }, 0);
+  }
+  // a fall: the run is over
+  function enOver() {
+    const ticks = game.tick - game.startTick, run = { sections: en.reached, ticks };
+    game.running = false; game.finished = ticks;
+    ghost.stop();
+    A.play('respawn');
+    let isBest = false, dayBest = false;
+    if (run.sections) {
+      if (enBetter(run, enSave.best)) { isBest = true; enSave.best = run; }
+      if (en.day && enBetter(run, enSave.days[en.day])) { dayBest = true; enSave.days[en.day] = Object.assign({ splits: en.splits.slice() }, run); }
+      // keep a week of days
+      for (const d of Object.keys(enSave.days).sort().slice(0, -7)) delete enSave.days[d];
+      save(ENDLESS_KEY, enSave);
+    }
+    achCheck();
+    enShowOver(run, isBest, dayBest);
+    if (en.day && run.sections && dayBest) enPost(run, en.day);
+  }
+  async function enPost(run, day) {
+    const el = $('c-online');
+    if (net.ok === false) return;
+    if (!canPost()) { el.hidden = false; el.textContent = 'Air acceleration is not ' + LB_AA + ', so this run is not posted.'; return; }
+    if (!net.token) { el.hidden = false; el.textContent = 'Pick a name under Online to post your Endless runs.'; return; }
+    try {
+      const r = await api('/endless', { day, sections: run.sections, ticks: run.ticks });
+      if (en.data && en.data.day === day) Object.assign(en.data, { rows: r.rows, total: r.total, mine: r.mine });
+      if (game.course === 'endless' && r.mine) { el.hidden = false; el.textContent = "Today's board: #" + r.mine.rank + ' of ' + r.total; }
+    } catch (e) { el.hidden = false; el.textContent = e.message; }
+  }
+  // the end of a run, on the level complete card
+  function enShowOver(run, isBest, dayBest) {
+    const r = game.run || { top: 0, dist: 0, jumps: 0 }, secs = Math.max(run.ticks * TICK, 0.01);
+    $('c-label').textContent = en.day ? "Endless · today's course" : 'Endless · random course';
+    $('c-name').textContent = run.sections ? run.sections + (run.sections === 1 ? ' section' : ' sections') : 'Fell in the first section';
+    $('c-time').textContent = fmt(run.ticks);
+    const badge = $('c-best'), prev = en.day ? enSave.days[en.day] : enSave.best;
+    badge.classList.toggle('new', isBest || dayBest);
+    badge.textContent = isBest ? 'Best ever' : dayBest ? 'Best today' : prev ? (en.day ? 'Today ' : 'Best ') + enFmt(prev) : '';
+    $('c-online').hidden = true;
+    for (const k of ['c-medalbox', 'c-story', 'c-post', 'c-watch', 'c-save', 'c-like', 'c-share']) $(k).hidden = true;
+    $('c-top').textContent = Math.round(r.top);
+    $('c-avg').textContent = Math.round(r.dist / secs);
+    $('c-jumps').textContent = r.jumps;
+    $('c-dist').textContent = (r.dist * 0.0254).toFixed(0);
+    $('c-next').innerHTML = (en.day ? 'Run it again' : 'Same course again') + ' <kbd>R</kbd>';
+    $('c-retry').hidden = true; // the same as the button above
+    $('c-next').dataset.target = 'endless';
+    $('c-back').innerHTML = 'Endless <kbd>Esc</kbd>';
+    $('c-back').dataset.to = 'endless';
+    $('c-menu').hidden = false;
+    clearTimeout(completeTimer);
+    completeTimer = setTimeout(() => {
+      document.body.classList.add('complete');
+      completeEl.hidden = false;
+      if (document.pointerLockElement) document.exitPointerLock();
+      else if (locked) softLock(false);
+      $('c-next').focus({ preventScroll: true });
+    }, 700);
+  }
+  // the drawer: today's course, its board, your bests
+  async function enLoad() {
+    const d = await api('/endless' + (net.id ? '?me=' + encodeURIComponent(net.id) : ''));
+    Object.assign(en, { data: d, skew: d.now - Date.now() });
+    return d;
+  }
+  async function enOpen() {
+    const token = ++en.token;
+    enRender();
+    if (net.ok === false) return;
+    $('en-boardmsg').textContent = 'Loading…';
+    try { await enLoad(); } catch (e) { if (token === en.token) $('en-boardmsg').textContent = 'Could not load the board.'; return; }
+    if (token === en.token) enRender();
+  }
+  function enRender() {
+    const day = enToday(), d = en.data && en.data.day === day ? en.data : null, mine = enSave.days[day];
+    $('en-date').textContent = new Date(Date.parse(day)).toLocaleDateString(undefined, { timeZone: 'UTC', weekday: 'long', day: 'numeric', month: 'long' });
+    $('en-today').textContent = d && d.mine ? enFmt(d.mine) + ' · #' + d.mine.rank : mine ? enFmt(mine) : 'No run yet';
+    $('en-best').textContent = enSave.best ? enFmt(enSave.best) : 'No run yet';
+    const ms = Math.max(0, Date.parse(day) + 86400000 - (Date.now() + en.skew)), h = Math.floor(ms / 3600000), m = Math.floor(ms / 60000) % 60;
+    $('en-left').textContent = h ? h + 'h ' + m + 'm' : m ? m + 'm' : '<1m';
+    const ol = $('en-board');
+    ol.textContent = '';
+    $('en-boardgrp').hidden = net.ok === false;
+    if (!d) return;
+    for (const r of d.rows) {
+      const li = boardRow(r, net.id);
+      li.querySelector('.t').textContent = enFmt(r);
+      ol.appendChild(li);
+    }
+    $('en-boardmsg').textContent = !d.total ? 'Nobody has run today\'s course yet. Set the first mark.' :
+      (d.mine && d.mine.rank > d.rows.length ? 'You are #' + d.mine.rank + ' of ' + d.total + '. ' : d.total + (d.total === 1 ? ' runner today. ' : ' runners today. ')) +
+      (!canPost() ? 'Your air acceleration is not ' + LB_AA + ', so your runs are not posted.' : !net.token ? 'Pick a name under Online to post yours.' : '');
+  }
+  $('en-play').addEventListener('click', () => { A.init(); A.play('click'); enDaily(); });
+  $('en-random').addEventListener('click', () => { A.init(); A.play('click'); enRandom(); });
+  function enSub() { const m = enSave.days[enToday()]; $('m-endless-sub').textContent = m ? 'Today: ' + enFmt(m) : 'One life, no finish line'; }
+  enSub();
+  enReady = true;
+
+  // ------------------------------------------------------------ fall map view
+  // For a level's maker: a ball where runners fell (yellow, through to red
+  // where most fell) or gave up (purple), bigger where more did. Drawn
+  // through walls. Shown on the level from Community, or in the editor.
+  function fallMapHide() {
+    if (!fallView.mesh) return;
+    scene.remove(fallView.mesh); fallView.mesh.geometry.dispose(); fallView.mesh.material.dispose();
+    fallView.mesh = null; fallView.level = null;
+  }
+  async function fallMapLoad(id) {
+    const d = await api('/falls?id=' + encodeURIComponent(id));
+    fallMapHide();
+    fallView.level = id;
+    const n = d.falls.length;
+    if (!n) return d;
+    const mesh = new THREE.InstancedMesh(new THREE.SphereGeometry(1, 14, 10), new THREE.MeshBasicMaterial({ transparent: true, opacity: 0.55, depthTest: false, depthWrite: false }), n);
+    const most = Math.max(...d.falls.map(f => f[4])), m4 = new THREE.Matrix4(), col = new THREE.Color();
+    d.falls.forEach((f, i) => {
+      const r = 36 + 100 * Math.sqrt(f[4] / most);
+      m4.makeScale(r, r, r).setPosition(f[0] * d.cell, f[1] * d.cell + 36, f[2] * d.cell);
+      mesh.setMatrixAt(i, m4);
+      if (f[3]) col.setHex(0xa45cff); else col.setHSL(0.15 * (1 - f[4] / most), 1, 0.52);
+      mesh.setColorAt(i, col);
+    });
+    mesh.renderOrder = 20; mesh.frustumCulled = false;
+    scene.add(mesh);
+    fallView.mesh = mesh;
+    return d;
+  }
+  const fallSummary = (d) => {
+    const f = d.falls.filter(x => !x[3]).reduce((t, x) => t + x[4], 0), q = d.total - f;
+    return !d.total ? 'No falls recorded on this level yet.' : f + (f === 1 ? ' fall' : ' falls') + ' (yellow to red) and ' + q + (q === 1 ? ' give-up' : ' give-ups') + ' (purple) recorded.';
+  };
+  $('cm-falls').addEventListener('click', async () => {
+    const L = cm.level;
+    if (!L) return;
+    A.init(); A.play('click');
+    let d;
+    try { d = await fallMapLoad(L.id); } catch (e) { $('cm-dmsg').textContent = 'Could not load the fall map.'; return; }
+    if (!(await cmPlay(L))) return;
+    toast('Fall map: ' + fallSummary(d), 4200);
+  });
+
   // ------------------------------------------------------------ share links
   // Links to the game page on the Strafe server that open a level, a race
   // room, a community level or the challenges. A level link can carry vs=<a
@@ -5784,6 +6101,7 @@ body.editing.playing #edhelp { display: block; }
   if (location.hash === '#demo') game.demo = true; // headless screenshot mode
   window.__strafe = { courses: map.courses, mats: MATS, lights: { hemi, sun }, setNight, setTheme, player, game, keys, eff, faceInsets, practice: { set: setPractice, save: practiceSave, load: practiceLoad }, goCourse, place, attract, previewCourse, body, ghost, cosmetics, preview, step, modelChunks, renderer, setView: (y, p) => { yaw = y; pitch = p; }, editor: { ed, build: edBuild, enter: enterEditor, test: edTest, back: edBack, code: edCode, decode: edDecode, publish: edPublish }, community: { cm, open: cmOpen, show: cmShow, play: cmPlay }, daily: { daily, weekly, open: dailyOpen, play: dailyPlay, load: dailyLoad, finish: dailyFinish }, practiceJump, sets: { start: startSet, best: setBest, list: SETS }, world,
     online: { net, race, submit: netSubmit, raceFinish, showComplete, openDrawer },
-    replay: { state: replay, open: replayOpen, close: replayClose, watchBest }, career, ach: { check: achCheck, done: achDone, list: ACH, render: achRender }, binds: { binds, set: (id, code) => { rebinding = id; setBind(code); }, keyName }, settings, applyColors, saved: { save: saveLastRun, render: replaysRender } };
+    replay: { state: replay, open: replayOpen, close: replayClose, watchBest }, career, ach: { check: achCheck, done: achDone, list: ACH, render: achRender }, binds: { binds, set: (id, code) => { rebinding = id; setBind(code); }, keyName }, settings, applyColors, saved: { save: saveLastRun, render: replaysRender },
+    endless: { en, start: enStart, daily: enDaily, random: enRandom, open: enOpen, save: enSave }, falls, fallMap: { load: fallMapLoad, hide: fallMapHide, view: fallView }, respawn };
   requestAnimationFrame((t) => { last = t; frame(t); });
 })();

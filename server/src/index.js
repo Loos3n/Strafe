@@ -65,6 +65,8 @@ const token = (n) => hex(crypto.getRandomValues(new Uint8Array(n)));
 const LEVEL_ID = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 const levelId = () => [...crypto.getRandomValues(new Uint8Array(6))].map(b => LEVEL_ID[b % 32]).join('');
 const PAGE = 30;
+const FALL_CELL = 128; // fall map cells, in units
+const ENDLESS_MIN = 300; // no Endless section takes under 3 seconds
 const DAILY_LIKES = 2, DAILY_COMMUNITY = 10;
 const dayOf = (ms) => new Date(ms).toISOString().slice(0, 10);
 // a week starts on Monday, UTC, and is named by that date
@@ -88,6 +90,9 @@ export class Board extends DurableObject {
       CREATE TABLE IF NOT EXISTS likes (level TEXT NOT NULL, player TEXT NOT NULL, PRIMARY KEY (level, player));
       CREATE TABLE IF NOT EXISTS daily (day TEXT PRIMARY KEY, course TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS weekly (week TEXT PRIMARY KEY, course TEXT NOT NULL);
+      CREATE TABLE IF NOT EXISTS endless (day TEXT NOT NULL, player TEXT NOT NULL, sections INTEGER NOT NULL, ticks INTEGER NOT NULL, at INTEGER NOT NULL, PRIMARY KEY (day, player));
+      CREATE INDEX IF NOT EXISTS endless_rank ON endless (day, sections DESC, ticks);
+      CREATE TABLE IF NOT EXISTS falls (level TEXT NOT NULL, x INTEGER NOT NULL, y INTEGER NOT NULL, z INTEGER NOT NULL, quit INTEGER NOT NULL, n INTEGER NOT NULL, PRIMARY KEY (level, x, y, z, quit));
     `);
     this.force = env && env.DAILY_FORCE; // local tests pin the daily level
     this.checks = new Map(); // community level run checks, parsed once
@@ -230,8 +235,18 @@ export class Board extends DurableObject {
     for (const r of this.sql.exec('SELECT week FROM weekly WHERE course = ?', 'c:' + id).toArray()) this.dropChallenge('weekly', 'week', 'w:', r.week);
     for (const q of ['DELETE FROM times WHERE course = ?', 'DELETE FROM ghosts WHERE course = ?']) this.sql.exec(q, 'c:' + id);
     this.sql.exec('DELETE FROM likes WHERE level = ?', id);
+    this.sql.exec('DELETE FROM falls WHERE level = ?', id);
     this.sql.exec('DELETE FROM levels WHERE id = ?', id);
     this.checks.delete('c:' + id);
+  }
+  endlessBoard(day, me) {
+    const rows = this.sql.exec(`SELECT e.player AS id, p.name, e.sections, e.ticks FROM endless e JOIN players p ON p.id = e.player
+      WHERE e.day = ? ORDER BY e.sections DESC, e.ticks, e.at LIMIT 50`, day).toArray().map((r, i) => Object.assign({ rank: i + 1 }, r));
+    const total = this.one('SELECT COUNT(*) AS n FROM endless WHERE day = ?', day).n;
+    let mine = null;
+    const m = me && this.one('SELECT sections, ticks FROM endless WHERE day = ? AND player = ?', day, me);
+    if (m) mine = { rank: this.one('SELECT COUNT(*) AS n FROM endless WHERE day = ? AND (sections > ? OR (sections = ? AND ticks < ?))', day, m.sections, m.sections, m.ticks).n + 1, sections: m.sections, ticks: m.ticks };
+    return { rows, total, mine };
   }
   total(course) { return this.one('SELECT COUNT(*) AS n FROM times WHERE course = ?', course).n; }
 
@@ -321,6 +336,34 @@ export class Board extends DurableObject {
       const now = Date.now(), week = weekOf(now), course = this.weeklyFor(week);
       return json(this.challenge('w:' + week, course, url.searchParams.get('me'), { day: week, week: true, course, ends: Date.parse(week) + 7 * 86400000, now }));
     }
+    // Endless: one course a day from the day's seed (the game builds it), and
+    // a board of how far people got: most sections, then the quicker time
+    if (path === '/endless' && req.method === 'GET') {
+      const now = Date.now(), day = dayOf(now);
+      return json(Object.assign(this.endlessBoard(day, url.searchParams.get('me')), { day, ends: Date.parse(day) + 86400000, now }));
+    }
+    // where players fell (quit 0) or gave up (quit 1) on a community level,
+    // counted per cell, so its maker can see the spots that stop people
+    if (path === '/falls' && req.method === 'GET') {
+      const id = url.searchParams.get('id') || '';
+      if (!this.one('SELECT 1 FROM levels WHERE id = ?', id)) return fail('That level is gone.', 404);
+      const rows = this.sql.exec('SELECT x, y, z, quit, n FROM falls WHERE level = ? ORDER BY n DESC LIMIT 2000', id).toArray().map(r => [r.x, r.y, r.z, r.quit, r.n]);
+      return json({ cell: FALL_CELL, falls: rows, total: rows.reduce((t, r) => t + r[4], 0) });
+    }
+    if (path === '/falls' && req.method === 'POST') {
+      const id = String(body.id || '');
+      if (!this.one('SELECT 1 FROM levels WHERE id = ?', id)) return fail('That level is gone.', 404);
+      if (this.limited('falls:' + ip, 30, 60000)) return fail('slow down', 429);
+      const pts = Array.isArray(body.pts) ? body.pts.slice(0, 40) : [];
+      let n = 0;
+      for (const p of pts) {
+        if (!Array.isArray(p) || p.length !== 4 || !p.every(v => Number.isFinite(v) && Math.abs(v) < 1e6)) continue;
+        const [x, y, z] = p.slice(0, 3).map(v => Math.round(v / FALL_CELL)), quit = p[3] ? 1 : 0;
+        this.sql.exec('INSERT INTO falls (level, x, y, z, quit, n) VALUES (?, ?, ?, ?, ?, 1) ON CONFLICT (level, x, y, z, quit) DO UPDATE SET n = n + 1', id, x, y, z, quit);
+        n++;
+      }
+      return json({ saved: n });
+    }
     if (path === '/register' && req.method === 'POST') {
       const name = cleanName(body.name);
       if (!name) return fail('Names are 2 to 16 letters, numbers, spaces, dots, dashes or underscores.');
@@ -359,6 +402,20 @@ export class Board extends DurableObject {
         this.sql.exec('INSERT OR REPLACE INTO ghosts (course, player, data) VALUES (?, ?, ?)', course, me.id, JSON.stringify({ e: ghost.e, s: ghost.s }));
       }
       return json({ best: better, total: this.total(course), mine: this.standing(course, me.id), daily: this.dailyRun(course, me.id, ticks, ghost), weekly: this.weeklyRun(course, me.id, ticks, ghost) });
+    }
+    // an Endless run: the day it was run on (today, or yesterday for a run
+    // that went past midnight), the sections cleared and the time it took.
+    // The course is built in the game from the day's seed, so this only
+    // checks the numbers are possible.
+    if (path === '/endless' && req.method === 'POST') {
+      const { day, sections, ticks } = body, now = Date.now();
+      if (this.limited('run:' + me.id, 30, 60000)) return fail('slow down', 429);
+      if (day !== dayOf(now) && day !== dayOf(now - 86400000)) return fail('That Endless course is over.', 422);
+      if (!Number.isInteger(sections) || sections < 1 || sections > 5000 || !Number.isInteger(ticks) || ticks < sections * ENDLESS_MIN || ticks > 8640000) return fail('Run not accepted: bad numbers.', 422);
+      const cur = this.one('SELECT sections, ticks FROM endless WHERE day = ? AND player = ?', day, me.id);
+      const better = !cur || sections > cur.sections || (sections === cur.sections && ticks < cur.ticks);
+      if (better) this.sql.exec('INSERT OR REPLACE INTO endless (day, player, sections, ticks, at) VALUES (?, ?, ?, ?, ?)', day, me.id, sections, ticks, now);
+      return json(Object.assign({ best: better }, this.endlessBoard(day, me.id)));
     }
     // a set run: every level of a set in order, each one a whole run that
     // passes the usual checks. Its time is the levels' times added up.
@@ -451,6 +508,7 @@ export class Board extends DurableObject {
       }
       this.sql.exec('DELETE FROM times WHERE player = ?', me.id);
       this.sql.exec('DELETE FROM ghosts WHERE player = ?', me.id);
+      this.sql.exec('DELETE FROM endless WHERE player = ?', me.id);
       this.sql.exec('DELETE FROM players WHERE id = ?', me.id);
       return json({ deleted: true });
     }
