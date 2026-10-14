@@ -72,6 +72,10 @@ Polish: speed lines streak past the screen edges above about 450 u/s, hard landi
 
 Wallrun sound: catching a wall plays a shoe squeak, palm slap and thump, and the run itself is a scuffing loop that rises in pitch as the wallrun goes on. Mantle boost: a mantle you come into below 150 u/s (speed just before hitting the ledge) pops you out at `mantleExitMin` (280), easing back to the old 200 floor by 250 u/s; faster mantles are unchanged.
 
+Parkour grace (`parkourGrace`, 0.12 s, in `src/physics.js`, tested by `test/grace.js`): a jump pressed just after you run or slide off a ledge still jumps (not when something is right under you, so stepping onto a surf ramp doesn't count), one pressed just after a wallrun or a climb ends still kicks off that wall, and one pressed in the first moment of a climb, before a kick is allowed, is kept and kicks as soon as it is. Speeds, air strafing and surfing are unchanged.
+
+Strafe tips (Settings, on by default, keyboard and mouse only): after a weak air strafe (under 55% on the strafe meter for most of it, while holding A or D), a line under the meter says what held it back most: W held in the air, the mouse turning against the key, turning too slowly, or turning faster than your speed. At most one tip every 5 seconds; the keys it names follow your bindings.
+
 Default tuning matches CS:GO surf/KZ servers: gravity 800, maxspeed 250, accelerate 5.5,
 airaccelerate 150, friction 5.2, stopspeed 80, jump height 57. All of it lives in `DEFAULTS` in `src/physics.js`.
 

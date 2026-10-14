@@ -97,6 +97,8 @@ body:not(.playing) #fps { display: none; }
 #strafe-bar { width: 140px; height: 8px; background: rgba(10,14,18,.45); border: 1px solid rgba(255,255,255,.6); position: relative; }
 #strafe-fill { position: absolute; left: 0; top: 0; bottom: 0; width: 0; background: #fff; }
 #strafe-fill.good { background: var(--up); } #strafe-fill.bad { background: var(--down); }
+#strafe-tip { min-height: 1.3em; font-size: 13px; font-weight: 600; color: #ffd27a; text-shadow: 0 1px 3px rgba(0,0,0,.85); opacity: 0; transition: opacity .3s; text-align: center; padding: 0 16px; }
+#strafe-tip.on { opacity: .95; }
 #strafe-pct { min-width: 3.2em; font-variant-numeric: tabular-nums; text-align: left; }
 
 #toast { top: 28vh; left: 0; right: 0; text-align: center; font-size: 26px; font-weight: 700; font-style: italic; letter-spacing: .02em; opacity: 0; transition: opacity .25s; }
@@ -527,6 +529,7 @@ body.touch #racehud { top: calc(56px + env(safe-area-inset-top, 0px)); left: 10p
   <div id="speedunit">units / sec</div>
   <div id="jumpstat"></div>
   <div id="strafe" aria-hidden="true"><span id="strafe-label">Strafe</span><span id="strafe-bar"><i id="strafe-fill"></i></span><span id="strafe-pct"></span></div>
+  <div id="strafe-tip" aria-live="polite"></div>
   <canvas id="graph" width="480" height="88"></canvas>
 </div>
 <div class="hud" id="keys">
@@ -713,6 +716,7 @@ body.touch #racehud { top: calc(56px + env(safe-area-inset-top, 0px)); left: 10p
             <label><input type="checkbox" id="s-bob"> View bob</label>
             <label><input type="checkbox" id="s-keys"> Key display</label>
             <label><input type="checkbox" id="s-strafe"> Strafe meter</label>
+            <label><input type="checkbox" id="s-strafetips"> Strafe tips (after a weak air strafe, says what to fix)</label>
             <label><input type="checkbox" id="s-shadows"> Shadows</label>
             <label><input type="checkbox" id="s-lines"> Speed lines</label>
             <label><input type="checkbox" id="s-landkick"> Landing camera kick</label>

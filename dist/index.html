@@ -97,6 +97,8 @@ body:not(.playing) #fps { display: none; }
 #strafe-bar { width: 140px; height: 8px; background: rgba(10,14,18,.45); border: 1px solid rgba(255,255,255,.6); position: relative; }
 #strafe-fill { position: absolute; left: 0; top: 0; bottom: 0; width: 0; background: #fff; }
 #strafe-fill.good { background: var(--up); } #strafe-fill.bad { background: var(--down); }
+#strafe-tip { min-height: 1.3em; font-size: 13px; font-weight: 600; color: #ffd27a; text-shadow: 0 1px 3px rgba(0,0,0,.85); opacity: 0; transition: opacity .3s; text-align: center; padding: 0 16px; }
+#strafe-tip.on { opacity: .95; }
 #strafe-pct { min-width: 3.2em; font-variant-numeric: tabular-nums; text-align: left; }
 
 #toast { top: 28vh; left: 0; right: 0; text-align: center; font-size: 26px; font-weight: 700; font-style: italic; letter-spacing: .02em; opacity: 0; transition: opacity .25s; }
@@ -527,6 +529,7 @@ body.touch #racehud { top: calc(56px + env(safe-area-inset-top, 0px)); left: 10p
   <div id="speedunit">units / sec</div>
   <div id="jumpstat"></div>
   <div id="strafe" aria-hidden="true"><span id="strafe-label">Strafe</span><span id="strafe-bar"><i id="strafe-fill"></i></span><span id="strafe-pct"></span></div>
+  <div id="strafe-tip" aria-live="polite"></div>
   <canvas id="graph" width="480" height="88"></canvas>
 </div>
 <div class="hud" id="keys">
@@ -713,6 +716,7 @@ body.touch #racehud { top: calc(56px + env(safe-area-inset-top, 0px)); left: 10p
             <label><input type="checkbox" id="s-bob"> View bob</label>
             <label><input type="checkbox" id="s-keys"> Key display</label>
             <label><input type="checkbox" id="s-strafe"> Strafe meter</label>
+            <label><input type="checkbox" id="s-strafetips"> Strafe tips (after a weak air strafe, says what to fix)</label>
             <label><input type="checkbox" id="s-shadows"> Shadows</label>
             <label><input type="checkbox" id="s-lines"> Speed lines</label>
             <label><input type="checkbox" id="s-landkick"> Landing camera kick</label>
@@ -5126,7 +5130,14 @@ window.STRAFE_ASSETS = {"city":"Z2xURgIAAABU+ggAYFIAAEpTT057ImFzc2V0Ijp7ImdlbmVy
     // falling at least this fast onto an edge your middle hangs over: the
     // landing doesn't take, the fall is cancelled and you slip on with your speed
     edgeBugFall: 450,
+    // forgiving parkour timing: a jump pressed this long after you run off a
+    // ledge, the end of a wallrun or a climb still jumps or kicks off, and one
+    // pressed this long before a climb kick is allowed is kept until it is
+    parkourGrace: 0.12,
   };
+
+  // events that use up a jump press and any grace window still open
+  const ACTS = new Set(['jump', 'walljump', 'climbjump', 'climb', 'mantle', 'vault', 'zip', 'updraft', 'wallrun']);
 
   const HULL_STAND = { min: [-16, 0, -16], max: [16, 72, 16] };
   const HULL_DUCK = { min: [-16, 0, -16], max: [16, 54, 16] };
@@ -5384,6 +5395,9 @@ window.STRAFE_ASSETS = {"city":"Z2xURgIAAABU+ggAYFIAAEpTT057ImFzc2V0Ijp7ImdlbmVy
       this.rampSlide = false;
       this.edgeBug = 0;
       this.airTime = 0;
+      this.jumpBuf = 0;
+      this.ledgeGrace = 0;
+      this.wallGrace = null;
       this.categorize();
     }
 
@@ -5401,6 +5415,10 @@ window.STRAFE_ASSETS = {"city":"Z2xURgIAAABU+ggAYFIAAEpTT057ImFzc2V0Ijp7ImdlbmVy
       this.pitch = cmd.pitch;
       const jumpPressed = cmd.jump && !this.prevJump;
       this.jumpPressed = jumpPressed;
+      if (jumpPressed) this.jumpBuf = c.parkourGrace; else if (this.jumpBuf > 0) this.jumpBuf -= dt;
+      if (this.ledgeGrace > 0) this.ledgeGrace -= dt;
+      if (this.wallGrace && (this.wallGrace.t -= dt) <= 0) this.wallGrace = null;
+      const ev0 = this.events.length;
       // speed a moment ago, before hitting anything: what a mantle counts as "how fast you came in"
       this.approach = Math.max(this.hspeed(), (this.approach || 0) - 2000 * dt);
       if (this.slideCooldown > 0) this.slideCooldown -= dt;
@@ -5420,7 +5438,7 @@ window.STRAFE_ASSETS = {"city":"Z2xURgIAAABU+ggAYFIAAEpTT057ImFzc2V0Ijp7ImdlbmVy
         this.duck(cmd);
         if (this.wallrun) this.wallRunMove(cmd, dt);
         else if (this.climb) this.climbMove(cmd, dt);
-        else if (!this.tryAbilities(cmd, jumpPressed)) this.fullWalkMove(cmd, dt);
+        else if (!this.tryAbilities(cmd, jumpPressed) && !(jumpPressed && this.graceJump(cmd, dt))) this.fullWalkMove(cmd, dt);
       }
 
       // Smooth eye height so duck/slide transitions never pop.
@@ -5436,6 +5454,16 @@ window.STRAFE_ASSETS = {"city":"Z2xURgIAAABU+ggAYFIAAEpTT057ImFzc2V0Ijp7ImdlbmVy
         this.events.push({ type: 'updraft' });
       }
       if (!this.onGround) this.airTime += dt; else this.airTime = 0;
+      let acted = false;
+      for (let i = ev0; i < this.events.length; i++) if (ACTS.has(this.events[i].type)) acted = true;
+      if (acted || this.onGround) { this.ledgeGrace = 0; this.wallGrace = null; }
+      if (acted) this.jumpBuf = 0;
+      // walked or slid off an edge without jumping: a late jump still counts
+      else if (wasOnGround && !this.onGround && !this.mantle && !this.zip && !this.wallrun && !this.climb && !this.rampSlide && this.vel[1] <= 1 &&
+        this.trace(this.pos, [this.pos[0], this.pos[1] - 8, this.pos[2]]).fraction === 1) {
+        // (and nothing right under you, so sliding onto a surf ramp doesn't count)
+        this.ledgeGrace = c.parkourGrace;
+      }
       if (!wasOnGround && this.onGround) {
         this.climbAvailable = true;
         this.lastWall = null;
@@ -5874,23 +5902,57 @@ window.STRAFE_ASSETS = {"city":"Z2xURgIAAABU+ggAYFIAAEpTT057ImFzc2V0Ijp7ImdlbmVy
     }
 
     endWallrun(cooldown) {
+      // the wall you just left: a jump a moment later still kicks off it
+      if (this.wallrun) this.wallGrace = { n: this.wallrun.n, t: this.cfg.parkourGrace, climb: false };
       this.wallrun = null;
       this.wallrunCooldown = cooldown;
+    }
+
+    // Kick off a wall: keep the run speed, add an outward push and a fresh jump.
+    wallKick(n) {
+      const c = this.cfg, f = this.forward();
+      const away = Math.max(0, dot(f, n));
+      this.vel[0] += n[0] * c.wallJumpOut + f[0] * away * 140;
+      this.vel[2] += n[2] * c.wallJumpOut + f[2] * away * 140;
+      this.vel[1] = c.wallJumpUp;
+      this.onGround = false;
+      this.events.push({ type: 'walljump' });
+    }
+
+    climbKick(n) {
+      const c = this.cfg;
+      this.vel = [n[0] * c.wallJumpOut * 1.1, c.wallJumpUp * 0.95, n[2] * c.wallJumpOut * 1.1];
+      this.lastWall = n;
+      this.events.push({ type: 'climbjump' });
+    }
+
+    // A jump pressed in the air just after leaving a wall or a ledge: kick off
+    // the wall, or jump as if you were still on the ledge.
+    graceJump(cmd, dt) {
+      const g = this.wallGrace;
+      if (g) {
+        this.wallGrace = null;
+        if (g.climb) this.climbKick(g.n); else this.wallKick(g.n);
+        this.tryPlayerMove(dt);
+        this.categorize();
+        return true;
+      }
+      if (this.ledgeGrace > 0) {
+        this.ledgeGrace = 0;
+        this.vel[1] = this.cfg.jumpSpeed;
+        this.events.push({ type: 'jump', speed: this.hspeed() });
+        this.fullWalkMove(cmd, dt);
+        return true;
+      }
+      return false;
     }
 
     wallRunMove(cmd, dt) {
       const c = this.cfg, w = this.wallrun, n = w.n;
       w.t += dt;
       if (this.jumpPressed) {
-        // Kick off: keep the run speed, add an outward push and a fresh jump.
-        const f = this.forward();
-        const away = Math.max(0, dot(f, n));
-        this.vel[0] += n[0] * c.wallJumpOut + f[0] * away * 140;
-        this.vel[2] += n[2] * c.wallJumpOut + f[2] * away * 140;
-        this.vel[1] = c.wallJumpUp;
         this.endWallrun(0.2);
-        this.onGround = false;
-        this.events.push({ type: 'walljump' });
+        this.wallKick(n);
         this.tryPlayerMove(dt);
         return;
       }
@@ -5937,11 +5999,10 @@ window.STRAFE_ASSETS = {"city":"Z2xURgIAAABU+ggAYFIAAEpTT057ImFzc2V0Ijp7ImdlbmVy
     climbMove(cmd, dt) {
       const c = this.cfg, cl = this.climb, n = cl.n;
       cl.t += dt;
-      if (this.jumpPressed && cl.t > 0.05) {
-        this.vel = [n[0] * c.wallJumpOut * 1.1, c.wallJumpUp * 0.95, n[2] * c.wallJumpOut * 1.1];
+      // a press just before the kick is allowed is kept for it
+      if ((this.jumpPressed || this.jumpBuf > 0) && cl.t > 0.05) {
         this.climb = null;
-        this.lastWall = n;
-        this.events.push({ type: 'climbjump' });
+        this.climbKick(n);
         this.tryPlayerMove(dt);
         return;
       }
@@ -5953,6 +6014,7 @@ window.STRAFE_ASSETS = {"city":"Z2xURgIAAABU+ggAYFIAAEpTT057ImFzc2V0Ijp7ImdlbmVy
       const tr = this.trace(p, [p[0] - n[0] * 26, p[1], p[2] - n[2] * 26]);
       if (cl.t > c.climbTime || this.vel[1] < -40 || tr.fraction === 1 || cmd.forward <= 0) {
         this.climb = null;
+        this.wallGrace = { n, t: c.parkourGrace, climb: true };
       }
       this.categorize();
       if (this.onGround) { this.climb = null; this.vel[1] = 0; }
@@ -8133,7 +8195,7 @@ window.STRAFE_ASSETS = {"city":"Z2xURgIAAABU+ggAYFIAAEpTT057ImFzc2V0Ijp7ImdlbmVy
   const settings = Object.assign({
     sens: 2.0, fov: 90, airaccelerate: 150, autohop: true,
     fovKick: true, shadows: true, bob: true, keys: true, body: true, ghost: true,
-    speedLines: true, landKick: true, scale: 100, fps: false, strafeMeter: true,
+    speedLines: true, landKick: true, scale: 100, fps: false, strafeMeter: true, strafeTips: true,
     master: 80, music: 50, sfx: 80, padSens: 1, padAutoStrafe: true, padInvert: false,
     colors: 'standard', roll: 100, flip: true, flash: true, hudSize: 100, crosshair: 'dot', cpMarker: true, noCp: false,
   }, TOUCH ? { lookSens: 1, autoStrafe: true, scale: 70, shadows: false } : {}, load(SETTINGS_KEY) || {});
@@ -10257,9 +10319,49 @@ body.touch #menu button, body.touch #drawer button { min-height: 40px; }
     }
     const best = Math.hypot(v, p.cfg.airCap) - v;
     const e = Math.max(-1, Math.min(1, gain / best));
+    if (settings.strafeTips && !p.zip && !p.rampSlide && !surfing()) coachTick(cmd, w, e);
     eff.live += (e - eff.live) * 0.12;
     eff.sum += e; eff.n++;
     eff.show = 0.6;
+  }
+
+  // Strafe tips: over each air strafe (jump to landing or the next jump), what
+  // held the strafe back on the ticks where it was weak, so a weak one can say
+  // what to fix. Keyboard and mouse only, and only once you are trying to
+  // strafe (holding A or D), so plain parkour jumps with W held stay quiet.
+  const coach = { n: 0, side: 0, sum: 0, faults: { w: 0, sync: 0, slow: 0, fast: 0 }, lastYaw: 0, until: 0, next: 0, text: '' };
+  function coachTick(cmd, w, e) {
+    const dy = cmd.yaw - coach.lastYaw;
+    coach.lastYaw = cmd.yaw;
+    coach.n++; coach.sum += e;
+    if (cmd.side) coach.side++;
+    if (!cmd.side || e > 0.6) return;
+    const p = player, f = coach.faults;
+    if (cmd.forward > 0) f.w++;
+    else if (Math.abs(dy) > 1e-5 && (dy > 0) !== (cmd.side < 0)) f.sync++;
+    // where the wish points against the velocity: still along it means the turn
+    // is too slow to gain, pointing back against it means it's too fast
+    else if (p.vel[0] * w.dir[0] + p.vel[2] * w.dir[2] > 0) f.slow++;
+    else f.fast++;
+  }
+  function coachEnd() {
+    const n = coach.n, f = coach.faults;
+    const weak = n >= 30 && coach.side > n * 0.4 && coach.sum / n < 0.55;
+    coach.n = coach.side = coach.sum = 0;
+    const worst = Object.keys(f).reduce((a, b) => f[b] > f[a] ? b : a);
+    const many = f[worst];
+    for (const k in f) f[k] = 0;
+    const now = performance.now();
+    if (!weak || many < 8 || now < coach.next || !settings.strafeTips || TOUCH || pad.on || !locked || replay.on || game.demo) return;
+    const k = (a) => keyName(binds[a]);
+    coach.text = {
+      w: 'Let go of ' + k('forward') + ' in the air: strafe with ' + k('left') + ' or ' + k('right') + ' alone',
+      sync: 'Turn the mouse the same way as the key: ' + k('left') + ' with left, ' + k('right') + ' with right',
+      slow: 'Turn the mouse faster while you hold ' + k('left') + ' or ' + k('right'),
+      fast: 'Turn a little slower: you are turning past your speed',
+    }[worst];
+    coach.until = now + 2600;
+    coach.next = now + 5000;
   }
 
   function trackSync(cmd) {
@@ -10280,6 +10382,7 @@ body.touch #menu button, body.touch #drawer button { min-height: 40px; }
       if (EVENT_SFX[e.type]) A.play(EVENT_SFX[e.type]);
       tutorialEvent(e.type);
       if (e.type === 'land' && e.speed > 120) A.play('land', { speed: e.speed, surface: surfaceOf(player.groundBrush) });
+      if (e.type === 'jump' || e.type === 'land') coachEnd();
       if (e.type === 'jump') {
         if (stats.syncAll > 10) stats.lastSync = stats.syncGood / stats.syncAll;
         if (eff.n > 10) eff.last = eff.sum / eff.n;
@@ -10613,7 +10716,7 @@ body.touch #menu button, body.touch #drawer button { min-height: 40px; }
     speed: $('speed'), speedWrap: $('speedwrap'), jump: $('jumpstat'), timer: $('timer'), course: $('course'),
     bestEl: $('best'), stage: $('stage'), toast: $('toast'), graph: $('graph'), keys: $('keys'),
     k: { w: $('k-w'), a: $('k-a'), s: $('k-s'), d: $('k-d'), j: $('k-j'), c: $('k-c'), ml: $('k-ml'), mr: $('k-mr') },
-    strafe: $('strafe'), strafeFill: $('strafe-fill'), strafePct: $('strafe-pct'),
+    strafe: $('strafe'), strafeFill: $('strafe-fill'), strafePct: $('strafe-pct'), strafeTip: $('strafe-tip'),
     state: $('movestate'),
   };
   const gctx = hud.graph.getContext('2d');
@@ -10778,6 +10881,9 @@ body.touch #menu button, body.touch #drawer button { min-height: 40px; }
       hud.strafeFill.className = e > 0.8 ? 'good' : e < 0.4 ? 'bad' : '';
       hud.strafePct.textContent = Math.round(e * 100) + '%';
     }
+    const tipOn = performance.now() < coach.until && settings.strafeTips && locked && !replay.on;
+    if (tipOn && hud.strafeTip.textContent !== coach.text) hud.strafeTip.textContent = coach.text;
+    hud.strafeTip.classList.toggle('on', tipOn);
 
     // speed trace, last ~6 seconds
     const W = hud.graph.width, H = hud.graph.height;
@@ -12700,6 +12806,7 @@ body.touch #menu button, body.touch #drawer button { min-height: 40px; }
   bindCheck('s-ghost', 'ghost');
   bindCheck('s-keys', 'keys', () => hud.keys.hidden = !settings.keys);
   bindCheck('s-strafe', 'strafeMeter');
+  bindCheck('s-strafetips', 'strafeTips');
   bindCheck('s-cpmark', 'cpMarker');
   bindCheck('s-nocp', 'noCp', () => { toast(settings.noCp ? 'Checkpoints off: a fall goes back to the start' : 'Checkpoints on'); });
   const applyCrosshair = () => { $('crosshair').dataset.style = settings.crosshair; };
@@ -14218,7 +14325,7 @@ body.editing.playing #edhelp { display: block; }
   previewCourse(map.order[0]);
   showMenuState();
   if (location.hash === '#demo') game.demo = true; // headless screenshot mode
-  window.__strafe = { courses: map.courses, mats: MATS, lights: { hemi, sun }, setNight, setTheme, player, game, keys, eff, faceInsets, practice: { set: setPractice, save: practiceSave, load: practiceLoad }, goCourse, place, attract, previewCourse, body, ghost, cosmetics, preview, step, modelChunks, renderer, setView: (y, p) => { yaw = y; pitch = p; }, editor: { ed, build: edBuild, enter: enterEditor, test: edTest, back: edBack, code: edCode, decode: edDecode, publish: edPublish }, community: { cm, open: cmOpen, show: cmShow, play: cmPlay }, daily: { daily, weekly, open: dailyOpen, play: dailyPlay, load: dailyLoad, finish: dailyFinish }, practiceJump, sets: { start: startSet, best: setBest, list: SETS }, world,
+  window.__strafe = { courses: map.courses, mats: MATS, lights: { hemi, sun }, setNight, setTheme, player, game, keys, eff, coach, faceInsets, practice: { set: setPractice, save: practiceSave, load: practiceLoad }, goCourse, place, attract, previewCourse, body, ghost, cosmetics, preview, step, modelChunks, renderer, setView: (y, p) => { yaw = y; pitch = p; }, editor: { ed, build: edBuild, enter: enterEditor, test: edTest, back: edBack, code: edCode, decode: edDecode, publish: edPublish }, community: { cm, open: cmOpen, show: cmShow, play: cmPlay }, daily: { daily, weekly, open: dailyOpen, play: dailyPlay, load: dailyLoad, finish: dailyFinish }, practiceJump, sets: { start: startSet, best: setBest, list: SETS }, world,
     online: { net, race, submit: netSubmit, raceFinish, showComplete, openDrawer },
     replay: { state: replay, open: replayOpen, close: replayClose, watchBest }, career, ach: { check: achCheck, done: achDone, list: ACH, render: achRender }, binds: { binds, set: (id, code) => { rebinding = id; setBind(code); }, keyName }, settings, applyColors, saved: { save: saveLastRun, render: replaysRender },
     endless: { en, start: enStart, daily: enDaily, random: enRandom, open: enOpen, save: enSave }, falls, fallMap: { load: fallMapLoad, hide: fallMapHide, view: fallView }, respawn };

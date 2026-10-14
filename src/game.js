@@ -14,7 +14,7 @@
   const settings = Object.assign({
     sens: 2.0, fov: 90, airaccelerate: 150, autohop: true,
     fovKick: true, shadows: true, bob: true, keys: true, body: true, ghost: true,
-    speedLines: true, landKick: true, scale: 100, fps: false, strafeMeter: true,
+    speedLines: true, landKick: true, scale: 100, fps: false, strafeMeter: true, strafeTips: true,
     master: 80, music: 50, sfx: 80, padSens: 1, padAutoStrafe: true, padInvert: false,
     colors: 'standard', roll: 100, flip: true, flash: true, hudSize: 100, crosshair: 'dot', cpMarker: true, noCp: false,
   }, TOUCH ? { lookSens: 1, autoStrafe: true, scale: 70, shadows: false } : {}, load(SETTINGS_KEY) || {});
@@ -2138,9 +2138,49 @@ body.touch #menu button, body.touch #drawer button { min-height: 40px; }
     }
     const best = Math.hypot(v, p.cfg.airCap) - v;
     const e = Math.max(-1, Math.min(1, gain / best));
+    if (settings.strafeTips && !p.zip && !p.rampSlide && !surfing()) coachTick(cmd, w, e);
     eff.live += (e - eff.live) * 0.12;
     eff.sum += e; eff.n++;
     eff.show = 0.6;
+  }
+
+  // Strafe tips: over each air strafe (jump to landing or the next jump), what
+  // held the strafe back on the ticks where it was weak, so a weak one can say
+  // what to fix. Keyboard and mouse only, and only once you are trying to
+  // strafe (holding A or D), so plain parkour jumps with W held stay quiet.
+  const coach = { n: 0, side: 0, sum: 0, faults: { w: 0, sync: 0, slow: 0, fast: 0 }, lastYaw: 0, until: 0, next: 0, text: '' };
+  function coachTick(cmd, w, e) {
+    const dy = cmd.yaw - coach.lastYaw;
+    coach.lastYaw = cmd.yaw;
+    coach.n++; coach.sum += e;
+    if (cmd.side) coach.side++;
+    if (!cmd.side || e > 0.6) return;
+    const p = player, f = coach.faults;
+    if (cmd.forward > 0) f.w++;
+    else if (Math.abs(dy) > 1e-5 && (dy > 0) !== (cmd.side < 0)) f.sync++;
+    // where the wish points against the velocity: still along it means the turn
+    // is too slow to gain, pointing back against it means it's too fast
+    else if (p.vel[0] * w.dir[0] + p.vel[2] * w.dir[2] > 0) f.slow++;
+    else f.fast++;
+  }
+  function coachEnd() {
+    const n = coach.n, f = coach.faults;
+    const weak = n >= 30 && coach.side > n * 0.4 && coach.sum / n < 0.55;
+    coach.n = coach.side = coach.sum = 0;
+    const worst = Object.keys(f).reduce((a, b) => f[b] > f[a] ? b : a);
+    const many = f[worst];
+    for (const k in f) f[k] = 0;
+    const now = performance.now();
+    if (!weak || many < 8 || now < coach.next || !settings.strafeTips || TOUCH || pad.on || !locked || replay.on || game.demo) return;
+    const k = (a) => keyName(binds[a]);
+    coach.text = {
+      w: 'Let go of ' + k('forward') + ' in the air: strafe with ' + k('left') + ' or ' + k('right') + ' alone',
+      sync: 'Turn the mouse the same way as the key: ' + k('left') + ' with left, ' + k('right') + ' with right',
+      slow: 'Turn the mouse faster while you hold ' + k('left') + ' or ' + k('right'),
+      fast: 'Turn a little slower: you are turning past your speed',
+    }[worst];
+    coach.until = now + 2600;
+    coach.next = now + 5000;
   }
 
   function trackSync(cmd) {
@@ -2161,6 +2201,7 @@ body.touch #menu button, body.touch #drawer button { min-height: 40px; }
       if (EVENT_SFX[e.type]) A.play(EVENT_SFX[e.type]);
       tutorialEvent(e.type);
       if (e.type === 'land' && e.speed > 120) A.play('land', { speed: e.speed, surface: surfaceOf(player.groundBrush) });
+      if (e.type === 'jump' || e.type === 'land') coachEnd();
       if (e.type === 'jump') {
         if (stats.syncAll > 10) stats.lastSync = stats.syncGood / stats.syncAll;
         if (eff.n > 10) eff.last = eff.sum / eff.n;
@@ -2494,7 +2535,7 @@ body.touch #menu button, body.touch #drawer button { min-height: 40px; }
     speed: $('speed'), speedWrap: $('speedwrap'), jump: $('jumpstat'), timer: $('timer'), course: $('course'),
     bestEl: $('best'), stage: $('stage'), toast: $('toast'), graph: $('graph'), keys: $('keys'),
     k: { w: $('k-w'), a: $('k-a'), s: $('k-s'), d: $('k-d'), j: $('k-j'), c: $('k-c'), ml: $('k-ml'), mr: $('k-mr') },
-    strafe: $('strafe'), strafeFill: $('strafe-fill'), strafePct: $('strafe-pct'),
+    strafe: $('strafe'), strafeFill: $('strafe-fill'), strafePct: $('strafe-pct'), strafeTip: $('strafe-tip'),
     state: $('movestate'),
   };
   const gctx = hud.graph.getContext('2d');
@@ -2659,6 +2700,9 @@ body.touch #menu button, body.touch #drawer button { min-height: 40px; }
       hud.strafeFill.className = e > 0.8 ? 'good' : e < 0.4 ? 'bad' : '';
       hud.strafePct.textContent = Math.round(e * 100) + '%';
     }
+    const tipOn = performance.now() < coach.until && settings.strafeTips && locked && !replay.on;
+    if (tipOn && hud.strafeTip.textContent !== coach.text) hud.strafeTip.textContent = coach.text;
+    hud.strafeTip.classList.toggle('on', tipOn);
 
     // speed trace, last ~6 seconds
     const W = hud.graph.width, H = hud.graph.height;
@@ -4581,6 +4625,7 @@ body.touch #menu button, body.touch #drawer button { min-height: 40px; }
   bindCheck('s-ghost', 'ghost');
   bindCheck('s-keys', 'keys', () => hud.keys.hidden = !settings.keys);
   bindCheck('s-strafe', 'strafeMeter');
+  bindCheck('s-strafetips', 'strafeTips');
   bindCheck('s-cpmark', 'cpMarker');
   bindCheck('s-nocp', 'noCp', () => { toast(settings.noCp ? 'Checkpoints off: a fall goes back to the start' : 'Checkpoints on'); });
   const applyCrosshair = () => { $('crosshair').dataset.style = settings.crosshair; };
@@ -6099,7 +6144,7 @@ body.editing.playing #edhelp { display: block; }
   previewCourse(map.order[0]);
   showMenuState();
   if (location.hash === '#demo') game.demo = true; // headless screenshot mode
-  window.__strafe = { courses: map.courses, mats: MATS, lights: { hemi, sun }, setNight, setTheme, player, game, keys, eff, faceInsets, practice: { set: setPractice, save: practiceSave, load: practiceLoad }, goCourse, place, attract, previewCourse, body, ghost, cosmetics, preview, step, modelChunks, renderer, setView: (y, p) => { yaw = y; pitch = p; }, editor: { ed, build: edBuild, enter: enterEditor, test: edTest, back: edBack, code: edCode, decode: edDecode, publish: edPublish }, community: { cm, open: cmOpen, show: cmShow, play: cmPlay }, daily: { daily, weekly, open: dailyOpen, play: dailyPlay, load: dailyLoad, finish: dailyFinish }, practiceJump, sets: { start: startSet, best: setBest, list: SETS }, world,
+  window.__strafe = { courses: map.courses, mats: MATS, lights: { hemi, sun }, setNight, setTheme, player, game, keys, eff, coach, faceInsets, practice: { set: setPractice, save: practiceSave, load: practiceLoad }, goCourse, place, attract, previewCourse, body, ghost, cosmetics, preview, step, modelChunks, renderer, setView: (y, p) => { yaw = y; pitch = p; }, editor: { ed, build: edBuild, enter: enterEditor, test: edTest, back: edBack, code: edCode, decode: edDecode, publish: edPublish }, community: { cm, open: cmOpen, show: cmShow, play: cmPlay }, daily: { daily, weekly, open: dailyOpen, play: dailyPlay, load: dailyLoad, finish: dailyFinish }, practiceJump, sets: { start: startSet, best: setBest, list: SETS }, world,
     online: { net, race, submit: netSubmit, raceFinish, showComplete, openDrawer },
     replay: { state: replay, open: replayOpen, close: replayClose, watchBest }, career, ach: { check: achCheck, done: achDone, list: ACH, render: achRender }, binds: { binds, set: (id, code) => { rebinding = id; setBind(code); }, keyName }, settings, applyColors, saved: { save: saveLastRun, render: replaysRender },
     endless: { en, start: enStart, daily: enDaily, random: enRandom, open: enOpen, save: enSave }, falls, fallMap: { load: fallMapLoad, hide: fallMapHide, view: fallView }, respawn };

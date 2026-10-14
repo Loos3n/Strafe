@@ -52,7 +52,14 @@
     // falling at least this fast onto an edge your middle hangs over: the
     // landing doesn't take, the fall is cancelled and you slip on with your speed
     edgeBugFall: 450,
+    // forgiving parkour timing: a jump pressed this long after you run off a
+    // ledge, the end of a wallrun or a climb still jumps or kicks off, and one
+    // pressed this long before a climb kick is allowed is kept until it is
+    parkourGrace: 0.12,
   };
+
+  // events that use up a jump press and any grace window still open
+  const ACTS = new Set(['jump', 'walljump', 'climbjump', 'climb', 'mantle', 'vault', 'zip', 'updraft', 'wallrun']);
 
   const HULL_STAND = { min: [-16, 0, -16], max: [16, 72, 16] };
   const HULL_DUCK = { min: [-16, 0, -16], max: [16, 54, 16] };
@@ -310,6 +317,9 @@
       this.rampSlide = false;
       this.edgeBug = 0;
       this.airTime = 0;
+      this.jumpBuf = 0;
+      this.ledgeGrace = 0;
+      this.wallGrace = null;
       this.categorize();
     }
 
@@ -327,6 +337,10 @@
       this.pitch = cmd.pitch;
       const jumpPressed = cmd.jump && !this.prevJump;
       this.jumpPressed = jumpPressed;
+      if (jumpPressed) this.jumpBuf = c.parkourGrace; else if (this.jumpBuf > 0) this.jumpBuf -= dt;
+      if (this.ledgeGrace > 0) this.ledgeGrace -= dt;
+      if (this.wallGrace && (this.wallGrace.t -= dt) <= 0) this.wallGrace = null;
+      const ev0 = this.events.length;
       // speed a moment ago, before hitting anything: what a mantle counts as "how fast you came in"
       this.approach = Math.max(this.hspeed(), (this.approach || 0) - 2000 * dt);
       if (this.slideCooldown > 0) this.slideCooldown -= dt;
@@ -346,7 +360,7 @@
         this.duck(cmd);
         if (this.wallrun) this.wallRunMove(cmd, dt);
         else if (this.climb) this.climbMove(cmd, dt);
-        else if (!this.tryAbilities(cmd, jumpPressed)) this.fullWalkMove(cmd, dt);
+        else if (!this.tryAbilities(cmd, jumpPressed) && !(jumpPressed && this.graceJump(cmd, dt))) this.fullWalkMove(cmd, dt);
       }
 
       // Smooth eye height so duck/slide transitions never pop.
@@ -362,6 +376,16 @@
         this.events.push({ type: 'updraft' });
       }
       if (!this.onGround) this.airTime += dt; else this.airTime = 0;
+      let acted = false;
+      for (let i = ev0; i < this.events.length; i++) if (ACTS.has(this.events[i].type)) acted = true;
+      if (acted || this.onGround) { this.ledgeGrace = 0; this.wallGrace = null; }
+      if (acted) this.jumpBuf = 0;
+      // walked or slid off an edge without jumping: a late jump still counts
+      else if (wasOnGround && !this.onGround && !this.mantle && !this.zip && !this.wallrun && !this.climb && !this.rampSlide && this.vel[1] <= 1 &&
+        this.trace(this.pos, [this.pos[0], this.pos[1] - 8, this.pos[2]]).fraction === 1) {
+        // (and nothing right under you, so sliding onto a surf ramp doesn't count)
+        this.ledgeGrace = c.parkourGrace;
+      }
       if (!wasOnGround && this.onGround) {
         this.climbAvailable = true;
         this.lastWall = null;
@@ -800,23 +824,57 @@
     }
 
     endWallrun(cooldown) {
+      // the wall you just left: a jump a moment later still kicks off it
+      if (this.wallrun) this.wallGrace = { n: this.wallrun.n, t: this.cfg.parkourGrace, climb: false };
       this.wallrun = null;
       this.wallrunCooldown = cooldown;
+    }
+
+    // Kick off a wall: keep the run speed, add an outward push and a fresh jump.
+    wallKick(n) {
+      const c = this.cfg, f = this.forward();
+      const away = Math.max(0, dot(f, n));
+      this.vel[0] += n[0] * c.wallJumpOut + f[0] * away * 140;
+      this.vel[2] += n[2] * c.wallJumpOut + f[2] * away * 140;
+      this.vel[1] = c.wallJumpUp;
+      this.onGround = false;
+      this.events.push({ type: 'walljump' });
+    }
+
+    climbKick(n) {
+      const c = this.cfg;
+      this.vel = [n[0] * c.wallJumpOut * 1.1, c.wallJumpUp * 0.95, n[2] * c.wallJumpOut * 1.1];
+      this.lastWall = n;
+      this.events.push({ type: 'climbjump' });
+    }
+
+    // A jump pressed in the air just after leaving a wall or a ledge: kick off
+    // the wall, or jump as if you were still on the ledge.
+    graceJump(cmd, dt) {
+      const g = this.wallGrace;
+      if (g) {
+        this.wallGrace = null;
+        if (g.climb) this.climbKick(g.n); else this.wallKick(g.n);
+        this.tryPlayerMove(dt);
+        this.categorize();
+        return true;
+      }
+      if (this.ledgeGrace > 0) {
+        this.ledgeGrace = 0;
+        this.vel[1] = this.cfg.jumpSpeed;
+        this.events.push({ type: 'jump', speed: this.hspeed() });
+        this.fullWalkMove(cmd, dt);
+        return true;
+      }
+      return false;
     }
 
     wallRunMove(cmd, dt) {
       const c = this.cfg, w = this.wallrun, n = w.n;
       w.t += dt;
       if (this.jumpPressed) {
-        // Kick off: keep the run speed, add an outward push and a fresh jump.
-        const f = this.forward();
-        const away = Math.max(0, dot(f, n));
-        this.vel[0] += n[0] * c.wallJumpOut + f[0] * away * 140;
-        this.vel[2] += n[2] * c.wallJumpOut + f[2] * away * 140;
-        this.vel[1] = c.wallJumpUp;
         this.endWallrun(0.2);
-        this.onGround = false;
-        this.events.push({ type: 'walljump' });
+        this.wallKick(n);
         this.tryPlayerMove(dt);
         return;
       }
@@ -863,11 +921,10 @@
     climbMove(cmd, dt) {
       const c = this.cfg, cl = this.climb, n = cl.n;
       cl.t += dt;
-      if (this.jumpPressed && cl.t > 0.05) {
-        this.vel = [n[0] * c.wallJumpOut * 1.1, c.wallJumpUp * 0.95, n[2] * c.wallJumpOut * 1.1];
+      // a press just before the kick is allowed is kept for it
+      if ((this.jumpPressed || this.jumpBuf > 0) && cl.t > 0.05) {
         this.climb = null;
-        this.lastWall = n;
-        this.events.push({ type: 'climbjump' });
+        this.climbKick(n);
         this.tryPlayerMove(dt);
         return;
       }
@@ -879,6 +936,7 @@
       const tr = this.trace(p, [p[0] - n[0] * 26, p[1], p[2] - n[2] * 26]);
       if (cl.t > c.climbTime || this.vel[1] < -40 || tr.fraction === 1 || cmd.forward <= 0) {
         this.climb = null;
+        this.wallGrace = { n, t: c.parkourGrace, climb: true };
       }
       this.categorize();
       if (this.onGround) { this.climb = null; this.vel[1] = 0; }
