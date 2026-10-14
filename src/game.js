@@ -2622,6 +2622,10 @@ body.touch #menu button, body.touch #drawer button { min-height: 40px; }
     $('c-next').textContent = game.course === 'custom' ? 'Back to editor' : isCommunity(game.course) ? 'More community levels' : nx ? 'Next: ' + map.courses[nx].name : 'Back to levels';
     $('c-next').dataset.target = game.course === 'custom' ? 'editor' : isCommunity(game.course) ? 'community' : nx || 'levels';
     const job = game.mission !== null ? STORY[game.mission] : null;
+    // story jobs step back to the Story screen, everything else to the level list
+    $('c-back').innerHTML = (job ? 'Story' : 'Levels') + ' <kbd>Esc</kbd>';
+    $('c-back').dataset.to = job ? 'story' : 'levels';
+    $('c-menu').hidden = game.course === 'custom';
     $('c-label').textContent = job ? (game.mission ? 'Job ' + game.mission : 'Prologue') + ' complete' : 'Level complete';
     $('c-story').hidden = !job;
     if (job) {
@@ -2658,7 +2662,7 @@ body.touch #menu button, body.touch #drawer button { min-height: 40px; }
     closeComplete();
     if (what === 'next') {
       const t = $('c-next').dataset.target;
-      if (t === 'story') { goIdle(); showMenuState(); openDrawer('story'); return; }
+      if (t === 'story') { goIdle(); game.started = false; showMenuState(); openDrawer('story'); return; }
       if (t === 'editor') { edBack(); return; }
       if (t === 'community') { goIdle(); game.started = false; showMenuState(); openDrawer('community'); return; }
       if (t === 'levels') { goIdle(); game.started = false; showMenuState(); showScreen('levels'); return; }
@@ -2669,6 +2673,8 @@ body.touch #menu button, body.touch #drawer button { min-height: 40px; }
     else if (what === 'retry') { if (game.setDone) startSet(game.setDone.set, game.setDone.race); else restartCourse(); startPlay(); }
     else if (what === 'watch') watchBest(game.course, 'levels');
     else if (ed.testing) edBack();
+    else if (what === 'menu') { goIdle(); game.started = false; showMenuState(); }
+    else if ($('c-back').dataset.to === 'story') { goIdle(); game.started = false; showMenuState(); openDrawer('story'); }
     else { showMenuState(); showScreen('levels'); } // levels: back to level select
   }
   for (const b of completeEl.querySelectorAll('[data-act]')) b.addEventListener('click', () => completeAction(b.dataset.act));
@@ -2680,6 +2686,9 @@ body.touch #menu button, body.touch #drawer button { min-height: 40px; }
     else if (e.code === 'Escape') completeAction('levels');
     else if (e.code === 'KeyV' && !userCourse(game.course) && ghost.has(game.course)) completeAction('watch');
     else if (e.code === 'KeyS' && !$('c-save').hidden) completeAction('save');
+    else return;
+    // the sheet is closed now, so keep the menu's own keys (Esc closes the drawer) off this press
+    e.stopImmediatePropagation();
   });
 
   // ------------------------------------------------------------ set runs
@@ -2749,6 +2758,9 @@ body.touch #menu button, body.touch #drawer button { min-height: 40px; }
     $('c-dist').textContent = (S.dist * 0.0254).toFixed(0);
     $('c-next').textContent = 'Back to levels';
     $('c-next').dataset.target = 'levels';
+    $('c-back').innerHTML = 'Levels <kbd>Esc</kbd>';
+    $('c-back').dataset.to = 'levels';
+    $('c-menu').hidden = false;
     clearTimeout(completeTimer);
     completeTimer = setTimeout(() => {
       document.body.classList.add('complete');
