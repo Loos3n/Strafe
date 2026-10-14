@@ -18,6 +18,7 @@
     master: 80, music: 50, sfx: 80, padSens: 1, padAutoStrafe: true, padInvert: false,
     colors: 'standard', roll: 100, flip: true, flash: true, hudSize: 100, crosshair: 'dot', cpMarker: true, noCp: false,
   }, TOUCH ? { lookSens: 1, autoStrafe: true, scale: 70, shadows: false } : {}, load(SETTINGS_KEY) || {});
+  settings.airaccelerate = 150; // locked: old saves from when it had a slider are ignored
   const best = load(BEST_KEY) || {};
   // ------------------------------------------------------------ story
   // A short courier campaign over the existing levels. Each job has a
@@ -4658,7 +4659,6 @@ body.touch #menu button, body.touch #drawer button { min-height: 40px; }
   bindRange('s-sfx', 'sfx', v => v + '%', applyAudio);
   bindRange('s-sens', 'sens', v => v.toFixed(2));
   bindRange('s-fov', 'fov', v => v + '°');
-  bindRange('s-aa', 'airaccelerate', v => String(v), () => { player.cfg.airaccelerate = settings.airaccelerate; });
   bindRange('s-pad', 'padSens', v => v.toFixed(2));
   bindCheck('s-padstrafe', 'padAutoStrafe');
   bindCheck('s-padinvert', 'padInvert');

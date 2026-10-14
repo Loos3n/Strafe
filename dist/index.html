@@ -700,9 +700,7 @@ body.touch #racehud { top: calc(56px + env(safe-area-inset-top, 0px)); left: 10p
         <div class="group">
           <p class="label">Movement</p>
           <div class="settings">
-            <label for="s-aa">sv_airaccelerate</label><output id="s-aa-v"></output>
-            <input type="range" id="s-aa" min="10" max="1000" step="10">
-            <p class="hint">Stock CS:GO is 12. KZ servers run 100, surf servers 150 or more.</p>
+            <p class="hint">sv_airaccelerate is locked at 150, the surf server standard.</p>
           </div>
           <div class="checks" style="margin-top:10px">
             <label><input type="checkbox" id="s-nocp"> No checkpoints: a fall sends you back to the start (the marker still shows the way)</label>
@@ -8209,6 +8207,7 @@ window.STRAFE_ASSETS = {"city":"Z2xURgIAAABU+ggAYFIAAEpTT057ImFzc2V0Ijp7ImdlbmVy
     master: 80, music: 50, sfx: 80, padSens: 1, padAutoStrafe: true, padInvert: false,
     colors: 'standard', roll: 100, flip: true, flash: true, hudSize: 100, crosshair: 'dot', cpMarker: true, noCp: false,
   }, TOUCH ? { lookSens: 1, autoStrafe: true, scale: 70, shadows: false } : {}, load(SETTINGS_KEY) || {});
+  settings.airaccelerate = 150; // locked: old saves from when it had a slider are ignored
   const best = load(BEST_KEY) || {};
   // ------------------------------------------------------------ story
   // A short courier campaign over the existing levels. Each job has a
@@ -12849,7 +12848,6 @@ body.touch #menu button, body.touch #drawer button { min-height: 40px; }
   bindRange('s-sfx', 'sfx', v => v + '%', applyAudio);
   bindRange('s-sens', 'sens', v => v.toFixed(2));
   bindRange('s-fov', 'fov', v => v + '°');
-  bindRange('s-aa', 'airaccelerate', v => String(v), () => { player.cfg.airaccelerate = settings.airaccelerate; });
   bindRange('s-pad', 'padSens', v => v.toFixed(2));
   bindCheck('s-padstrafe', 'padAutoStrafe');
   bindCheck('s-padinvert', 'padInvert');

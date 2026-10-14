@@ -700,9 +700,7 @@ body.touch #racehud { top: calc(56px + env(safe-area-inset-top, 0px)); left: 10p
         <div class="group">
           <p class="label">Movement</p>
           <div class="settings">
-            <label for="s-aa">sv_airaccelerate</label><output id="s-aa-v"></output>
-            <input type="range" id="s-aa" min="10" max="1000" step="10">
-            <p class="hint">Stock CS:GO is 12. KZ servers run 100, surf servers 150 or more.</p>
+            <p class="hint">sv_airaccelerate is locked at 150, the surf server standard.</p>
           </div>
           <div class="checks" style="margin-top:10px">
             <label><input type="checkbox" id="s-nocp"> No checkpoints: a fall sends you back to the start (the marker still shows the way)</label>
