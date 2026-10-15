@@ -185,6 +185,79 @@
   sky.renderOrder = -1;
   scene.add(sky);
 
+  // Distant skyline: two rings of tower silhouettes in the haze that move
+  // with the camera like the sky does, so every level (which is all you see
+  // of the world now) has a city on its horizon. Never reached, never
+  // collided with, and nothing in it belongs to a level. The towers fade into
+  // the fog below the horizon, so a level high up or low down sees the same
+  // band; at night a few windows are lit.
+  const backdrop = (() => {
+    const group = new THREE.Group();
+    let sb = 4242;
+    const r = () => ((sb = (sb * 16807) % 2147483647) / 2147483647);
+    const uni = { fogColor: { value: new THREE.Color(HORIZON) }, tint: { value: new THREE.Color(0x7d8fa0) }, night: { value: 0 } };
+    function ring(R, amt, hMin, hMax) {
+      const pos = [], att = [];
+      const quad = (a, b, c, d, s, u0, u1, v0, v1) => {
+        for (const [p, u, v] of [[a, u0, v0], [b, u1, v0], [c, u1, v1], [a, u0, v0], [c, u1, v1], [d, u0, v1]]) { pos.push(p[0], p[1], p[2]); att.push(u, v, s); }
+      };
+      const base = -9000;
+      const P = (a, rad, y) => [Math.sin(a) * rad, y, -Math.cos(a) * rad];
+      let ang = 0;
+      while (ang < Math.PI * 2 - 0.01) {
+        const w = (0.6 + r() * 1.6) * 1600 / R, gap = r() < 0.25 ? r() * w : 0;
+        const a0 = ang + gap, a1 = Math.min(a0 + w, Math.PI * 2);
+        ang = a1;
+        const hgt = hMin + (hMax - hMin) * Math.pow(r(), 2.2);
+        const dR = 900 + r() * 1800, rr = R + (r() - 0.5) * 3000, fw = (a1 - a0) * rr;
+        const n0 = P(a0, rr, base), n1 = P(a1, rr, base), t0 = P(a0, rr, hgt), t1 = P(a1, rr, hgt);
+        const f0 = P(a0, rr + dR, base), f1 = P(a1, rr + dR, base), g0 = P(a0, rr + dR, hgt), g1 = P(a1, rr + dR, hgt);
+        quad(n0, n1, t1, t0, 1, 0, fw, base, hgt);       // the face toward the camera
+        quad(n0, t0, g0, f0, 0.82, 0, dR, base, hgt);    // the two ends, a shade lighter
+        quad(n1, f1, g1, t1, 0.82, 0, dR, base, hgt);
+        quad(t0, t1, g1, g0, 1.08, 0, fw, hgt, hgt);     // the roof, seen from the high levels
+        if (r() < 0.35) { // a narrower crown on some towers
+          const c0 = a0 + (a1 - a0) * 0.25, c1 = a1 - (a1 - a0) * 0.25, ch = hgt + 400 + r() * 1400;
+          quad(P(c0, rr + 200, hgt), P(c1, rr + 200, hgt), P(c1, rr + 200, ch), P(c0, rr + 200, ch), 1, 0, (c1 - c0) * rr, hgt, ch);
+        }
+      }
+      const g = new THREE.BufferGeometry();
+      g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+      g.setAttribute('uvs', new THREE.Float32BufferAttribute(att, 3));
+      const m = new THREE.ShaderMaterial({
+        uniforms: Object.assign({ amt: { value: amt } }, uni), fog: false, side: THREE.DoubleSide,
+        vertexShader: 'attribute vec3 uvs; varying vec3 vUv; varying float vY; void main(){ vUv = uvs; vY = position.y; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
+        fragmentShader: [
+          'uniform vec3 fogColor; uniform vec3 tint; uniform float amt; uniform float night; varying vec3 vUv; varying float vY;',
+          'void main(){',
+          // solid near the horizon, gone into the haze well below it
+          ' float k = amt * smoothstep(-6500.0, -1200.0, vY) * vUv.z;',
+          ' vec3 c = mix(fogColor, tint, clamp(k, 0.0, 1.0));',
+          ' if (night > 0.0 && vUv.z > 0.9 && vUv.z < 1.05) {',
+          '   vec2 q = vec2(vUv.x / 160.0, vUv.y / 220.0); vec2 cell = floor(q); vec2 f = fract(q);',
+          '   float h = fract(sin(dot(cell, vec2(12.9898, 78.233))) * 43758.5453);',
+          '   float lit = step(0.8, h) * step(0.3, f.x) * step(f.x, 0.75) * step(0.35, f.y) * step(f.y, 0.75);',
+          '   c += vec3(1.0, 0.78, 0.45) * lit * 0.55 * night * smoothstep(-4000.0, -800.0, vY) * amt; }',
+          ' gl_FragColor = vec4(c, 1.0); }',
+        ].join('\n'),
+      });
+      const mesh = new THREE.Mesh(g, m);
+      mesh.frustumCulled = false;
+      group.add(mesh);
+    }
+    ring(46000, 0.26, 600, 6500);    // far: pale
+    ring(34000, 0.44, -600, 3800);   // near: darker, lower
+    scene.add(group);
+    return {
+      update(p) { group.position.copy(p); },
+      setTheme(name, fog) {
+        uni.fogColor.value.set(fog);
+        uni.tint.value.set(name === 'night' ? 0x05070f : name === 'dusk' ? 0x5a3d4c : 0x8496a8);
+        uni.night.value = name === 'night' ? 1 : 0;
+      },
+    };
+  })();
+
   const hemi = new THREE.HemisphereLight(0xe6f2ff, 0x8a8f99, 0.72);
   scene.add(hemi);
   const sun = new THREE.DirectionalLight(0xfff6e8, 0.95);
@@ -433,6 +506,7 @@
     for (const [m, v] of envDay) m.envMapIntensity = v * T.env;
     MATS.facade.emissive.set(T.win); MATS.glass.emissive.set(T.glass);
     if (animated.lava) { animated.lava.uniforms.fogColor.value.set(L.fog); animated.lava.uniforms.fogNear.value = L.near; animated.lava.uniforms.fogFar.value = L.far; }
+    backdrop.setTheme(name, L.fog);
     if (body.setNight) body.setNight(name);
   }
   const setNight = (on) => setTheme(on ? 'night' : 'day');
@@ -3468,6 +3542,7 @@ body.touch #menu button, body.touch #drawer button { min-height: 40px; }
       zip: !!player.zip,
     });
     sky.position.copy(camera.position);
+    backdrop.update(camera.position);
     // the Night City levels light the world for night
     const viewing = !locked && !game.demo && attract.active ? attract.course : game.course;
     setLevelFocus(ed.on && !game.course ? '' : levelInView(viewing));
