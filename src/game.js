@@ -38,7 +38,7 @@
     { course: 'surf', title: 'Spillway', stars: [56, 80],
       brief: 'Mercer: "The Blues have the bridges watched. Only way across the reservoir tonight is down the spillway ramps. Ride the slopes, don\'t fall in."',
       debrief: 'Juno is waiting at the far bank. "They know a runner is moving my drives," she says. "Keep going, Kite. Two more and it is done."' },
-    { course: 'crossover', title: 'Shortcut', stars: [60, 87],
+    { course: 'crossover', title: 'Shortcut', stars: [62, 89],
       brief: 'Mercer: "Juno is paying double for speed. Roof, ramp, blocks, wall. One line, no stopping. I want you there before the Blues finish their shift change."',
       debrief: 'You make the handoff with seconds to spare. On the way out you see the drive\'s label in the streetlight: "CITY WATER AUTHORITY, AUDIT, DO NOT COPY".' },
     { course: 'downtown', title: 'Courier', stars: [70, 100],
@@ -82,7 +82,7 @@
   // level's medals scale from its maker's best time, which is the platinum
   // (shown as Author).
   const MEDALS = [{ k: 'plat', n: 'Platinum' }, { k: 'gold', n: 'Gold' }, { k: 'silver', n: 'Silver' }, { k: 'bronze', n: 'Bronze' }];
-  const MEDAL_PAR = { surf: 62.4, bhop: 54.9, roofs: 76.3, canyon: 62.7, stairway: 53.4, crossover: 66.8, downtown: 77.5, cascade: 25.3, spire: 62.0, freerun: 62.3,
+  const MEDAL_PAR = { surf: 62.4, bhop: 54.9, roofs: 76.3, canyon: 62.7, stairway: 53.4, crossover: 68.4, downtown: 77.5, cascade: 25.3, spire: 62.0, freerun: 62.3,
     g1: 24.8, g2: 32.4, g3: 48.4, g4: 49.6, g5: 58.7, g6: 80.4, n1: 31.9, n2: 42.1, n3: 43.7, n4: 44.6, n5: 72.2, n6: 90.8,
     h1: 61.9, h2: 61.9, h3: 53.1, h4: 58.6, h5: 75.2, h6: 83.8,
     s1: 38.1, s2: 39.5, s3: 46.7, s4: 63.6 };

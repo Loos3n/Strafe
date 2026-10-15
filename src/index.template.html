@@ -477,7 +477,7 @@ html:not(.booted) #view { opacity: 0; }
 #c-save:disabled { opacity: .6; cursor: default; }
 
 /* replay viewer */
-body.replaying #menu, body.replaying .hud, body.replaying #crosshair { display: none; }
+body.replaying #menu, body.replaying .hud, body.replaying #crosshair { display: none !important; } /* ids like #top set their own display */
 #replay { position: fixed; left: 50%; bottom: calc(14px + env(safe-area-inset-bottom, 0px)); transform: translateX(-50%); width: min(920px, calc(100% - 24px)); box-sizing: border-box; background: rgba(12,15,19,.82); backdrop-filter: blur(10px); color: #eef1f4; padding: 10px 14px; z-index: 6; }
 #replay[hidden] { display: none; }
 .rp-top { display: flex; gap: 14px; align-items: baseline; font-family: var(--display); font-weight: 700; letter-spacing: .08em; }
@@ -498,7 +498,7 @@ body.replaying #menu, body.replaying .hud, body.replaying #crosshair { display: 
 .rp-help { margin: 6px 0 0; font-size: 12px; color: rgba(236,240,244,.6); }
 body.touch .rp-help { display: none; }
 body.touch #rp-hide kbd { display: none; }
-/* clean view: H or the Hide HUD button hides the replay bar (the game HUD is already off in replays); H, a tap or a click brings it back */
+/* clean view: H or the Hide HUD button hides the replay bar (the game HUD is off in replays); H, a tap or a click brings it back */
 body.rp-clean #replay { display: none; }
 #rp-shownote { position: fixed; left: 50%; bottom: calc(18px + env(safe-area-inset-bottom, 0px)); transform: translateX(-50%); z-index: 6; padding: 6px 12px; background: rgba(12,15,19,.6); color: rgba(236,240,244,.85); font-size: 13px; letter-spacing: .04em; pointer-events: none; opacity: 0; transition: opacity .4s; }
 #rp-shownote.show { opacity: 1; }
