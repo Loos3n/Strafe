@@ -8775,49 +8775,129 @@ window.STRAFE_ASSETS = {"city":"Z2xURgIAAABU+ggAYFIAAEpTT057ImFzc2V0Ijp7ImdlbmVy
     const group = new THREE.Group();
     let sb = 4242;
     const r = () => ((sb = (sb * 16807) % 2147483647) / 2147483647);
-    const uni = { fogColor: { value: new THREE.Color(HORIZON) }, tint: { value: new THREE.Color(0x7d8fa0) }, night: { value: 0 } };
-    function ring(R, amt, hMin, hMax) {
-      const pos = [], att = [];
-      const quad = (a, b, c, d, s, u0, u1, v0, v1) => {
-        for (const [p, u, v] of [[a, u0, v0], [b, u1, v0], [c, u1, v1], [a, u0, v0], [c, u1, v1], [d, u0, v1]]) { pos.push(p[0], p[1], p[2]); att.push(u, v, s); }
-      };
-      const base = -9000;
+    const pick = (w) => { let x = r() * w.reduce((a, b) => a + b[1], 0); for (const [k, n] of w) if ((x -= n) < 0) return k; return w[0][0]; };
+    const uni = { fogColor: { value: new THREE.Color(HORIZON) }, tint: { value: new THREE.Color(0x8496a8) }, night: { value: 0 } };
+    // building types and how often they turn up
+    const TYPES = [['plain', 26], ['setback', 14], ['stepped', 14], ['spire', 5], ['antenna', 10], ['dome', 5], ['slab', 14], ['twin', 4], ['taper', 3]];
+    function ring(R, amt, hMin, hMax, phase) {
+      const pos = [], att = [], sh = [];
+      let shade = 1, tone = 0;
       const P = (a, rad, y) => [Math.sin(a) * rad, y, -Math.cos(a) * rad];
+      const quad = (a, b, c, d, s, win, u0, u1, v0, v1) => {
+        for (const [p, u, v] of [[a, u0, v0], [b, u1, v0], [c, u1, v1], [a, u0, v0], [c, u1, v1], [d, u0, v1]]) {
+          pos.push(p[0], p[1], p[2]); att.push(u, v, win); sh.push(s * shade, tone);
+        }
+      };
+      // a box, or a frustum when the top is narrower: centred on angle a and
+      // radius rc, half widths (in units) wB/wT and half depths dB/dT
+      function block(a, rc, wB, wT, dB, dT, y0, y1, win = 1) {
+        const c = (w, d, y) => { const da = w / rc; return [P(a - da, rc - d, y), P(a + da, rc - d, y), P(a + da, rc + d, y), P(a - da, rc + d, y)]; };
+        const [b0, b1, b2, b3] = c(wB, dB, y0), [t0, t1, t2, t3] = c(wT, dT, y1);
+        quad(b0, b1, t1, t0, 1, win, 0, wB * 2, y0, y1);        // the face toward the camera
+        quad(b3, b0, t0, t3, 0.8, win, 0, dB * 2, y0, y1);      // the ends, in shadow or catching light
+        quad(b1, b2, t2, t1, 0.9, win, 0, dB * 2, y0, y1);
+        quad(b2, b3, t3, t2, 0.85, 0, 0, wB * 2, y0, y1);
+        if (wT > 1) quad(t0, t1, t2, t3, 1.1, 0, 0, wT * 2, y1, y1); // the roof, seen from the high levels
+      }
+      const base = -9000;
       let ang = 0;
       while (ang < Math.PI * 2 - 0.01) {
-        const w = (0.6 + r() * 1.6) * 1600 / R, gap = r() < 0.25 ? r() * w : 0;
-        const a0 = ang + gap, a1 = Math.min(a0 + w, Math.PI * 2);
-        ang = a1;
-        const hgt = hMin + (hMax - hMin) * Math.pow(r(), 2.2);
-        const dR = 900 + r() * 1800, rr = R + (r() - 0.5) * 3000, fw = (a1 - a0) * rr;
-        const n0 = P(a0, rr, base), n1 = P(a1, rr, base), t0 = P(a0, rr, hgt), t1 = P(a1, rr, hgt);
-        const f0 = P(a0, rr + dR, base), f1 = P(a1, rr + dR, base), g0 = P(a0, rr + dR, hgt), g1 = P(a1, rr + dR, hgt);
-        quad(n0, n1, t1, t0, 1, 0, fw, base, hgt);       // the face toward the camera
-        quad(n0, t0, g0, f0, 0.82, 0, dR, base, hgt);    // the two ends, a shade lighter
-        quad(n1, f1, g1, t1, 0.82, 0, dR, base, hgt);
-        quad(t0, t1, g1, g0, 1.08, 0, fw, hgt, hgt);     // the roof, seen from the high levels
-        if (r() < 0.35) { // a narrower crown on some towers
-          const c0 = a0 + (a1 - a0) * 0.25, c1 = a1 - (a1 - a0) * 0.25, ch = hgt + 400 + r() * 1400;
-          quad(P(c0, rr + 200, hgt), P(c1, rr + 200, hgt), P(c1, rr + 200, ch), P(c0, rr + 200, ch), 1, 0, (c1 - c0) * rr, hgt, ch);
+        // districts: tall clusters and low stretches round the ring
+        const dist = 0.5 + 0.5 * Math.sin(ang * 3 + phase) * Math.sin(ang * 5 + phase * 2.3);
+        const type = pick(TYPES);
+        let w = 300 + r() * 650; // half width
+        if (type === 'slab') w *= 1.8 + r();
+        if (type === 'twin') w *= 1.6;
+        const da = w / R, gap = r() < 0.4 ? (0.3 + r() * 1.5) * da : 0.02 * da;
+        const a = ang + gap + da;
+        ang = a + da;
+        if (ang > Math.PI * 2) break;
+        const rc = R + (r() - 0.5) * 3600, d = 450 + r() * 900;
+        let h = hMin + (hMax - hMin) * Math.pow(r(), 2.2) * (0.2 + 0.95 * dist * dist);
+        if (type === 'slab') h = hMin + (h - hMin) * 0.35;
+        // each tower its own shade, a little warmer or cooler than the next
+        shade = 0.72 + r() * 0.55; tone = r() * 2 - 1;
+        if (type === 'plain') {
+          block(a, rc, w, w, d, d, base, h);
+        } else if (type === 'setback') {
+          block(a, rc, w, w, d, d, base, h);
+          const k = 0.5 + r() * 0.25, h2 = h + 300 + r() * 1200;
+          block(a + (r() - 0.5) * da * 0.5, rc, w * k, w * k, d * k, d * k, h, h2);
+          if (r() < 0.4) block(a, rc, 60, 60, 60, 60, h2, h2 + 400 + r() * 700, 0);
+        } else if (type === 'stepped') {
+          let y = base, ww = w, dd = d, top = h * (0.55 + r() * 0.15);
+          const tiers = 3 + (r() * 2 | 0);
+          for (let i = 0; i < tiers; i++) {
+            block(a, rc, ww, ww, dd, dd, y, top);
+            y = top; ww *= 0.68 + r() * 0.12; dd *= 0.75; top += (h - base) * (0.1 + r() * 0.12) * (i < tiers - 2 ? 1 : 0.8);
+          }
+          if (r() < 0.5) block(a, rc, ww * 0.6, 0, dd * 0.6, 0, y, y + ww * 1.6, 0);
+        } else if (type === 'spire') {
+          h = Math.max(h, hMin + (hMax - hMin) * 0.3);
+          block(a, rc, w * 0.85, w * 0.85, d * 0.85, d * 0.85, base, h);
+          const t = h + w * (1.6 + r() * 1.4);
+          block(a, rc, w * 0.85, w * 0.12, d * 0.85, d * 0.12, h, t, 0);
+          block(a, rc, 45, 15, 45, 15, t, t + 600 + r() * 1400, 0);
+        } else if (type === 'antenna') {
+          block(a, rc, w, w, d, d, base, h);
+          const masts = 1 + (r() < 0.35 ? 1 : 0);
+          for (let i = 0; i < masts; i++) {
+            const off = masts === 1 ? (r() - 0.5) * da : (i ? 0.45 : -0.45) * da;
+            block(a + off, rc, 50, 50, 50, 50, h, h + 700 + r() * 1800, 0);
+          }
+          if (r() < 0.5) block(a - da * 0.4, rc, w * 0.25, w * 0.25, d * 0.3, d * 0.3, h, h + 220, 0); // plant room
+        } else if (type === 'dome') {
+          block(a, rc, w, w, d, d, base, h);
+          const rd = Math.min(w, d) * 0.85, n = 5;
+          block(a, rc, rd * 1.05, rd * 1.05, rd * 1.05, rd * 1.05, h, h + rd * 0.25, 1); // drum
+          for (let i = 0; i < n; i++) {
+            const q0 = i / n * Math.PI / 2, q1 = (i + 1) / n * Math.PI / 2, y0 = h + rd * 0.25;
+            block(a, rc, rd * Math.cos(q0), rd * Math.cos(q1), rd * Math.cos(q0), rd * Math.cos(q1), y0 + rd * Math.sin(q0), y0 + rd * Math.sin(q1), 0);
+          }
+          block(a, rc, 25, 10, 25, 10, h + rd * 1.25, h + rd * 1.25 + 350, 0);
+        } else if (type === 'slab') {
+          block(a, rc, w, w, d * 1.3, d * 1.3, base, h);
+          // a row of rooftop units or a sawtooth roof
+          const n = 2 + (r() * 3 | 0);
+          for (let i = 0; i < n; i++) {
+            const u = ((i + 0.5) / n - 0.5) * 2 * da * 0.8;
+            block(a + u, rc, w / n * 0.35, r() < 0.5 ? 1 : w / n * 0.35, d * 0.5, d * 0.5, h, h + 120 + r() * 260, 0);
+          }
+        } else if (type === 'twin') {
+          const k = 0.38, h2 = h * (0.85 + r() * 0.15);
+          block(a - da * 0.55, rc, w * k, w * k, d, d, base, h);
+          block(a + da * 0.55, rc, w * k, w * k, d, d, base, h2);
+          if (r() < 0.6) block(a, rc, w * 0.2, w * 0.2, d * 0.4, d * 0.4, Math.min(h, h2) * 0.6, Math.min(h, h2) * 0.6 + 250, 0); // skybridge
+        } else { // taper: a tower that narrows all the way up
+          h = Math.max(h, hMin + (hMax - hMin) * 0.25);
+          const t = h + 600 + r() * 900;
+          block(a, rc, w, w * 0.45, d, d * 0.45, base, h);
+          block(a, rc, w * 0.45, 0, d * 0.45, 0, h, t, 0);
         }
       }
       const g = new THREE.BufferGeometry();
       g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
       g.setAttribute('uvs', new THREE.Float32BufferAttribute(att, 3));
+      g.setAttribute('sh', new THREE.Float32BufferAttribute(sh, 2));
       const m = new THREE.ShaderMaterial({
         uniforms: Object.assign({ amt: { value: amt } }, uni), fog: false, side: THREE.DoubleSide,
-        vertexShader: 'attribute vec3 uvs; varying vec3 vUv; varying float vY; void main(){ vUv = uvs; vY = position.y; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
+        vertexShader: 'attribute vec3 uvs; attribute vec2 sh; varying vec3 vUv; varying vec2 vSh; varying float vY; void main(){ vUv = uvs; vSh = sh; vY = position.y; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
         fragmentShader: [
-          'uniform vec3 fogColor; uniform vec3 tint; uniform float amt; uniform float night; varying vec3 vUv; varying float vY;',
+          'uniform vec3 fogColor; uniform vec3 tint; uniform float amt; uniform float night; varying vec3 vUv; varying vec2 vSh; varying float vY;',
           'void main(){',
           // solid near the horizon, gone into the haze well below it
-          ' float k = amt * smoothstep(-6500.0, -1200.0, vY) * vUv.z;',
-          ' vec3 c = mix(fogColor, tint, clamp(k, 0.0, 1.0));',
-          ' if (night > 0.0 && vUv.z > 0.9 && vUv.z < 1.05) {',
-          '   vec2 q = vec2(vUv.x / 160.0, vUv.y / 220.0); vec2 cell = floor(q); vec2 f = fract(q);',
-          '   float h = fract(sin(dot(cell, vec2(12.9898, 78.233))) * 43758.5453);',
-          '   float lit = step(0.8, h) * step(0.3, f.x) * step(f.x, 0.75) * step(0.35, f.y) * step(f.y, 0.75);',
-          '   c += vec3(1.0, 0.78, 0.45) * lit * 0.55 * night * smoothstep(-4000.0, -800.0, vY) * amt; }',
+          ' float k = amt * smoothstep(-6500.0, -1200.0, vY) * vSh.x;',
+          ' vec3 t = tint * (1.0 + vec3(0.07, 0.0, -0.07) * vSh.y);',
+          ' vec3 c = mix(fogColor, t, clamp(k, 0.0, 1.0));',
+          // by day faint floor bands; at night a scatter of lit windows
+          ' vec2 q = vec2(vUv.x / 160.0, vUv.y / 220.0); vec2 cell = floor(q); vec2 f = fract(q);',
+          ' if (vUv.z > 0.5) {',
+          '   c = mix(c, fogColor, step(0.82, f.y) * 0.06 * (1.0 - night));',
+          '   if (night > 0.0) {',
+          '     float h = fract(sin(dot(cell + vec2(vSh.y * 91.0, 0.0), vec2(12.9898, 78.233))) * 43758.5453);',
+          '     float lit = step(0.8 - vSh.y * 0.08, h) * step(0.3, f.x) * step(f.x, 0.75) * step(0.35, f.y) * step(f.y, 0.75);',
+          '     vec3 wc = mix(vec3(1.0, 0.78, 0.45), vec3(0.75, 0.88, 1.0), step(0.93, h));',
+          '     c += wc * lit * 0.55 * night * smoothstep(-4000.0, -800.0, vY) * amt; } }',
           ' gl_FragColor = vec4(c, 1.0); }',
         ].join('\n'),
       });
@@ -8825,8 +8905,8 @@ window.STRAFE_ASSETS = {"city":"Z2xURgIAAABU+ggAYFIAAEpTT057ImFzc2V0Ijp7ImdlbmVy
       mesh.frustumCulled = false;
       group.add(mesh);
     }
-    ring(46000, 0.26, 600, 6500);    // far: pale
-    ring(34000, 0.44, -600, 3800);   // near: darker, lower
+    ring(46000, 0.26, 600, 7000, 1.7);   // far: pale
+    ring(34000, 0.44, -900, 4200, 0.4);  // near: darker, lower
     scene.add(group);
     return {
       update(p) { group.position.copy(p); },
