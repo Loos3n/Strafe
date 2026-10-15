@@ -3936,8 +3936,24 @@ body.touch #menu button, body.touch #drawer button { min-height: 40px; }
     replayUi();
     $('rp-play').focus({ preventScroll: true });
   }
+  // hide the replay bar for a clean view; H, a tap or a click on the view brings it back
+  let rpNoteTimer = 0;
+  function replayClean(on) {
+    document.body.classList.toggle('rp-clean', on);
+    clearTimeout(rpNoteTimer);
+    const note = $('rp-shownote');
+    if (on) {
+      if (rpEl.contains(document.activeElement)) document.activeElement.blur();
+      note.textContent = TOUCH ? 'Tap to show controls' : 'Press H or click to show controls';
+      note.classList.add('show');
+      rpNoteTimer = setTimeout(() => note.classList.remove('show'), 1800);
+    } else {
+      note.classList.remove('show');
+    }
+  }
   function replayClose() {
     if (!replay.on) return;
+    replayClean(false);
     replay.on = false;
     replay.keys.clear();
     document.body.classList.remove('replaying');
@@ -4015,9 +4031,10 @@ body.touch #menu button, body.touch #drawer button { min-height: 40px; }
   $('rp-fwd').addEventListener('click', () => replaySeek(replay.t + 1 / TICK));
   $('rp-scrub').addEventListener('input', () => replaySeek(+$('rp-scrub').value));
   $('rp-exit').addEventListener('click', () => { A.play('click'); replayClose(); });
+  $('rp-hide').addEventListener('click', () => { A.play('click'); replayClean(true); });
   for (const b of rpEl.querySelectorAll('[data-cam]')) b.addEventListener('click', () => { replayCamMode(b.dataset.cam); A.play('click'); });
   // drag the view to look around (follow: swing round the runner)
-  canvas.addEventListener('pointerdown', (e) => { if (replay.on) { replay.drag = { x: e.clientX, y: e.clientY }; try { canvas.setPointerCapture(e.pointerId); } catch (x) { /* fine */ } } });
+  canvas.addEventListener('pointerdown', (e) => { if (replay.on) { replay.drag = { x: e.clientX, y: e.clientY }; replay.tap = { x: e.clientX, y: e.clientY }; try { canvas.setPointerCapture(e.pointerId); } catch (x) { /* fine */ } } });
   canvas.addEventListener('pointermove', (e) => {
     if (!replay.on || !replay.drag) return;
     const dx = (e.clientX - replay.drag.x) * 0.006, dy = (e.clientY - replay.drag.y) * 0.006;
@@ -4029,7 +4046,12 @@ body.touch #menu button, body.touch #drawer button { min-height: 40px; }
       replay.orbit.pitch = Math.max(-1.3, Math.min(0.6, replay.orbit.pitch - dy));
     }
   });
-  const endDrag = () => { replay.drag = null; };
+  const endDrag = () => { replay.drag = null; replay.tap = null; };
+  // a tap or click that did not drag brings the hidden HUD back
+  canvas.addEventListener('pointerup', (e) => {
+    const t = replay.tap;
+    if (replay.on && t && Math.hypot(e.clientX - t.x, e.clientY - t.y) < 8 && document.body.classList.contains('rp-clean')) replayClean(false);
+  });
   canvas.addEventListener('pointerup', endDrag); canvas.addEventListener('pointercancel', endDrag);
   canvas.addEventListener('wheel', (e) => {
     if (!replay.on || replay.cam !== 'follow') return;
@@ -4039,6 +4061,7 @@ body.touch #menu button, body.touch #drawer button { min-height: 40px; }
     if (!replay.on) return;
     const tag = document.activeElement && document.activeElement.tagName;
     if (e.code === 'Escape') { e.preventDefault(); e.stopImmediatePropagation(); replayClose(); return; }
+    if (e.code === 'KeyH' && !e.repeat) { replayClean(!document.body.classList.contains('rp-clean')); return; }
     if (replay.cam === 'free' && /^(Key[WASDQEC]|Arrow(Up|Down|Left|Right)|Space|Shift(Left|Right))$/.test(e.code)) { e.preventDefault(); replay.keys.add(e.code); return; }
     if (tag === 'BUTTON' && (e.code === 'Space' || e.code === 'Enter')) return; // the focused button handles it
     if (e.code === 'Space' || e.code === 'KeyK') { e.preventDefault(); $('rp-play').click(); }
@@ -4053,7 +4076,7 @@ body.touch #menu button, body.touch #drawer button { min-height: 40px; }
   });
   window.addEventListener('keyup', (e) => replay.keys.delete(e.code));
   window.addEventListener('blur', () => replay.keys.clear());
-  // controller: A play or pause, B exit, LB and RB speed, D-pad left and right
+  // controller: A play or pause, B exit, X hides the HUD, LB and RB speed, D-pad left and right
   // skip a second, Y camera, right stick looks, left stick flies the free camera
   function replayPad(b, ax, press, dt) {
     if (press(0)) $('rp-play').click();
@@ -4063,6 +4086,7 @@ body.touch #menu button, body.touch #drawer button { min-height: 40px; }
     if (press(14)) replaySeek(replay.t - 1 / TICK);
     if (press(15)) replaySeek(replay.t + 1 / TICK);
     if (press(3)) replayCamMode({ follow: 'pov', pov: 'free', free: 'follow' }[replay.cam]);
+    if (press(2)) replayClean(!document.body.classList.contains('rp-clean'));
     const lx = ax[2] * 2.4 * dt, ly = ax[3] * 1.6 * dt;
     if (replay.cam === 'free') {
       const f = replay.free;

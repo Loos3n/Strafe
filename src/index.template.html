@@ -471,9 +471,16 @@ body.replaying #menu, body.replaying .hud, body.replaying #crosshair { display: 
 .rp-rate b { font-family: var(--display); min-width: 3em; text-align: center; font-variant-numeric: tabular-nums; }
 .rp-cams [aria-pressed=true] { background: var(--red); border-color: var(--red); }
 #rp-exit { margin-left: auto; }
-#rp-exit kbd { font-size: 11px; border: 1px solid currentColor; padding: 0 3px; margin-left: 4px; opacity: .7; }
+#rp-hide { margin-left: auto; }
+#rp-hide + #rp-exit { margin-left: 0; }
+#rp-exit kbd, #rp-hide kbd { font-size: 11px; border: 1px solid currentColor; padding: 0 3px; margin-left: 4px; opacity: .7; }
 .rp-help { margin: 6px 0 0; font-size: 12px; color: rgba(236,240,244,.6); }
 body.touch .rp-help { display: none; }
+body.touch #rp-hide kbd { display: none; }
+/* clean view: H or the Hide HUD button hides the replay bar (the game HUD is already off in replays); H, a tap or a click brings it back */
+body.rp-clean #replay { display: none; }
+#rp-shownote { position: fixed; left: 50%; bottom: calc(18px + env(safe-area-inset-bottom, 0px)); transform: translateX(-50%); z-index: 6; padding: 6px 12px; background: rgba(12,15,19,.6); color: rgba(236,240,244,.85); font-size: 13px; letter-spacing: .04em; pointer-events: none; opacity: 0; transition: opacity .4s; }
+#rp-shownote.show { opacity: 1; }
 body.touch #replay { padding: 6px 10px; }
 body.touch #rp-scrub { margin: 4px 0; }
 .rowbtns { display: inline-flex; gap: 4px; }
@@ -982,10 +989,12 @@ body.touch #racehud { top: calc(56px + env(safe-area-inset-top, 0px)); left: 10p
     <button class="ghost small" id="rp-fwd" aria-label="Forward one second">&#9654;&#9654;</button>
     <span class="rp-rate"><button class="ghost small" id="rp-slower" aria-label="Slower">&minus;</button><b id="rp-rate">1×</b><button class="ghost small" id="rp-faster" aria-label="Faster">+</button></span>
     <span class="rp-cams"><button class="ghost small" data-cam="follow">Follow</button><button class="ghost small" data-cam="pov">First person</button><button class="ghost small" data-cam="free">Free</button></span>
+    <button class="ghost small" id="rp-hide">Hide HUD <kbd>H</kbd></button>
     <button class="ghost small" id="rp-exit">Exit <kbd>Esc</kbd></button>
   </div>
-  <p class="rp-help">Space pause · &larr; &rarr; skip · , . step · &minus; + speed · C camera · drag to look · free camera: WASD, Q E, Shift</p>
+  <p class="rp-help">Space pause · &larr; &rarr; skip · , . step · &minus; + speed · C camera · H hide HUD · drag to look · free camera: WASD, Q E, Shift</p>
 </div>
+<div id="rp-shownote" aria-live="polite"></div>
 <div id="flash"></div>
 <div id="fade"></div>
 <div id="complete" hidden role="dialog" aria-labelledby="c-name">
