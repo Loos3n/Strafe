@@ -1577,8 +1577,29 @@ body.touch #speedwrap { zoom: .6; bottom: calc(10px + env(safe-area-inset-bottom
 body.touch #graph { display: none; }
 body.touch #toast { zoom: .7; top: 22vh; }
 body.touch #fps { top: calc(8px + env(safe-area-inset-top, 0px)); left: calc(12px + env(safe-area-inset-left, 0px)); }
-@media (max-height: 560px) { body.touch #menu, body.touch #drawer, body.touch #complete { zoom: .62; } }
+@media (max-height: 560px) { body.touch #menu[data-screen="levels"], body.touch #complete { zoom: .62; } }
 body.touch #menu button, body.touch #drawer button { min-height: 40px; }
+/* phone main and pause menus: a grid of big tiles that scrolls when it runs out of room,
+   instead of the desktop list shrunk to fit */
+body.touch .ts { align-self: stretch; justify-content: safe center; max-width: none; gap: 10px; overflow-y: auto; touch-action: pan-y; overscroll-behavior: contain;
+  margin: calc(-18px - env(safe-area-inset-top, 0px)) 0 calc(-18px - env(safe-area-inset-bottom, 0px));
+  padding: calc(14px + env(safe-area-inset-top, 0px)) env(safe-area-inset-right, 0px) calc(14px + env(safe-area-inset-bottom, 0px)) env(safe-area-inset-left, 0px); }
+body.touch .tsfoot { display: none; }
+body.touch #menu.paused .logo { display: block; }
+body.touch #menu .ts:has(#paused:not([hidden])) .logo { display: none; }
+body.touch .mainnav { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(170px, 100%), 1fr)); gap: 8px; width: 100%; max-width: 900px; min-width: 0; margin-top: 4px; }
+body.touch .mbtn, body.touch #menu.paused .mbtn { flex-direction: column; align-items: flex-start; justify-content: center; gap: 3px; min-height: 56px; padding: 8px 14px 8px 16px;
+  background: rgba(11,14,18,.66); border: 1px solid rgba(255,255,255,.12); border-left: 4px solid rgba(255,255,255,.22); color: #f2f4f6; }
+body.touch .mbtn::before { display: none; }
+body.touch .mbtn span, body.touch #menu.paused .mbtn span { font-size: 21px; line-height: 1.05; }
+body.touch .mbtn small { font-size: 12px; letter-spacing: .06em; white-space: normal; color: rgba(236,240,244,.72); }
+body.touch .mbtn:hover, body.touch .mbtn:focus-visible, body.touch .mbtn[aria-expanded="true"] { padding-left: 16px; background: rgba(11,14,18,.66); }
+body.touch .mbtn:active, body.touch .mbtn[aria-expanded="true"] { background: rgba(219,47,42,.4); border-left-color: var(--red); }
+body.touch #menu .mbtn.primary { grid-column: 1 / -1; min-height: 50px; background: var(--red); border-color: var(--red); }
+body.touch .mbtn.primary span { font-size: 24px; }
+body.touch #paused { margin: 0; padding: 10px 14px; gap: 4px 12px; }
+body.touch .mark.big { font-size: clamp(44px, min(14vw, 13vh), 96px); }
+@media (max-height: 560px) { body.touch .tagline { display: none; } body.touch .mark.big { font-size: 40px; } }
 `;
     document.head.appendChild(css);
     const root = document.createElement('div');
