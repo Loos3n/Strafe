@@ -101,6 +101,11 @@ export class Board extends DurableObject {
     if (!this.one("SELECT 1 FROM sqlite_master WHERE name = 'wiped1'")) {
       this.sql.exec('DELETE FROM players; DELETE FROM times; DELETE FROM ghosts; CREATE TABLE wiped1 (x INTEGER);');
     }
+    // once: clear the set boards, whose times were set on the layouts before the 2026-10-15 level pass
+    if (!this.one("SELECT 1 FROM sqlite_master WHERE name = 'wipedsets1'")) {
+      for (const q of ["DELETE FROM times WHERE course LIKE 'set:%'", "DELETE FROM ghosts WHERE course LIKE 'set:%'"]) this.sql.exec(q);
+      this.sql.exec('CREATE TABLE wipedsets1 (x INTEGER);');
+    }
   }
   limited(key, max, ms) {
     const now = Date.now(), h = (this.hits.get(key) || []).filter(t => now - t < ms);
