@@ -16,8 +16,8 @@
     fovKick: true, shadows: true, bob: true, keys: true, body: true, ghost: true,
     speedLines: true, landKick: true, scale: 100, fps: false, strafeMeter: true, strafeTips: true,
     master: 80, music: 50, sfx: 80, padSens: 1, padAutoStrafe: true, padInvert: false,
-    colors: 'standard', roll: 100, flip: true, flash: true, hudSize: 100, crosshair: 'dot', cpMarker: true, noCp: false,
-  }, TOUCH ? { lookSens: 1, autoStrafe: true, scale: 70, shadows: false } : {}, load(SETTINGS_KEY) || {});
+    colors: 'standard', gfx: 'high', roll: 100, flip: true, flash: true, hudSize: 100, crosshair: 'dot', cpMarker: true, noCp: false,
+  }, TOUCH ? { lookSens: 1, autoStrafe: true, scale: 70, shadows: false, gfx: 'low' } : {}, load(SETTINGS_KEY) || {});
   settings.airaccelerate = 150; // locked: old saves from when it had a slider are ignored
   const best = load(BEST_KEY) || {};
   // ------------------------------------------------------------ story
@@ -152,6 +152,235 @@
 
   const camera = new THREE.PerspectiveCamera(74, 1, 4, 80000); // near 4: the eye never gets closer to a wall than the hull's 16
   camera.rotation.order = 'YXZ';
+
+  // ------------------------------------------------------------ post
+  // Graphics setting. Low draws straight to the screen. Medium and High draw
+  // the scene into an offscreen target (multisampled on WebGL2), then add a
+  // glow from the brightest parts of the picture (neon, lava, the red route,
+  // the sun on white concrete), a colour grade per time of day and a light
+  // vignette. High also darkens creases where surfaces meet (screen-space
+  // ambient occlusion from the depth buffer), so stacked boxes read as built
+  // things. Everything here works on the final tone-mapped colours, so Low
+  // and the rest match apart from the effects.
+  const post = (() => {
+    const gl2 = renderer.capabilities.isWebGL2;
+    const depthOK = gl2 || !!renderer.extensions.get('WEBGL_depth_texture');
+    const quadCam = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
+    const quad = new THREE.Mesh(new THREE.PlaneGeometry(2, 2));
+    quad.frustumCulled = false;
+    const quadScene = new THREE.Scene();
+    quadScene.add(quad);
+    const VS = 'varying vec2 vUv; void main(){ vUv = uv; gl_Position = vec4(position.xy, 0.0, 1.0); }';
+    const pass = (frag, uniforms, ext) => new THREE.ShaderMaterial({ vertexShader: VS, fragmentShader: frag, uniforms, depthTest: false, depthWrite: false, extensions: ext || {} });
+    const rtOpts = { minFilter: THREE.LinearFilter, magFilter: THREE.LinearFilter, format: THREE.RGBAFormat, depthBuffer: false, stencilBuffer: false };
+    const mk = () => new THREE.WebGLRenderTarget(1, 1, rtOpts);
+
+    let sceneRT = null, aoRT = null, aoBlurRT = null;
+    const bloomRT = [], upRT = [];
+    const LEVELS = 5;
+    function makeScene() {
+      if (sceneRT) sceneRT.dispose();
+      const o = { minFilter: THREE.LinearFilter, magFilter: THREE.LinearFilter, format: THREE.RGBAFormat, stencilBuffer: false };
+      sceneRT = gl2 ? new THREE.WebGLMultisampleRenderTarget(1, 1, o) : new THREE.WebGLRenderTarget(1, 1, o);
+      if (gl2) sceneRT.samples = 4;
+      // the materials write tone-mapped sRGB into it, exactly as they do to the screen
+      sceneRT.texture.encoding = THREE.sRGBEncoding;
+      if (depthOK) {
+        sceneRT.depthTexture = new THREE.DepthTexture(1, 1);
+        sceneRT.depthTexture.type = gl2 ? THREE.UnsignedIntType : THREE.UnsignedShortType;
+      }
+    }
+    makeScene();
+    aoRT = mk(); aoBlurRT = mk();
+    for (let i = 0; i < LEVELS; i++) bloomRT.push(mk());
+    for (let i = 0; i < LEVELS - 1; i++) upRT.push(mk());
+
+    // glow: keep what is brighter than the threshold (soft knee), at half size
+    const bright = pass([
+      'uniform sampler2D tSrc; uniform vec2 texel; uniform float thr; uniform float knee; varying vec2 vUv;',
+      'vec3 tap(vec2 o){ vec3 c = texture2D(tSrc, vUv + o * texel).rgb; float b = max(c.r, max(c.g, c.b));',
+      ' float s = clamp(b - thr + knee, 0.0, 2.0 * knee); s = s * s / (4.0 * knee + 1e-4);',
+      ' return c * max(s, b - thr) / max(b, 1e-4); }',
+      'void main(){ gl_FragColor = vec4((tap(vec2(-0.5,-0.5)) + tap(vec2(0.5,-0.5)) + tap(vec2(-0.5,0.5)) + tap(vec2(0.5,0.5))) * 0.25, 1.0); }',
+    ].join('\n'), { tSrc: { value: null }, texel: { value: new THREE.Vector2() }, thr: { value: 0.9 }, knee: { value: 0.2 } });
+    // dual Kawase blur: down, then back up adding each level
+    const down = pass([
+      'uniform sampler2D tSrc; uniform vec2 texel; varying vec2 vUv;',
+      'void main(){ vec2 h = texel * 0.5; vec3 c = texture2D(tSrc, vUv).rgb * 4.0;',
+      ' c += texture2D(tSrc, vUv - h).rgb + texture2D(tSrc, vUv + h).rgb + texture2D(tSrc, vUv + vec2(h.x, -h.y)).rgb + texture2D(tSrc, vUv - vec2(h.x, -h.y)).rgb;',
+      ' gl_FragColor = vec4(c / 8.0, 1.0); }',
+    ].join('\n'), { tSrc: { value: null }, texel: { value: new THREE.Vector2() } });
+    const up = pass([
+      'uniform sampler2D tSrc; uniform sampler2D tAdd; uniform vec2 texel; varying vec2 vUv;',
+      'void main(){ vec2 h = texel * 0.5; vec3 c = vec3(0.0);',
+      ' c += texture2D(tSrc, vUv + vec2(-h.x * 2.0, 0.0)).rgb + texture2D(tSrc, vUv + vec2(h.x * 2.0, 0.0)).rgb;',
+      ' c += texture2D(tSrc, vUv + vec2(0.0, -h.y * 2.0)).rgb + texture2D(tSrc, vUv + vec2(0.0, h.y * 2.0)).rgb;',
+      ' c += (texture2D(tSrc, vUv + vec2(-h.x, h.y)).rgb + texture2D(tSrc, vUv + vec2(h.x, h.y)).rgb + texture2D(tSrc, vUv + vec2(h.x, -h.y)).rgb + texture2D(tSrc, vUv + vec2(-h.x, -h.y)).rgb) * 2.0;',
+      ' gl_FragColor = vec4(c / 12.0 + texture2D(tAdd, vUv).rgb, 1.0); }',
+    ].join('\n'), { tSrc: { value: null }, tAdd: { value: null }, texel: { value: new THREE.Vector2() } });
+
+    // ambient occlusion (scalable AO after McGuire et al.): a spiral of depth
+    // samples round each pixel, at half size; only nearby surfaces count, and
+    // it fades out with distance so far scenery never speckles
+    const aoU = { tDepth: { value: null }, texel: { value: new THREE.Vector2() }, near: { value: 4 }, far: { value: 80000 },
+      projInfo: { value: new THREE.Vector4() }, projScale: { value: 1 }, radius: { value: 64 }, strength: { value: 1.5 } };
+    const ao = pass([
+      'uniform sampler2D tDepth; uniform vec2 texel; uniform float near; uniform float far; uniform vec4 projInfo; uniform float projScale; uniform float radius; uniform float strength; varying vec2 vUv;',
+      'float viewZ(vec2 uv){ float d = texture2D(tDepth, uv).x; return (near * far) / ((far - near) * d - far); }',
+      'vec3 viewPos(vec2 uv){ float z = viewZ(uv); return vec3((uv * projInfo.xy + projInfo.zw) * -z, z); }',
+      'void main(){',
+      // snap to a full-size texel centre: depth is sampled nearest, and the
+      // neighbours below must be the next texels over, never the same one
+      ' vec2 uv0 = (floor(vUv / texel) + 0.5) * texel;',
+      ' float d0 = texture2D(tDepth, uv0).x; if (d0 >= 0.99999) { gl_FragColor = vec4(1.0); return; }',
+      ' vec3 P = viewPos(uv0);',
+      ' if (-P.z > 7000.0) { gl_FragColor = vec4(1.0); return; }',
+      // normal from the neighbour on each axis whose depth is closer, so edges stay sharp
+      ' vec3 px = viewPos(uv0 + vec2(texel.x, 0.0)), nx = viewPos(uv0 - vec2(texel.x, 0.0));',
+      ' vec3 py = viewPos(uv0 + vec2(0.0, texel.y)), ny = viewPos(uv0 - vec2(0.0, texel.y));',
+      ' vec3 dx = abs(px.z - P.z) < abs(nx.z - P.z) ? px - P : P - nx;',
+      ' vec3 dy = abs(py.z - P.z) < abs(ny.z - P.z) ? py - P : P - ny;',
+      ' vec3 N = normalize(cross(dx, dy));',
+      ' float rs = min(radius * projScale / -P.z, 80.0);',
+      ' if (rs < 1.5) { gl_FragColor = vec4(1.0); return; }',
+      // a 4x4 tile of spiral rotations, which the blur below averages out exactly
+      ' vec2 cell = mod(floor(gl_FragCoord.xy), 4.0); float ang = (cell.x * 4.0 + mod(cell.y * 2.0 + cell.x, 4.0) * 1.0 + cell.y) / 16.0 * 6.2832;',
+      ' float sum = 0.0; float r2 = radius * radius;',
+      ' for (int i = 0; i < 12; i++) {',
+      '  float a = (float(i) + 0.5) / 12.0; float th = a * 6.2832 * 7.0 + ang;',
+      '  vec2 uv = uv0 + vec2(cos(th), sin(th)) * (a * rs + 1.0) * texel;',
+      '  vec3 v = viewPos(uv) - P; float vv = dot(v, v);',
+      '  float f = max(1.0 - vv / r2, 0.0);',
+      '  sum += f * max(dot(v, N) * inversesqrt(vv + 1e-3) - 0.2, 0.0);',
+      ' }',
+      ' float A = max(0.0, 1.0 - sum * strength * 2.0 / 12.0);',
+      ' A = mix(A, 1.0, smoothstep(3500.0, 7000.0, -P.z));',
+      ' gl_FragColor = vec4(A, 0.0, 0.0, 1.0); }',
+    ].join('\n'), aoU);
+    // depth-aware blur so the speckle goes but creases stay where they are
+    const aoBlur = pass([
+      'uniform sampler2D tSrc; uniform sampler2D tDepth; uniform vec2 texel; uniform float near; uniform float far; varying vec2 vUv;',
+      'float lz(vec2 uv){ float d = texture2D(tDepth, uv).x; return (near * far) / (far - (far - near) * d); }',
+      'void main(){ float z0 = lz(vUv); float s = 0.0, w = 0.0;',
+      ' for (int i = -2; i <= 2; i++) for (int j = -2; j <= 2; j++) {',
+      '  vec2 uv = vUv + vec2(float(i), float(j)) * texel;',
+      '  float k = max(0.0, 1.0 - abs(lz(uv) - z0) / (z0 * 0.04 + 2.0));',
+      '  s += texture2D(tSrc, uv).r * k; w += k; }',
+      ' gl_FragColor = vec4(s / max(w, 1e-4), 0.0, 0.0, 1.0); }',
+    ].join('\n'), { tSrc: { value: null }, tDepth: aoU.tDepth, texel: { value: new THREE.Vector2() }, near: aoU.near, far: aoU.far });
+
+    // final: AO, glow, grade, vignette, a touch of dither against banding
+    const finU = { tScene: { value: null }, tBloom: { value: null }, tAO: { value: null }, useAO: { value: 0 }, aoAmt: { value: 0.85 },
+      bloom: { value: 0.5 }, sat: { value: 1 }, con: { value: 1 }, lift: { value: new THREE.Vector3() }, gain: { value: new THREE.Vector3(1, 1, 1) },
+      vig: { value: 0.2 }, aspect: { value: 1 }, debug: { value: 0 }, blur: { value: 0 } };
+    const fin = pass([
+      'uniform sampler2D tScene; uniform sampler2D tBloom; uniform sampler2D tAO; uniform float useAO; uniform float aoAmt; uniform float bloom;',
+      'uniform float sat; uniform float con; uniform vec3 lift; uniform vec3 gain; uniform float vig; uniform float aspect; uniform float debug; uniform float blur; varying vec2 vUv;',
+      'void main(){ vec3 c = texture2D(tScene, vUv).rgb;',
+      // at speed the edges of the picture streak toward the middle; the centre stays sharp
+      ' vec2 d = vUv - 0.5; float k = blur * smoothstep(0.22, 0.75, length(d * vec2(aspect, 1.0)));',
+      ' if (k > 0.002) { vec3 acc = c; for (int i = 1; i < 8; i++) acc += texture2D(tScene, vUv - d * k * float(i) / 7.0).rgb; c = acc / 8.0; }',
+      ' if (useAO > 0.5) c *= mix(1.0, texture2D(tAO, vUv).r, aoAmt);',
+      ' vec3 b = texture2D(tBloom, vUv).rgb * bloom;',
+      ' c = c + b * (1.0 - c * 0.6);',
+      ' float l = dot(c, vec3(0.2126, 0.7152, 0.0722));',
+      ' c = mix(vec3(l), c, sat);',
+      ' c = clamp((c - 0.5) * con + 0.5, 0.0, 1.0);',
+      ' c = c * gain + lift * (1.0 - c);',
+      ' vec2 q = (vUv - 0.5) * vec2(aspect, 1.0);',
+      ' c *= 1.0 - vig * smoothstep(0.35, 1.05, length(q));',
+      ' c += (fract(sin(dot(gl_FragCoord.xy, vec2(12.9898, 78.233))) * 43758.5453) - 0.5) / 255.0;',
+      ' if (debug > 0.5) c = debug > 1.5 ? texture2D(tBloom, vUv).rgb : vec3(texture2D(tAO, vUv).r);',
+      ' gl_FragColor = vec4(c, 1.0); }',
+    ].join('\n'), finU);
+
+    // per time of day: glow threshold and strength, saturation, contrast,
+    // shadow tint (lift) and highlight tint (gain), vignette
+    const GRADE = {
+      day: { thr: 0.93, knee: 0.1, bloom: 0.35, sat: 1.1, con: 1.04, lift: [0.0, 0.006, 0.02], gain: [1.0, 0.995, 0.985], vig: 0.22, ao: 0.85 },
+      night: { thr: 0.6, knee: 0.25, bloom: 0.9, sat: 1.18, con: 1.08, lift: [0.012, 0.004, 0.035], gain: [1.0, 0.98, 1.02], vig: 0.34, ao: 0.6 },
+      dusk: { thr: 0.8, knee: 0.15, bloom: 0.5, sat: 1.12, con: 1.06, lift: [0.03, 0.006, 0.03], gain: [1.03, 0.985, 0.95], vig: 0.3, ao: 0.8 },
+    };
+    function setTheme(name) {
+      const g = GRADE[name] || GRADE.day;
+      bright.uniforms.thr.value = g.thr; bright.uniforms.knee.value = g.knee;
+      finU.bloom.value = g.bloom; finU.sat.value = g.sat; finU.con.value = g.con; finU.vig.value = g.vig; finU.aoAmt.value = g.ao;
+      finU.lift.value.set(g.lift[0], g.lift[1], g.lift[2]); finU.gain.value.set(g.gain[0], g.gain[1], g.gain[2]);
+    }
+    setTheme('day');
+
+    const size = new THREE.Vector2();
+    let W = 0, H = 0;
+    function resize() {
+      renderer.getDrawingBufferSize(size);
+      const w = Math.max(1, size.x | 0), h = Math.max(1, size.y | 0);
+      if (w === W && h === H) return;
+      W = w; H = h;
+      sceneRT.setSize(w, h);
+      if (sceneRT.depthTexture) { sceneRT.depthTexture.image.width = w; sceneRT.depthTexture.image.height = h; }
+      aoRT.setSize(Math.ceil(w / 2), Math.ceil(h / 2)); aoBlurRT.setSize(Math.ceil(w / 2), Math.ceil(h / 2));
+      for (let i = 0; i < LEVELS; i++) {
+        const lw = Math.max(1, Math.ceil(w / (2 << i))), lh = Math.max(1, Math.ceil(h / (2 << i)));
+        bloomRT[i].setSize(lw, lh);
+        if (i < LEVELS - 1) upRT[i].setSize(lw, lh);
+      }
+      finU.aspect.value = w / h;
+    }
+    const level = () => settings.gfx === 'low' ? 0 : settings.gfx === 'medium' ? 1 : 2;
+    let active = false;
+    let blurAmt = 0;
+    function draw(m, target) { quad.material = m; renderer.setRenderTarget(target); renderer.render(quadScene, quadCam); }
+    return {
+      // render the world (and the arms over it) through the effects
+      render(drawWorld, drawOver) {
+        const lv = level();
+        active = lv > 0;
+        if (!active) { renderer.setRenderTarget(null); drawWorld(); if (drawOver) drawOver(); return; }
+        resize();
+        renderer.setRenderTarget(sceneRT);
+        drawWorld();
+        const useAO = lv > 1 && !!sceneRT.depthTexture;
+        if (useAO) {
+          const p = camera.projectionMatrix.elements;
+          aoU.tDepth.value = sceneRT.depthTexture;
+          aoU.near.value = camera.near; aoU.far.value = camera.far;
+          aoU.projInfo.value.set(2 / p[0], 2 / p[5], -1 / p[0], -1 / p[5]);
+          aoU.projScale.value = p[5] * 0.5 * H;
+          aoU.texel.value.set(1 / W, 1 / H);
+          draw(ao, aoRT);
+          aoBlur.uniforms.tSrc.value = aoRT.texture; aoBlur.uniforms.texel.value.set(1 / aoRT.width, 1 / aoRT.height);
+          draw(aoBlur, aoBlurRT);
+        }
+        bright.uniforms.tSrc.value = sceneRT.texture; bright.uniforms.texel.value.set(1 / W, 1 / H);
+        draw(bright, bloomRT[0]);
+        for (let i = 1; i < LEVELS; i++) {
+          down.uniforms.tSrc.value = bloomRT[i - 1].texture; down.uniforms.texel.value.set(1 / bloomRT[i - 1].width, 1 / bloomRT[i - 1].height);
+          draw(down, bloomRT[i]);
+        }
+        // back up: each level is blurred from the one below and the same-size down level added
+        let src = bloomRT[LEVELS - 1];
+        for (let i = LEVELS - 2; i >= 0; i--) {
+          up.uniforms.tSrc.value = src.texture; up.uniforms.tAdd.value = bloomRT[i].texture;
+          up.uniforms.texel.value.set(1 / src.width, 1 / src.height);
+          draw(up, upRT[i]);
+          src = upRT[i];
+        }
+        finU.tScene.value = sceneRT.texture; finU.tBloom.value = upRT[0].texture;
+        finU.tAO.value = aoBlurRT.texture; finU.useAO.value = useAO ? 1 : 0;
+        draw(fin, null);
+        // the arms ride with the camera, so they go on last: no speed blur, no creases, no glow
+        if (drawOver) drawOver();
+      },
+      // speed blur follows horizontal speed like the speed lines do
+      motion(dt, hs) {
+        blurAmt += (Math.max(0, Math.min(1, (hs - 550) / 1250)) - blurAmt) * Math.min(1, dt * 4);
+        finU.blur.value = blurAmt * 0.07;
+      },
+      setTheme,
+      GRADE, U: finU, aoU,
+      get active() { return active; },
+    };
+  })();
 
   // sky dome
   const sunDir = new THREE.Vector3(0.45, 0.8, 0.35).normalize();
@@ -587,6 +816,7 @@
     MATS.facade.emissive.set(T.win); MATS.glass.emissive.set(T.glass);
     if (animated.lava) { animated.lava.uniforms.fogColor.value.set(L.fog); animated.lava.uniforms.fogNear.value = L.near; animated.lava.uniforms.fogFar.value = L.far; }
     backdrop.setTheme(name, L.fog);
+    post.setTheme(name);
     if (body.setNight) body.setNight(name);
   }
   const setNight = (on) => setTheme(on ? 'night' : 'day');
@@ -3670,8 +3900,9 @@ body.touch .mark.big { font-size: clamp(44px, min(14vw, 13vh), 96px); }
     camera.updateMatrixWorld();
     updateCpMark();
     updateModelChunks();
-    renderer.render(scene, camera);
-    if (settings.body && (locked || game.demo) && !attract.active && !ed.on && !replay.on) body.render();
+    const arms = settings.body && (locked || game.demo) && !attract.active && !ed.on && !replay.on;
+    post.motion(dt, settings.speedLines && (locked || !!game.demo) && !attract.active && !ed.on && !replay.on ? hs : 0);
+    post.render(() => renderer.render(scene, camera), arms ? () => body.render() : null);
   }
 
   // ------------------------------------------------------------ online leaderboard
@@ -5177,6 +5408,8 @@ body.touch .mark.big { font-size: clamp(44px, min(14vw, 13vh), 96px); }
   // accessibility
   const applyHud = () => document.documentElement.style.setProperty('--hudz', String(settings.hudSize / 100));
   applyHud();
+  $('s-gfx').value = settings.gfx;
+  $('s-gfx').addEventListener('change', () => { settings.gfx = $('s-gfx').value; save(SETTINGS_KEY, settings); A.play('click'); });
   $('s-colors').value = settings.colors;
   $('s-colors').addEventListener('change', () => { settings.colors = $('s-colors').value; applyColors(); save(SETTINGS_KEY, settings); A.play('click'); });
   bindRange('s-roll', 'roll', v => v + '%');
@@ -6716,7 +6949,7 @@ body.editing.playing #edhelp { display: block; }
   previewCourse(map.order[0]);
   showMenuState();
   if (location.hash === '#demo') game.demo = true; // headless screenshot mode
-  window.__strafe = { courses: map.courses, mats: MATS, lights: { hemi, sun }, setNight, setTheme, player, game, keys, eff, coach, faceInsets, practice: { set: setPractice, save: practiceSave, load: practiceLoad }, goCourse, place, attract, previewCourse, body, ghost, cosmetics, preview, step, modelChunks, renderer, setView: (y, p) => { yaw = y; pitch = p; }, editor: { ed, build: edBuild, enter: enterEditor, test: edTest, back: edBack, code: edCode, decode: edDecode, publish: edPublish }, community: { cm, open: cmOpen, show: cmShow, play: cmPlay }, daily: { daily, weekly, open: dailyOpen, play: dailyPlay, load: dailyLoad, finish: dailyFinish }, practiceJump, sets: { start: startSet, best: setBest, list: SETS }, world,
+  window.__strafe = { post, courses: map.courses, mats: MATS, lights: { hemi, sun }, setNight, setTheme, player, game, keys, eff, coach, faceInsets, practice: { set: setPractice, save: practiceSave, load: practiceLoad }, goCourse, place, attract, previewCourse, body, ghost, cosmetics, preview, step, modelChunks, renderer, setView: (y, p) => { yaw = y; pitch = p; }, editor: { ed, build: edBuild, enter: enterEditor, test: edTest, back: edBack, code: edCode, decode: edDecode, publish: edPublish }, community: { cm, open: cmOpen, show: cmShow, play: cmPlay }, daily: { daily, weekly, open: dailyOpen, play: dailyPlay, load: dailyLoad, finish: dailyFinish }, practiceJump, sets: { start: startSet, best: setBest, list: SETS }, world,
     online: { net, race, submit: netSubmit, raceFinish, showComplete, openDrawer },
     replay: { state: replay, open: replayOpen, close: replayClose, watchBest }, career, ach: { check: achCheck, done: achDone, list: ACH, render: achRender }, binds: { binds, set: (id, code) => { rebinding = id; setBind(code); }, keyName }, settings, applyColors, saved: { save: saveLastRun, render: replaysRender },
     endless: { en, start: enStart, daily: enDaily, random: enRandom, open: enOpen, save: enSave }, falls, fallMap: { load: fallMapLoad, hide: fallMapHide, view: fallView }, respawn, tut };

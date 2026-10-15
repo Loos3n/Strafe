@@ -850,9 +850,15 @@ body.touch #racehud { top: calc(56px + env(safe-area-inset-top, 0px)); left: 10p
         <div class="group">
           <p class="label">Performance</p>
           <div class="settings">
+            <label for="s-gfx">Graphics</label><span></span>
+            <select id="s-gfx" class="setsel">
+              <option value="high">High (glow, contact shadows, colour grade)</option>
+              <option value="medium">Medium (glow and colour grade)</option>
+              <option value="low">Low (fastest)</option>
+            </select>
             <label for="s-scale">Render scale</label><output id="s-scale-v"></output>
             <input type="range" id="s-scale" min="50" max="100" step="5">
-            <p class="hint">Lower draws fewer pixels for a higher frame rate. Turning off shadows helps most on slow machines.</p>
+            <p class="hint">Lower draws fewer pixels for a higher frame rate. On slow machines, Low graphics and no shadows help most.</p>
           </div>
           <div class="checks" style="margin-top:10px">
             <label><input type="checkbox" id="s-fps"> Show frame rate</label>
