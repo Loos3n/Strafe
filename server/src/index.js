@@ -386,6 +386,17 @@ export class Board extends DurableObject {
       for (const r of this.sql.exec('SELECT course, ticks FROM times WHERE player = ?', me.id)) times[r.course] = r.ticks;
       return json({ id: me.id, name: me.name, times, imported: !!me.imported });
     }
+    // a player's progress, for carrying a save to another device: only what
+    // the server has checked (runs that passed checkRun, never older imported
+    // times), so a save edited on one device can't come across to another.
+    if (path === '/progress' && req.method === 'GET') {
+      const times = {};
+      for (const r of this.sql.exec('SELECT course, ticks FROM times WHERE player = ? AND legacy = 0', me.id)) times[r.course] = r.ticks;
+      const endless = {};
+      for (const r of this.sql.exec('SELECT day, sections, ticks FROM endless WHERE player = ? ORDER BY day DESC LIMIT 400', me.id)) endless[r.day] = { sections: r.sections, ticks: r.ticks };
+      const published = this.one('SELECT COUNT(*) AS n FROM levels WHERE author = ?', me.id).n;
+      return json({ id: me.id, name: me.name, times, endless, published });
+    }
     if (path === '/name' && req.method === 'POST') {
       const name = cleanName(body.name);
       if (!name) return fail('Names are 2 to 16 letters, numbers, spaces, dots, dashes or underscores.');
@@ -444,22 +455,9 @@ export class Board extends DurableObject {
       }
       return json({ best: better, ticks, total: this.total(key), mine: this.standing(key, me.id) });
     }
-    // once per player: bring over best times set before the online board
-    // existed, which have no replay to check. They show as older times.
-    if (path === '/import' && req.method === 'POST') {
-      if (me.imported) return json({ imported: 0 });
-      let n = 0;
-      for (const [course, ticks] of Object.entries(body.times || {})) {
-        if (!LEVELS[course] || !Number.isInteger(ticks) || ticks < 100 || ticks > 360000) continue;
-        const cur = this.one('SELECT ticks FROM times WHERE course = ? AND player = ?', course, me.id);
-        if (cur && cur.ticks <= ticks) continue;
-        this.sql.exec('INSERT OR REPLACE INTO times (course, player, ticks, at, legacy) VALUES (?, ?, ?, ?, 1)', course, me.id, ticks, Date.now());
-        this.sql.exec('DELETE FROM ghosts WHERE course = ? AND player = ?', course, me.id);
-        n++;
-      }
-      this.sql.exec('UPDATE players SET imported = 1 WHERE id = ?', me.id);
-      return json({ imported: n });
-    }
+    // Old clients called this once to bring over times that had no replay. It
+    // let anyone post any time, so it is closed: only checked runs count.
+    if (path === '/import' && req.method === 'POST') return fail('Times without a replay are no longer accepted.', 410);
     // publish an editor level. It must come with a run that finishes it, so
     // every published level can be beaten; that run is the first on its board.
     if (path === '/levels/publish' && req.method === 'POST') {

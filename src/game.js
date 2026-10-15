@@ -38,7 +38,7 @@
     { course: 'surf', title: 'Spillway', stars: [56, 80],
       brief: 'Mercer: "The Blues have the bridges watched. Only way across the reservoir tonight is down the spillway ramps. Ride the slopes, don\'t fall in."',
       debrief: 'Juno is waiting at the far bank. "They know a runner is moving my drives," she says. "Keep going, Kite. Two more and it is done."' },
-    { course: 'crossover', title: 'Shortcut', stars: [60, 87],
+    { course: 'crossover', title: 'Shortcut', stars: [62, 89],
       brief: 'Mercer: "Juno is paying double for speed. Roof, ramp, blocks, wall. One line, no stopping. I want you there before the Blues finish their shift change."',
       debrief: 'You make the handoff with seconds to spare. On the way out you see the drive\'s label in the streetlight: "CITY WATER AUTHORITY, AUDIT, DO NOT COPY".' },
     { course: 'downtown', title: 'Courier', stars: [70, 100],
@@ -74,29 +74,31 @@
   // levels players build: the editor's own ('custom') and community ones ('c:<id>')
   const isCommunity = (c) => typeof c === 'string' && c.startsWith('c:');
   const userCourse = (c) => c === 'custom' || c === 'endless' || isCommunity(c);
-  // Medals: bronze, silver, gold and platinum times on every level. Story
-  // levels use their star targets for gold and silver; the rest scale from the
-  // time the test bots take (MEDAL_PAR, seconds: re-time a level when it is
-  // rebuilt). A community level's medals scale from its maker's best time,
-  // which is the platinum (shown as Author).
+  // Medals: bronze, silver, gold and platinum times on every level, scaled
+  // from the time the test bots take (MEDAL_PAR, seconds: re-time a level
+  // when it is rebuilt). Bronze is 1.3x the bot, silver matches it, gold is
+  // 0.78x and platinum 0.64x (a fast, clean run); the parkour city levels,
+  // gated by wallruns and climbs, get the shares in MEDAL_SLOW. A community
+  // level's medals scale from its maker's best time, which is the platinum
+  // (shown as Author).
   const MEDALS = [{ k: 'plat', n: 'Platinum' }, { k: 'gold', n: 'Gold' }, { k: 'silver', n: 'Silver' }, { k: 'bronze', n: 'Bronze' }];
-  const MEDAL_PAR = { surf: 62.4, bhop: 54.9, roofs: 76.3, canyon: 62.7, stairway: 53.4, crossover: 66.8, downtown: 77.5, cascade: 25.3, spire: 62.0, freerun: 62.3,
+  const MEDAL_PAR = { surf: 62.4, bhop: 54.9, roofs: 76.3, canyon: 62.7, stairway: 53.4, crossover: 68.4, downtown: 77.5, cascade: 25.3, spire: 62.0, freerun: 62.3,
     g1: 24.8, g2: 32.4, g3: 48.4, g4: 49.6, g5: 58.7, g6: 80.4, n1: 31.9, n2: 42.1, n3: 43.7, n4: 44.6, n5: 72.2, n6: 90.8,
     h1: 61.9, h2: 61.9, h3: 53.1, h4: 58.6, h5: 75.2, h6: 83.8,
     s1: 38.1, s2: 39.5, s3: 46.7, s4: 63.6 };
+  // [platinum, gold, silver, bronze] as shares of MEDAL_PAR
+  const MEDAL_SHARE = [0.64, 0.78, 1, 1.3];
+  const MEDAL_SLOW = { roofs: [0.68, 0.82, 1, 1.3], downtown: [0.68, 0.82, 1, 1.3], freerun: [0.68, 0.82, 1, 1.3] };
   const communityAuthor = {}; // community course -> its maker's time, from the server
   // [platinum, gold, silver, bronze] in ticks, or null for levels without medals
   function medalTimes(course) {
     if (isCommunity(course)) {
       const A = communityAuthor[course];
-      return A ? [A, Math.round(A * 1.15), Math.round(A * 1.4), Math.round(A * 2)] : null;
+      return A ? [A, Math.round(A * 1.08), Math.round(A * 1.25), Math.round(A * 1.6)] : null;
     }
-    const job = STORY.find(j => j.course === course && j.stars);
-    let gold, silver;
-    if (job) [gold, silver] = job.stars;
-    else if (MEDAL_PAR[course]) { gold = Math.round(MEDAL_PAR[course] * 0.9); silver = Math.round(MEDAL_PAR[course] * 1.3); }
-    else return null;
-    return [Math.round(gold * 0.88), gold, silver, Math.round(silver * 1.5)].map(t => t * 100);
+    const par = MEDAL_PAR[course];
+    if (!par) return null;
+    return (MEDAL_SLOW[course] || MEDAL_SHARE).map(f => Math.round(par * f) * 100);
   }
   // the best medal a time earns: 0 platinum to 3 bronze, -1 none
   function medalOf(course, ticks) {
@@ -463,9 +465,13 @@
     const isBox = (b) => b.faces.length === 6 && b.faces.every(f => Math.abs(f.n[0]) === 1 || Math.abs(f.n[1]) === 1 || Math.abs(f.n[2]) === 1);
     const STAND = new Set(['pad', 'block', 'lane', 'floor', 'street', 'building', 'cliff', 'wall']);
     const footprints = [];
+    // whatever is built under a level belongs to that level (drawn only with it)
+    let tagged = deco.brushes.length, under = null;
+    const tagUnder = () => { for (; tagged < deco.brushes.length; tagged++) if (under) deco.brushes[tagged].course = under; };
     for (const b of world.brushes) {
+      tagUnder(); under = b.course || null;
       if (b.props.nonsolid && !(b.props.water || b.props.lava)) continue;
-      footprints.push([b.min[0], b.min[2], b.max[0], b.max[2]]);
+      footprints.push([b.min[0], b.min[2], b.max[0], b.max[2], b.course || null]);
       if (b.min[1] <= GROUND + 1) continue;
       const cx = (b.min[0] + b.max[0]) / 2, cz = (b.min[2] + b.max[2]) / 2;
       if (b.props.water || b.props.lava) {
@@ -502,6 +508,7 @@
       if (pts.some(([x, z]) => below(x, b.min[1] - 1, z) !== null)) continue;
       deco.addBox([b.min[0], GROUND, b.min[2]], [b.max[0], b.min[1], b.max[2]], { color: b.props.color, kind: b.props.kind === 'building' || b.props.kind === 'street' ? 'building' : b.props.kind });
     }
+    tagUnder();
     // the ground, and a low city spread over it
     deco.addBox([-160000, GROUND - 40, -160000], [360000, GROUND, 160000], { color: 0x5d646b, kind: 'street' });
     let seed = 99;
@@ -513,11 +520,18 @@
           const k = i + ',' + j;
           (fpCells.get(k) || fpCells.set(k, []).get(k)).push(q);
         }
+    // the levels whose footprint a block would stand in (an empty set: none), or
+    // null when it is in the way of something every level shares
     const clear = (a) => {
+      const under = new Set();
       for (let i = Math.floor(a[0] / FP); i <= Math.floor(a[2] / FP); i++)
         for (let j = Math.floor(a[1] / FP); j <= Math.floor(a[3] / FP); j++)
-          if ((fpCells.get(i + ',' + j) || []).some(q => a[0] < q[2] + 500 && a[2] > q[0] - 500 && a[1] < q[3] + 500 && a[3] > q[1] - 500)) return false;
-      return true;
+          for (const q of fpCells.get(i + ',' + j) || []) {
+            if (!(a[0] < q[2] + 500 && a[2] > q[0] - 500 && a[1] < q[3] + 500 && a[3] > q[1] - 500)) continue;
+            if (!q[4]) return null;
+            under.add(q[4]);
+          }
+      return under;
     };
     for (let x = -137200; x < 330000; x += 2200) {
       for (let z = -70000; z < 101000; z += 2200) {
@@ -525,7 +539,11 @@
         const w = 700 + rnd() * 1100, d = 700 + rnd() * 1100, h = 250 + rnd() * rnd() * 2600;
         const ax = x + rnd() * (2000 - w), az = z + rnd() * (2000 - d), glass = rnd() < 0.25;
         const a = [ax, az, ax + w, az + d];
-        if (clear(a)) deco.addBox([a[0], GROUND, a[1]], [a[2], GROUND + h, a[3]], { color: glass ? 0x8fc4dd : 0xe4e2db, kind: 'building', lowcity: !glass });
+        const under = clear(a);
+        if (!under) continue;
+        // blocks under a level fill its patch of the city while it is hidden
+        const fill = under.size ? { fillFor: [...under].sort().join(' ') } : null;
+        deco.addBox([a[0], GROUND, a[1]], [a[2], GROUND + h, a[3]], Object.assign({ color: glass ? 0x8fc4dd : 0xe4e2db, kind: 'building', lowcity: !glass }, fill));
       }
     }
   }
@@ -663,18 +681,48 @@
     return bucketOf ? res : (res.all || { g: new THREE.BufferGeometry(), lg: new THREE.BufferGeometry() });
   }
 
+  // ------------------------------------------------------------ one level at a time
+  // Everything a level is built from (its pieces, the columns and props under
+  // them, its cables) carries the level's name, and only the level being played
+  // or previewed is drawn: the others are hidden (and don't collide, see
+  // world.solo). Low-city blocks that would stand where a level is are built
+  // as well, tagged fillFor, and fill its patch of the city while it is hidden.
+  // A group is '' (always drawn), a level name, or '~' and the fillFor levels.
+  // the built-in level a course name shows (null for none, '' for a user level: no built-in one)
+  const levelInView = (c) => !c ? null : map.courses[c] && !userCourse(c) ? c : '';
+  const groupOf = (b) => b.course || (b.props.fillFor ? '~' + b.props.fillFor : '');
+  const groupShown = (g, focus) => !g ? true : g[0] === '~' ? focus != null && !g.slice(1).split(' ').includes(focus) : focus == null || g === focus;
+  const levelObjs = [];
+  let levelFocus = null; // null: no level in view, draw them all (and no fill)
+  function levelTag(o, g) { if (g) { levelObjs.push({ o, g }); o.visible = groupShown(g, levelFocus); } return o; }
+  function setLevelFocus(f) {
+    if (f === levelFocus) return;
+    levelFocus = f;
+    for (const e of levelObjs) e.o.visible = groupShown(e.g, f);
+  }
+  // split buildGeometry's buckets into groups: { group: { bucket: part } }
+  function byGroup(parts) {
+    const out = {};
+    for (const [key, part] of Object.entries(parts)) {
+      const i = key.indexOf('|'), g = key.slice(0, i);
+      (out[g] || (out[g] = {}))[key.slice(i + 1)] = part;
+    }
+    return out;
+  }
+  const groupBucket = (bucketOf) => (b, n) => groupOf(b) + '|' + (bucketOf ? bucketOf(b, n) : 'all');
+
   const animated = { water: null, lava: null };
   const levelMoving = [];
   {
     // the low city's plain blocks are drawn as models instead (see models below)
     // (deco: visual-only dressing such as the harbor's cranes and railings, drawn but never collided with)
-    const solid = buildGeometry(b => (!b.props.nonsolid || b.props.deco) && !b.props.door && !b.props.lowcity && !b.mv, bucketFor);
+    const solid = byGroup(buildGeometry(b => (!b.props.nonsolid || b.props.deco) && !b.props.door && !b.props.lowcity && !b.mv, groupBucket(bucketFor)));
     const edgeMat = new THREE.LineBasicMaterial({ color: 0x1b2530, transparent: true, opacity: 0.1 });
-    for (const [name, part] of Object.entries(solid)) {
+    for (const [grp, parts] of Object.entries(solid)) for (const [name, part] of Object.entries(parts)) {
       const mesh = new THREE.Mesh(part.g, MATS[name]);
       mesh.castShadow = mesh.receiveShadow = true;
-      scene.add(mesh);
-      if (name !== 'asphalt' && name !== 'rock') scene.add(new THREE.LineSegments(part.lg, edgeMat));
+      scene.add(levelTag(mesh, grp));
+      if (name !== 'asphalt' && name !== 'rock') scene.add(levelTag(new THREE.LineSegments(part.lg, edgeMat), grp));
     }
     // the levels' own moving pieces (swaying blocks, gates): each its own meshes, moved every frame
     for (const mv of world.movers) {
@@ -683,17 +731,16 @@
         const mesh = new THREE.Mesh(part.g, MATS[name]);
         mesh.castShadow = mesh.receiveShadow = true;
         const lines = new THREE.LineSegments(part.lg, edgeMat);
-        for (const o of [mesh, lines]) { scene.add(o); objs.push(o); }
+        for (const o of [mesh, lines]) { scene.add(levelTag(o, groupOf(mv.brushes[0]))); objs.push(o); }
       }
       levelMoving.push({ mv, objs });
     }
-    const water = buildGeometry(b => b.props.water);
+    const water = byGroup(buildGeometry(b => b.props.water, groupBucket()));
     waterNormal.repeat.set(1 / 3, 1 / 3);
     const wm = new THREE.MeshStandardMaterial({ vertexColors: true, transparent: true, opacity: 0.86, roughness: 0.12, metalness: 0.1, envMap, envMapIntensity: 1.2, normalMap: waterNormal, normalScale: new THREE.Vector2(0.6, 0.6) });
-    const wmesh = new THREE.Mesh(water.g, wm); wmesh.receiveShadow = true;
-    scene.add(wmesh);
+    for (const [grp, w] of Object.entries(water)) { const wmesh = new THREE.Mesh(w.all.g, wm); wmesh.receiveShadow = true; scene.add(levelTag(wmesh, grp)); }
     animated.water = waterNormal;
-    const lava = buildGeometry(b => b.props.lava);
+    const lava = byGroup(buildGeometry(b => b.props.lava, groupBucket()));
     // lava: a dark crust broken by bright, slowly flowing cracks. Computed per
     // pixel in world space, so there is no texture to tile.
     const lavaMat = new THREE.ShaderMaterial({
@@ -722,10 +769,11 @@
         '}',
       ].join('\n'),
     });
-    scene.add(new THREE.Mesh(lava.g, lavaMat));
+    for (const [grp, l] of Object.entries(lava)) scene.add(levelTag(new THREE.Mesh(l.all.g, lavaMat), grp));
     animated.lava = lavaMat;
-    const glow = buildGeometry(b => b.props.glow);
-    scene.add(new THREE.Mesh(glow.g, new THREE.MeshBasicMaterial({ vertexColors: true, transparent: true, opacity: 0.9 })));
+    const glow = byGroup(buildGeometry(b => b.props.glow, groupBucket()));
+    const glowMat = new THREE.MeshBasicMaterial({ vertexColors: true, transparent: true, opacity: 0.9 });
+    for (const [grp, gl] of Object.entries(glow)) scene.add(levelTag(new THREE.Mesh(gl.all.g, glowMat), grp));
   }
 
   const roofTanks = []; // water towers on skyline roofs, placed once the models load
@@ -739,18 +787,21 @@
     const unitBox = new THREE.BoxGeometry(1, 1, 1);
     const tankGeo = new THREE.CylinderGeometry(1, 1, 1, 18);
     const legGeo = new THREE.CylinderGeometry(1, 1, 1, 6);
-    // pieces are baked into one geometry per material so the props cost a few draw calls
+    // pieces are baked into one geometry per material (and level) so the props cost a few draw calls
     const batches = new Map();
     const mtx = new THREE.Matrix4(), q = new THREE.Quaternion();
+    let grp = '';
     const add = (geo, mat, x, y, z, sx, sy, sz) => {
       const g = geo.index ? geo.toNonIndexed() : geo.clone();
       g.applyMatrix4(mtx.compose(new THREE.Vector3(x, y, z), q, new THREE.Vector3(sx, sy, sz)));
-      if (!batches.has(mat)) batches.set(mat, []);
-      batches.get(mat).push(g);
+      const byMat = batches.get(grp) || batches.set(grp, new Map()).get(grp);
+      if (!byMat.has(mat)) byMat.set(mat, []);
+      byMat.get(mat).push(g);
     };
     const isBox = (b) => b.faces.length === 6 && b.faces.every(f => Math.abs(f.n[0]) === 1 || Math.abs(f.n[1]) === 1 || Math.abs(f.n[2]) === 1);
     for (const b of world.brushes) {
       if (b.props.kind !== 'building' || !isBox(b)) continue;
+      grp = groupOf(b);
       const [x0, y0, z0] = b.min, [x1, y1, z1] = b.max;
       const w = x1 - x0, d = z1 - z0, cx = (x0 + x1) / 2, cz = (z0 + z1) / 2;
       if (y1 - y0 < 200) continue;
@@ -769,7 +820,7 @@
         const r = rand();
         if (r < 0.35) {
           // water tank on legs
-          roofTanks.push([px, y1, pz, 150 + rand() * 60, rand()]);
+          roofTanks.push([px, y1, pz, 150 + rand() * 60, rand(), grp]);
         } else if (r < 0.8) {
           // AC unit with a fan grille
           const sx = 70 + rand() * 60, sz = 50 + rand() * 50, sy = 36 + rand() * 20;
@@ -784,7 +835,7 @@
         }
       }
     }
-    for (const [mat, parts] of batches) {
+    for (const [g, byMat] of batches) for (const [mat, parts] of byMat) {
       const merged = new THREE.BufferGeometry();
       for (const attr of ['position', 'normal', 'uv']) {
         const size = parts[0].attributes[attr].itemSize;
@@ -801,7 +852,7 @@
       }
       const mesh = new THREE.Mesh(merged, mat);
       mesh.castShadow = mesh.receiveShadow = true;
-      scene.add(mesh);
+      scene.add(levelTag(mesh, g));
     }
   }
 
@@ -832,7 +883,7 @@
   function placeModels(kit, list, near, altFor) {
     const cells = new Map();
     for (const it of list) {
-      const key = cellOf(it.x, it.z);
+      const key = (it.grp || '') + '#' + cellOf(it.x, it.z); // a level's models are chunked apart: they are hidden with it
       if (!cells.has(key)) cells.set(key, new Map());
       const byName = cells.get(key);
       if (!byName.has(it.name)) byName.set(it.name, []);
@@ -866,7 +917,7 @@
       g.visible = false; scene.add(g);
       const alt = altFor ? altFor(key) : null;
       if (alt) { alt.visible = false; scene.add(alt); }
-      modelChunks.push({ g, alt, sphere, near });
+      modelChunks.push({ g, alt, sphere, near, grp: key.slice(0, key.indexOf('#')) });
     }
   }
   const chunkFrustum = new THREE.Frustum(), chunkPV = new THREE.Matrix4();
@@ -876,7 +927,7 @@
     const far = scene.fog.far + 2000;
     for (const c of modelChunks) {
       const d = c.sphere.distanceToPoint(camera.position);
-      const seen = d < far && chunkFrustum.intersectsSphere(c.sphere);
+      const seen = d < far && groupShown(c.grp, levelFocus) && chunkFrustum.intersectsSphere(c.sphere);
       c.g.visible = seen && d < c.near;
       if (c.alt) c.alt.visible = seen && d >= c.near;
     }
@@ -907,8 +958,8 @@
   models.city.then((gltf) => {
     if (!gltf) {
       // no models: draw the low city as plain blocks after all
-      const low = buildGeometry(b => !!b.props.lowcity, bucketFor);
-      for (const [name, part] of Object.entries(low)) { const m = new THREE.Mesh(part.g, MATS[name]); m.receiveShadow = true; scene.add(m); }
+      const low = byGroup(buildGeometry(b => !!b.props.lowcity, groupBucket(bucketFor)));
+      for (const [grp, parts] of Object.entries(low)) for (const [name, part] of Object.entries(parts)) { const m = new THREE.Mesh(part.g, MATS[name]); m.receiveShadow = true; scene.add(levelTag(m, grp)); }
       return;
     }
     const kit = cityKit(gltf);
@@ -930,13 +981,13 @@
       }
       const z = kit[best].size, s = Math.min(fw / z.x, fd / z.z);
       const sy = Math.min(s * 1.5, Math.max(s * 0.75, h / z.y));
-      list.push({ name: best, x: (b.min[0] + b.max[0]) / 2, y: b.min[1], z: (b.min[2] + b.max[2]) / 2, sx: s, sy, sz: s, rot: (turn ? Math.PI / 2 : 0) + (rnd() < 0.5 ? Math.PI : 0) });
+      list.push({ name: best, x: (b.min[0] + b.max[0]) / 2, y: b.min[1], z: (b.min[2] + b.max[2]) / 2, sx: s, sy, sz: s, rot: (turn ? Math.PI / 2 : 0) + (rnd() < 0.5 ? Math.PI : 0), grp: groupOf(b) });
     }
     // water towers on the skyline roofs
-    for (const [x, y, z, h, r] of roofTanks) {
+    for (const [x, y, z, h, r, grp] of roofTanks) {
       const k = kit.watertower; if (!k) break;
       const s = h / k.size.y;
-      tanks.push({ name: 'watertower', x, y, z, sx: s, sy: s, sz: s, rot: r * Math.PI * 2 });
+      tanks.push({ name: 'watertower', x, y, z, sx: s, sy: s, sz: s, rot: r * Math.PI * 2, grp });
     }
     // street level: parked cars, lamps, bins and the like where nothing is built
     const sizes = { car_sedan: 190, car_taxi: 190, car_hatchback: 170, streetlight: 330, trafficlight_A: 330, dumpster: 110, bench: 90, firehydrant: 40, trash_A: 46, box_A: 40, bush: 70 };
@@ -959,7 +1010,7 @@
           for (const [n, wgt] of pick) { if ((r -= wgt) < 0) { name = n; break; } }
           const k = kit[name]; if (!k) continue;
           const s = sizes[name] / Math.max(k.size.x, k.size.y, k.size.z);
-          street.push({ name, x: px, y: top, z: pz, sx: s, sy: s, sz: s, rot: Math.floor(rnd() * 4) * Math.PI / 2 + (name.startsWith('car') ? 0 : rnd() * 0.3) });
+          street.push({ name, x: px, y: top, z: pz, sx: s, sy: s, sz: s, rot: Math.floor(rnd() * 4) * Math.PI / 2 + (name.startsWith('car') ? 0 : rnd() * 0.3), grp: groupOf(b) });
         }
       }
     }
@@ -967,7 +1018,7 @@
     // far low-city cells fall back to their plain blocks, built per cell
     const lowByCell = new Map();
     for (const b of deco.brushes) if (b.props.lowcity) {
-      const key = cellOf((b.min[0] + b.max[0]) / 2, (b.min[2] + b.max[2]) / 2);
+      const key = groupOf(b) + '#' + cellOf((b.min[0] + b.max[0]) / 2, (b.min[2] + b.max[2]) / 2);
       if (!lowByCell.has(key)) lowByCell.set(key, new Set());
       lowByCell.get(key).add(b);
     }
@@ -1028,7 +1079,8 @@
     if (!b.props.door) continue;
     const d = buildGeometry(x => x === b);
     const m = new THREE.Mesh(d.g, new THREE.MeshLambertMaterial({ vertexColors: true, transparent: true, opacity: 0.78 }));
-    scene.add(m);
+    const holder = new THREE.Group(); holder.add(m); // the level shows the holder, the door shows itself
+    scene.add(levelTag(holder, groupOf(b)));
     doors[b.props.door] = { brush: b, mesh: m };
   }
   function setDoor(id, open) {
@@ -1569,6 +1621,7 @@ body.touch #menu button, body.touch #drawer button { min-height: 40px; }
     place(game.cpSpawn);
     respawnFade();
     A.play('respawn');
+    tutorialFell();
   }
   // a quick dip to black on respawn, so a fall reads as a cut instead of a jump in place
   function respawnFade() {
@@ -1721,7 +1774,7 @@ body.touch #menu button, body.touch #drawer button { min-height: 40px; }
       if (t.type === 'kill') { careerCount('falls'); falls.fell(); respawn(); return; }
       if (t.course !== game.course) continue;
       if (t.type === 'start') inStart = true;
-      else if (t.type === 'hint') enterStep(t);
+      else if (t.type === 'hint') { if (enterStep(t)) return; }
       else if (t.type === 'checkpoint' && t.idx > game.cp && game.course === 'endless') enGate(t);
       else if (t.type === 'checkpoint' && t.idx > game.cp) {
         // with checkpoints off you still pass them (splits, the marker moves on), but a fall goes back to the start
@@ -1845,6 +1898,7 @@ body.touch #menu button, body.touch #drawer button { min-height: 40px; }
       saved(course) { const g = course in runs ? runs[course] : (runs[course] = load(GHOST_KEY + course)); return g ? { e: g.e, s: g.s } : null; },
       useRemote(course, g) { remote = g ? { course, g } : null; },
       remoteFor: (course) => !!(remote && remote.course === course),
+      put(course, g) { runs[course] = { e: g.e, s: g.s }; save(GHOST_KEY + course, runs[course]); },
       forget(course) { delete runs[course]; try { localStorage.removeItem(GHOST_KEY + course); } catch (e) { /* storage blocked */ } },
       root,
       tint(c) {
@@ -2266,7 +2320,6 @@ body.touch #menu button, body.touch #drawer button { min-height: 40px; }
   function handleEvents() {
     for (const e of player.events) {
       if (EVENT_SFX[e.type]) A.play(EVENT_SFX[e.type]);
-      tutorialEvent(e.type);
       if (e.type === 'land' && e.speed > 120) A.play('land', { speed: e.speed, surface: surfaceOf(player.groundBrush) });
       if (e.type === 'jump' || e.type === 'land') coachEnd();
       if (e.type === 'jump') {
@@ -2808,6 +2861,29 @@ body.touch #menu button, body.touch #drawer button { min-height: 40px; }
   const LEVEL_ORDER = ['tutorial'].concat(map.order, map.gauntlet, map.night, map.harbor, map.skyline);
   const completeEl = $('complete');
   let completeTimer = 0;
+  // A jump pressed as you land on the finish must not pick an option on the
+  // sheet: for a second after it opens nothing on it answers (keys, clicks,
+  // taps, controller), and a key already held when it opened stays ignored
+  // until it is let go and pressed again.
+  const COMPLETE_LOCK = 1000;
+  let completeArmAt = 0;
+  const completeHeld = new Set();
+  function armComplete() {
+    completeArmAt = performance.now() + COMPLETE_LOCK;
+    completeHeld.clear();
+    for (const k of keys) completeHeld.add(k);
+  }
+  const completeLocked = () => !completeEl.hidden && performance.now() < completeArmAt;
+  window.addEventListener('keydown', (e) => {
+    if (completeEl.hidden) return;
+    if (completeLocked() || completeHeld.has(e.code)) { e.preventDefault(); e.stopImmediatePropagation(); }
+  }, true);
+  // keyup still reaches the key tracking; preventDefault only stops a focused button acting on it
+  window.addEventListener('keyup', (e) => {
+    if (!completeEl.hidden && (completeLocked() || completeHeld.has(e.code))) e.preventDefault();
+    completeHeld.delete(e.code);
+  }, true);
+  completeEl.addEventListener('click', (e) => { if (completeLocked()) { e.preventDefault(); e.stopImmediatePropagation(); } }, true);
   function nextLevel(name) {
     const i = LEVEL_ORDER.indexOf(name);
     return i >= 0 && i < LEVEL_ORDER.length - 1 ? LEVEL_ORDER[i + 1] : null;
@@ -2870,6 +2946,7 @@ body.touch #menu button, body.touch #drawer button { min-height: 40px; }
     completeTimer = setTimeout(() => {
       document.body.classList.add('complete');
       completeEl.hidden = false;
+      armComplete();
       if (document.pointerLockElement) document.exitPointerLock();
       else if (locked) softLock(false);
       $('c-next').focus({ preventScroll: true });
@@ -2992,6 +3069,7 @@ body.touch #menu button, body.touch #drawer button { min-height: 40px; }
     completeTimer = setTimeout(() => {
       document.body.classList.add('complete');
       completeEl.hidden = false;
+      armComplete();
       if (document.pointerLockElement) document.exitPointerLock();
       else if (locked) softLock(false);
       $('c-next').focus({ preventScroll: true });
@@ -3028,7 +3106,7 @@ body.touch #menu button, body.touch #drawer button { min-height: 40px; }
   }
 
   // ------------------------------------------------------------ tutorial
-  const tut = { step: -1, done: false, hops: 0, surfTicks: 0 };
+  const tut = { step: -1, T: StrafeTutorial.create(), fbUntil: 0, stuckShown: false };
   const tutEl = $('tut');
   // the same steps told with the on-screen controls
   const TOUCH_TUT = {
@@ -3046,31 +3124,68 @@ body.touch #menu button, body.touch #drawer button { min-height: 40px; }
   const BOUND_WORD = { WASD: ['forward', 'left', 'back', 'right'], 'Shift or C': ['duck'], Space: ['jump'], Shift: ['duck'], C: ['duck'], W: ['forward'], A: ['left'], S: ['back'], D: ['right'] };
   const boundText = (t) => bindsDefault() ? t : t.replace(/\bWASD\b|Shift or C|\bSpace\b|\bShift\b|\b[WASDC]\b/g, (w) => { const n = BOUND_WORD[w].map(a => keyName(binds[a])); return n.join(n.every(x => x.length === 1) ? '' : ' '); });
   function resetTutorial() {
-    tut.step = -1; tut.done = false;
-    setDoor('strafe', false);
+    tut.step = -1; tut.T = StrafeTutorial.create(); tut.fbUntil = 0;
+    for (const g of StrafeTutorial.gates) setDoor(g, false);
     tutEl.hidden = true;
+    $('tut-fb').classList.remove('show');
   }
   function stepInfo() { return tut.step >= 0 ? map.courses.tutorial.steps[tut.step] : null; }
+  // true when it sent you back to the start of the station you skipped
   function enterStep(t) {
-    if (game.course !== 'tutorial' || t.idx <= tut.step) return;
+    if (game.course !== 'tutorial' || t.idx <= tut.step) return false;
+    if (tut.step >= 0 && !tut.T.done()) {
+      const r = tut.T.skipped();
+      if (r === 'skip') {
+        place(game.cpSpawn); respawnFade(); A.play('respawn');
+        tutSay('skip');
+        renderStep();
+        return true;
+      }
+      if (r === 'pass') toast('Moving on. Practise the ' + stepInfo().title.toLowerCase() + ' later', 2600);
+    }
     if (t.idx > game.cp) { game.cp = t.idx; game.cpSpawn = t.spawn; }
-    // the previous step counts as done once you reach the next one
-    tut.step = t.idx; tut.done = false; tut.hops = 0; tut.surfTicks = 0;
+    tut.step = t.idx; tut.stuckShown = false;
+    tut.T.enter(t.idx, map.courses.tutorial.steps[t.idx]);
+    $('tut-fb').classList.remove('show'); tut.fbUntil = 0;
     renderStep();
+    return false;
+  }
+  // a tip from the station's goal: keyboard text names the player's own keys
+  function tutSay(id) {
+    const t = tut.T.text(id);
+    if (!t) return;
+    const el = $('tut-fb');
+    el.textContent = TOUCH ? t[1] : t[0].replace(/\{(\w+)\}/g, (_, a) => keyName(binds[a]));
+    el.classList.remove('show'); void el.offsetWidth; el.classList.add('show');
+    tut.fbUntil = performance.now() + (id === 'stuck' ? 9000 : 5000);
   }
   function renderStep(final) {
     tutEl.hidden = false;
-    tutEl.classList.toggle('done', tut.done);
+    const n = map.courses.tutorial.steps.length;
+    const pips = $('tut-pips');
+    pips.textContent = '';
+    for (let i = 0; i < n; i++) {
+      const d = document.createElement('i');
+      if (final || i < tut.step || (i === tut.step && tut.T.done())) d.className = 'ok';
+      else if (i === tut.step) d.className = 'on';
+      pips.appendChild(d);
+    }
     if (final) {
+      tutEl.classList.add('done');
       $('tut-step').textContent = 'Tutorial complete';
       $('tut-title').textContent = 'You know the moves';
-      $('tut-body').textContent = (TOUCH ? 'Tap II' : 'Press Esc') + ' and pick a level. Surf and Bhop are the gentlest starts; Crossover uses everything you just did.';
+      const secs = game.finished !== null ? (game.finished * TICK).toFixed(1) + ' s' : '';
+      const r = tut.T.retries;
+      $('tut-body').textContent = (secs ? 'Finished in ' + secs + (r ? ' with ' + r + (r === 1 ? ' retry' : ' retries') : ', no retries') + '. ' : '') +
+        (TOUCH ? 'Tap II' : 'Press Esc') + ' and pick a level. Surf and Bhop are the gentlest starts; Crossover uses everything you just did.';
       $('tut-keys').textContent = '';
-      tutEl.classList.add('done');
+      $('tut-tasks').textContent = '';
+      $('tut-fb').classList.remove('show');
       return;
     }
     const s = stepInfo();
-    const n = map.courses.tutorial.steps.length;
+    tutEl.classList.toggle('done', tut.T.done());
+    $('tut-done').textContent = tut.T.gate() ? 'Gate open. Keep going.' : 'Done. Keep going.';
     $('tut-step').textContent = 'Step ' + (tut.step + 1) + ' of ' + n;
     $('tut-title').textContent = s.title;
     const tt = TOUCH && TOUCH_TUT[s.title];
@@ -3078,38 +3193,58 @@ body.touch #menu button, body.touch #drawer button { min-height: 40px; }
     const keysEl = $('tut-keys');
     keysEl.textContent = '';
     for (const k of tt ? tt[1] : [...new Set(s.keys.map(boundText))]) { const kc = document.createElement('span'); kc.className = 'kc'; kc.textContent = k; keysEl.appendChild(kc); }
+    const list = $('tut-tasks');
+    list.textContent = '';
+    for (const task of tut.T.s.tasks) {
+      const li = document.createElement('li');
+      li.dataset.id = task.id;
+      li.innerHTML = '<b></b><span></span><em></em><i><u></u></i>';
+      li.children[1].textContent = TOUCH ? task.label.replace(' with the mouse', '') : task.label;
+      list.appendChild(li);
+    }
+    tutProgress();
   }
-  function completeStep() {
-    if (tut.done) return;
-    tut.done = true;
-    const s = stepInfo();
-    if (s && s.done === 'strafe') { setDoor('strafe', true); toast('Gate open'); }
-    A.play('checkpoint');
-    renderStep();
-  }
-  function tutorialEvent(type) {
-    const s = game.course === 'tutorial' && stepInfo();
-    if (!s || tut.done) return;
-    if (s.done === 'jump' && type === 'jump') completeStep();
-    else if (s.done === 'bhop' && type === 'jump' && ++tut.hops >= 3) completeStep();
-    else if (s.done === 'slide' && type === 'slide') completeStep();
-    else if (s.done === 'vault' && (type === 'vault' || type === 'mantle')) completeStep();
-    else if (s.done === 'mantle' && (type === 'mantle' || type === 'climb')) completeStep();
-    else if (s.done === 'wallrun' && type === 'wallrun') completeStep();
-  }
-  function tutorialTick() {
-    const s = game.course === 'tutorial' && stepInfo();
-    if (!s || tut.done) return;
-    if (s.done === 'move' && player.hspeed() > 200) completeStep();
-    else if (s.done === 'strafe' && player.hspeed() >= 350) completeStep();
-    else if (s.done === 'surf') {
-      tut.surfTicks = !player.onGround && surfing() ? tut.surfTicks + 1 : 0;
-      if (tut.surfTicks > 60) completeStep();
+  // the live part of the card: ticks, counts and bars
+  function tutProgress() {
+    const st = tut.T.s;
+    if (!st) return;
+    for (const li of $('tut-tasks').children) {
+      const task = st.tasks.find(t => t.id === li.dataset.id), have = st.have[task.id], f = Math.min(1, have / task.need);
+      li.classList.toggle('ok', task.ok);
+      li.children[2].textContent = task.fmt === 'count' ? Math.min(have, task.need) + ' / ' + task.need
+        : task.fmt === 'speed' ? Math.round(Math.min(have, task.need)) + ' / ' + task.need
+        : task.fmt === 'sec' ? Math.min(have, task.need).toFixed(1) + ' / ' + task.need + ' s' : '';
+      li.children[3].hidden = task.fmt === 'check';
+      li.children[3].firstChild.style.width = (f * 100).toFixed(1) + '%';
     }
   }
+  function tutorialTick(cmd, events) {
+    if (game.course !== 'tutorial' || tut.step < 0 || !tut.T.s) return;
+    if (tut.fbUntil && performance.now() > tut.fbUntil) { tut.fbUntil = 0; $('tut-fb').classList.remove('show'); }
+    if (tut.T.done()) return;
+    if (tut.T.tick(player, cmd, events, { dt: TICK, surfing: surfing() })) {
+      const g = tut.T.gate();
+      if (g) { setDoor(g, true); toast('Gate open'); }
+      A.play('checkpoint');
+      tutEl.classList.remove('pop'); void tutEl.offsetWidth; tutEl.classList.add('pop');
+      $('tut-fb').classList.remove('show'); tut.fbUntil = 0;
+      renderStep();
+      return;
+    }
+    if (tut.T.s.say) { tutSay(tut.T.s.say); tut.T.s.say = null; }
+    if (!tut.stuckShown && tut.T.stuck()) { tut.stuckShown = true; tutSay('stuck'); }
+    if (game.tick % 4 === 0) tutProgress();
+  }
+  // fell in: the station starts over, with a tip on what went wrong
+  function tutorialFell() {
+    if (game.course !== 'tutorial' || tut.step < 0) return;
+    const r = tut.T.fell();
+    if (r) tutSay(r);
+    renderStep();
+  }
   function finishTutorial() {
-    tut.step = -1;
     renderStep(true);
+    tut.step = -1;
   }
 
   // footsteps from distance covered, faster and lighter on walls
@@ -3211,6 +3346,7 @@ body.touch #menu button, body.touch #drawer button { min-height: 40px; }
   let acc = 0, last = performance.now(), histTimer = 0;
 
   function step() {
+    world.solo = ed.on && !game.course ? '' : levelInView(game.course); // other levels don't collide
     const cmd = buildCmd();
     if (world.movers.length) world.setTime((game.tick - game.moverTick) * TICK);
     raceHold(cmd);
@@ -3229,9 +3365,10 @@ body.touch #menu button, body.touch #drawer button { min-height: 40px; }
       ghost.tick(game.tick - game.startTick);
     }
     careerTick();
+    const evs = player.events.slice();
     handleEvents();
     handleTriggers();
-    tutorialTick();
+    tutorialTick(cmd, evs);
   }
 
   function frame(now) {
@@ -3333,6 +3470,7 @@ body.touch #menu button, body.touch #drawer button { min-height: 40px; }
     sky.position.copy(camera.position);
     // the Night City levels light the world for night
     const viewing = !locked && !game.demo && attract.active ? attract.course : game.course;
+    setLevelFocus(ed.on && !game.course ? '' : levelInView(viewing));
     const vset = viewing && map.courses[viewing] && map.courses[viewing].set;
     const want = vset === 'night' ? 'night' : vset === 'harbor' ? 'dusk' : 'day';
     if (want !== theme) setTheme(want);
@@ -3560,27 +3698,161 @@ body.touch #menu button, body.touch #drawer button { min-height: 40px; }
     if (game.course === course) netRenderComplete();
     lbRender();
   }
-  // a new name: make the account, then bring this device's best times over
+  // a new name: make the account, then bring this device's best runs over
   async function netRegister(name) {
     const res = await api('/register', { name });
     Object.assign(net, { id: res.id, token: res.token, name: res.name });
     saveNet();
-    const legacy = {}, mine = lbMine();
-    for (const c of LEVEL_ORDER) {
-      if (!best[c]) continue;
-      const g = ghost.saved(c);
-      if (g && g.e === 4 && Array.isArray(g.s)) {
-        try { await api('/run', { course: lbKey(c), ticks: best[c], ghost: g }); continue; } catch (e) { /* fall back to an older time */ }
-      }
-      legacy[lbKey(c)] = best[c];
-    }
-    for (const k in mine) if (typeof mine[k] === 'number' && k !== 'at' && !(legacy[k] <= mine[k])) legacy[k] = mine[k];
-    try { await api('/import', { times: legacy }); } catch (e) { /* already imported */ }
+    await netUpload({});
     const p = net.pending;
     net.pending = null;
     net.boards = {};
     if (p) await netSubmit(p.course, p.ticks, p.run);
     lbRender();
+  }
+  // post this device's best runs that beat the player's online times. Each
+  // goes with its replay and has to pass the server's run check; a time with
+  // no replay stays on this device only.
+  const NOPOST_KEY = 'strafe.nopost.v1';
+  async function netUpload(online) {
+    if (!canPost()) return 0;
+    const refused = load(NOPOST_KEY) || {};
+    let n = 0;
+    for (const c of LEVEL_ORDER) {
+      const k = lbKey(c), t = best[c];
+      if (!t || (online[k] && online[k] <= t) || refused[k] === t) continue;
+      const g = ghost.saved(c);
+      if (!g || g.e !== GHOST_EVERY || !Array.isArray(g.s)) continue;
+      try { await api('/run', { course: k, ticks: t, ghost: g }); n++; } catch (e) {
+        if (e.status === 429) break;
+        if (e.status === 422) { refused[k] = t; save(NOPOST_KEY, refused); }
+      }
+    }
+    return n;
+  }
+
+  // ------------------------------------------------------------ save across devices
+  // The save code is the player's sign-in (id.key). Entering it on another
+  // device signs that device in and brings over what the server has checked:
+  // best times (and with them stars, medals, achievements and the unlocks
+  // they earn), set runs, daily and weekly finishes and Endless bests. Nothing
+  // is ever taken from a device's own save except runs that pass the server's
+  // checks, so a save edited by hand can't spread to an account or a device.
+  const SAVE_CODE = /^[0-9a-f]{16}\.[0-9a-f]{32}$/;
+  const fromKey = Object.fromEntries(LEVEL_ORDER.map(c => [lbKey(c), c]));
+  const okTicks = (t) => Number.isInteger(t) && t >= 100 && t <= 360000;
+  function applyProgress(p) {
+    const got = { levels: 0, stars: 0, ach: 0 }, ghosts = [], sets = [];
+    const times = p && p.times || {};
+    const starsBefore = storyStars(), achBefore = achCount();
+    for (const k in times) {
+      const t = times[k];
+      if (!okTicks(t)) continue;
+      const c = fromKey[k] || (isCommunity(k) ? k : null);
+      if (c) {
+        if (!best[c] || t < best[c]) {
+          if (!best[c]) got.levels++;
+          best[c] = t; delete bestSplits[c];
+          if (!isCommunity(c)) ghosts.push([c, k, t]);
+        }
+        continue;
+      }
+      const set = k.match(/^set:([a-z]+)$/);
+      if (set && SETS[set[1]] && (!setBest[set[1]] || t < setBest[set[1]].ticks)) { setBest[set[1]] = { ticks: t, legs: null, at: Date.now() }; sets.push(set[1]); continue; }
+      const ch = k.match(/^([dw]):(\d{4}-\d\d-\d\d)$/);
+      if (ch) { const C = ch[1] === 'd' ? daily : weekly; if (!C.days[ch[2]] || t < C.days[ch[2]]) C.days[ch[2]] = t; }
+    }
+    // story jobs, in order, from checked times on their levels
+    for (let i = 0; i < STORY.length; i++) {
+      const job = STORY[i], t = times[lbKey(job.course)];
+      if (!(i === 0 || storyProgress[i - 1])) break;
+      if (!okTicks(t)) { if (storyProgress[i]) continue; break; }
+      const secs = t * TICK, prev = storyProgress[i] || { stars: 0, best: null };
+      storyProgress[i] = { stars: Math.max(prev.stars, starCount(job, secs)), best: prev.best === null ? secs : Math.min(prev.best, secs) };
+    }
+    for (const day in p && p.endless || {}) {
+      const r = p.endless[day];
+      if (!r || !Number.isInteger(r.sections) || !Number.isInteger(r.ticks)) continue;
+      const run = { sections: r.sections, ticks: r.ticks };
+      if (enBetter(run, enSave.best)) enSave.best = run;
+      if (enBetter(run, enSave.days[day])) enSave.days[day] = run; // its splits were from a slower run
+    }
+    for (const d of Object.keys(enSave.days).sort().slice(0, -7)) delete enSave.days[d];
+    for (const C of CHALLENGES) C.days = Object.fromEntries(Object.keys(C.days).sort().slice(-120).map(k => [k, C.days[k]]));
+    career.community = Math.max(career.community, Object.keys(times).filter(isCommunity).length);
+    career.sets = Math.max(career.sets, Object.keys(times).filter(k => /^set:/.test(k)).length);
+    career.published = Math.max(career.published, p && Number.isInteger(p.published) ? p.published : 0);
+    save(BEST_KEY, best); save(SPLITS_KEY, bestSplits); save(STORY_KEY, storyProgress); save(SET_KEY, setBest);
+    save(ENDLESS_KEY, enSave); save(STATS_KEY, career);
+    for (const C of CHALLENGES) save(C.key, { days: C.days });
+    achCheck(true);
+    got.stars = storyStars() - starsBefore; got.ach = achCount() - achBefore;
+    return { got, ghosts, sets };
+  }
+  // fetch the replays behind restored times, so ghosts race your real best
+  async function fetchGhosts(list, sets) {
+    for (const [c, k, t] of list) {
+      try {
+        const r = await api('/ghost?course=' + encodeURIComponent(k) + '&id=' + net.id);
+        if (r.ticks === t && best[c] === t && r.ghost && r.ghost.e === GHOST_EVERY) ghost.put(c, r.ghost);
+      } catch (e) { /* the ghost can wait */ }
+    }
+    for (const set of sets) {
+      try {
+        const r = await api('/ghost?course=set:' + set + '&id=' + net.id), legs = r.ghost && r.ghost.legs;
+        if (!Array.isArray(legs) || !setBest[set] || r.ticks !== setBest[set].ticks) continue;
+        setBest[set].legs = legs.map(l => l.t); save(SET_KEY, setBest);
+        save(SET_GHOST_KEY + set, legs.map(l => ({ e: l.e, s: l.s })));
+      } catch (e) { /* the set ghost can wait */ }
+    }
+  }
+  // bring this device up to date with the account: on start, and after a save code
+  async function netSync() {
+    const p = await api('/progress');
+    if (p.name) { net.name = p.name; saveNet(); }
+    const res = applyProgress(p);
+    const sent = await netUpload(p.times || {});
+    if (sent) net.boards = {};
+    if (res.got.levels || res.got.stars || res.got.ach || sent) progressChanged();
+    fetchGhosts(res.ghosts, res.sets);
+    return res.got;
+  }
+  function progressChanged() {
+    buildLevelList(); buildStory(); refreshTitle(); lbRender();
+    cosmetics.apply();
+  }
+  const saveCode = () => net.id && net.token ? net.token : '';
+  async function useSaveCode(raw, msgEl) {
+    const code = String(raw || '').toLowerCase().replace(/[^0-9a-f.]/g, '');
+    msgEl.className = 'onmsg';
+    if (!SAVE_CODE.test(code)) { msgEl.className = 'onmsg err'; msgEl.textContent = "That isn't a save code. It's 49 characters with a dot after the first 16."; return false; }
+    if (code === net.token) { msgEl.textContent = 'This device already uses that save.'; return false; }
+    if (net.token && !confirm('This device posts as ' + net.name + ' now. Switch to the other save? You will need ' + net.name + "'s save code to switch back.")) return false;
+    msgEl.textContent = 'Loading…';
+    const keep = { id: net.id, token: net.token, name: net.name };
+    Object.assign(net, { id: code.slice(0, 16), token: code, name: null });
+    try {
+      const got = await netSync();
+      net.boards = {};
+      if (race.ws) raceSend({ t: 'hello', name: net.name });
+      $('on-name').value = net.name;
+      $('on-namemsg').className = 'onmsg'; $('on-namemsg').textContent = 'You post as ' + net.name + '.';
+      msgEl.textContent = 'Loaded ' + net.name + "'s save: " + [got.levels + (got.levels === 1 ? ' level' : ' levels'),
+        got.stars + (got.stars === 1 ? ' star' : ' stars'), got.ach + (got.ach === 1 ? ' achievement' : ' achievements')].join(', ') + ' new on this device.';
+      saveRender();
+      return true;
+    } catch (e) {
+      Object.assign(net, keep); saveNet();
+      msgEl.className = 'onmsg err';
+      msgEl.textContent = e.status === 401 ? "That save code doesn't match a player." : e.message;
+      return false;
+    }
+  }
+  function saveRender() {
+    const has = !!saveCode();
+    $('sv-have').hidden = !has;
+    $('sv-code').textContent = has ? '•'.repeat(12) : '';
+    $('sv-code').dataset.shown = '';
   }
   async function netSetName(name, msgEl) {
     msgEl.className = 'onmsg'; msgEl.textContent = 'Saving…';
@@ -3602,6 +3874,22 @@ body.touch #menu button, body.touch #drawer button { min-height: 40px; }
     if (ok) netRenderComplete();
   });
   $('on-nameform').addEventListener('submit', (e) => { e.preventDefault(); netSetName($('on-name').value, $('on-namemsg')); });
+  $('sv-show').addEventListener('click', () => {
+    const el = $('sv-code'), on = !el.dataset.shown;
+    el.dataset.shown = on ? '1' : '';
+    el.textContent = on ? saveCode() : '•'.repeat(12);
+    $('sv-show').textContent = on ? 'Hide' : 'Show';
+  });
+  $('sv-copy').addEventListener('click', async () => {
+    const msg = $('sv-msg');
+    msg.className = 'onmsg';
+    try { await navigator.clipboard.writeText(saveCode()); msg.textContent = 'Copied. Enter it on your other device under Online.'; }
+    catch (e) { $('sv-show').click(); msg.textContent = 'Copy the code shown above.'; }
+  });
+  $('sv-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    if (await useSaveCode($('sv-input').value, $('sv-msg'))) $('sv-input').value = '';
+  });
 
   // the Online pane: name, race room and the full board
   function fillLevels(sel, value) {
@@ -3614,6 +3902,8 @@ body.touch #menu button, body.touch #drawer button { min-height: 40px; }
     $('on-name').value = net.name || '';
     $('on-namemsg').className = 'onmsg';
     $('on-namemsg').textContent = net.token ? '' : 'Pick a name to post your times and race.';
+    saveRender();
+    $('sv-msg').textContent = '';
     const ol = $('on-level');
     fillLevels(ol, typeof selected === 'string' && selected !== 'custom' ? selected : null);
     if (!ol.querySelector('optgroup')) {
@@ -3882,7 +4172,7 @@ body.touch #menu button, body.touch #drawer button { min-height: 40px; }
   (async () => {
     try {
       if (net.token) {
-        try { const me = await api('/me'); net.name = me.name; saveNet(); } catch (e) { if (e.status === 401) { net.token = null; net.id = null; saveNet(); } else throw e; }
+        try { await netSync(); } catch (e) { if (e.status === 401) { net.token = null; net.id = null; saveNet(); } else throw e; }
       } else await api('/board?course=tutorial');
       net.ok = true;
     } catch (e) { net.ok = false; }
@@ -3934,8 +4224,24 @@ body.touch #menu button, body.touch #drawer button { min-height: 40px; }
     replayUi();
     $('rp-play').focus({ preventScroll: true });
   }
+  // hide the replay bar for a clean view; H, a tap or a click on the view brings it back
+  let rpNoteTimer = 0;
+  function replayClean(on) {
+    document.body.classList.toggle('rp-clean', on);
+    clearTimeout(rpNoteTimer);
+    const note = $('rp-shownote');
+    if (on) {
+      if (rpEl.contains(document.activeElement)) document.activeElement.blur();
+      note.textContent = TOUCH ? 'Tap to show controls' : 'Press H or click to show controls';
+      note.classList.add('show');
+      rpNoteTimer = setTimeout(() => note.classList.remove('show'), 1800);
+    } else {
+      note.classList.remove('show');
+    }
+  }
   function replayClose() {
     if (!replay.on) return;
+    replayClean(false);
     replay.on = false;
     replay.keys.clear();
     document.body.classList.remove('replaying');
@@ -4013,9 +4319,10 @@ body.touch #menu button, body.touch #drawer button { min-height: 40px; }
   $('rp-fwd').addEventListener('click', () => replaySeek(replay.t + 1 / TICK));
   $('rp-scrub').addEventListener('input', () => replaySeek(+$('rp-scrub').value));
   $('rp-exit').addEventListener('click', () => { A.play('click'); replayClose(); });
+  $('rp-hide').addEventListener('click', () => { A.play('click'); replayClean(true); });
   for (const b of rpEl.querySelectorAll('[data-cam]')) b.addEventListener('click', () => { replayCamMode(b.dataset.cam); A.play('click'); });
   // drag the view to look around (follow: swing round the runner)
-  canvas.addEventListener('pointerdown', (e) => { if (replay.on) { replay.drag = { x: e.clientX, y: e.clientY }; try { canvas.setPointerCapture(e.pointerId); } catch (x) { /* fine */ } } });
+  canvas.addEventListener('pointerdown', (e) => { if (replay.on) { replay.drag = { x: e.clientX, y: e.clientY }; replay.tap = { x: e.clientX, y: e.clientY }; try { canvas.setPointerCapture(e.pointerId); } catch (x) { /* fine */ } } });
   canvas.addEventListener('pointermove', (e) => {
     if (!replay.on || !replay.drag) return;
     const dx = (e.clientX - replay.drag.x) * 0.006, dy = (e.clientY - replay.drag.y) * 0.006;
@@ -4027,7 +4334,12 @@ body.touch #menu button, body.touch #drawer button { min-height: 40px; }
       replay.orbit.pitch = Math.max(-1.3, Math.min(0.6, replay.orbit.pitch - dy));
     }
   });
-  const endDrag = () => { replay.drag = null; };
+  const endDrag = () => { replay.drag = null; replay.tap = null; };
+  // a tap or click that did not drag brings the hidden HUD back
+  canvas.addEventListener('pointerup', (e) => {
+    const t = replay.tap;
+    if (replay.on && t && Math.hypot(e.clientX - t.x, e.clientY - t.y) < 8 && document.body.classList.contains('rp-clean')) replayClean(false);
+  });
   canvas.addEventListener('pointerup', endDrag); canvas.addEventListener('pointercancel', endDrag);
   canvas.addEventListener('wheel', (e) => {
     if (!replay.on || replay.cam !== 'follow') return;
@@ -4037,6 +4349,7 @@ body.touch #menu button, body.touch #drawer button { min-height: 40px; }
     if (!replay.on) return;
     const tag = document.activeElement && document.activeElement.tagName;
     if (e.code === 'Escape') { e.preventDefault(); e.stopImmediatePropagation(); replayClose(); return; }
+    if (e.code === 'KeyH' && !e.repeat) { replayClean(!document.body.classList.contains('rp-clean')); return; }
     if (replay.cam === 'free' && /^(Key[WASDQEC]|Arrow(Up|Down|Left|Right)|Space|Shift(Left|Right))$/.test(e.code)) { e.preventDefault(); replay.keys.add(e.code); return; }
     if (tag === 'BUTTON' && (e.code === 'Space' || e.code === 'Enter')) return; // the focused button handles it
     if (e.code === 'Space' || e.code === 'KeyK') { e.preventDefault(); $('rp-play').click(); }
@@ -4051,7 +4364,7 @@ body.touch #menu button, body.touch #drawer button { min-height: 40px; }
   });
   window.addEventListener('keyup', (e) => replay.keys.delete(e.code));
   window.addEventListener('blur', () => replay.keys.clear());
-  // controller: A play or pause, B exit, LB and RB speed, D-pad left and right
+  // controller: A play or pause, B exit, X hides the HUD, LB and RB speed, D-pad left and right
   // skip a second, Y camera, right stick looks, left stick flies the free camera
   function replayPad(b, ax, press, dt) {
     if (press(0)) $('rp-play').click();
@@ -4061,6 +4374,7 @@ body.touch #menu button, body.touch #drawer button { min-height: 40px; }
     if (press(14)) replaySeek(replay.t - 1 / TICK);
     if (press(15)) replaySeek(replay.t + 1 / TICK);
     if (press(3)) replayCamMode({ follow: 'pov', pov: 'free', free: 'follow' }[replay.cam]);
+    if (press(2)) replayClean(!document.body.classList.contains('rp-clean'));
     const lx = ax[2] * 2.4 * dt, ly = ax[3] * 1.6 * dt;
     if (replay.cam === 'free') {
       const f = replay.free;
@@ -5262,9 +5576,9 @@ body.editing.playing #edhelp { display: block; }
   }
   // the built-in levels' cables (Cableway), drawn once
   {
-    const cf = [];
-    for (const z of world.ziplines) if (!z.custom) cf.push(...cableFaces(z.a, z.b, 2));
-    if (cf.length) scene.add(new THREE.Mesh(facesToGeo(cf), cableMat));
+    const cf = new Map();
+    for (const z of world.ziplines) if (!z.custom) { const g = z.course || ''; if (!cf.has(g)) cf.set(g, []); cf.get(g).push(...cableFaces(z.a, z.b, 2)); }
+    for (const [g, faces] of cf) scene.add(levelTag(new THREE.Mesh(facesToGeo(faces), cableMat), g));
   }
 
   // ---- entering, leaving, testing
@@ -6052,6 +6366,7 @@ body.editing.playing #edhelp { display: block; }
     completeTimer = setTimeout(() => {
       document.body.classList.add('complete');
       completeEl.hidden = false;
+      armComplete();
       if (document.pointerLockElement) document.exitPointerLock();
       else if (locked) softLock(false);
       $('c-next').focus({ preventScroll: true });
@@ -6228,6 +6543,6 @@ body.editing.playing #edhelp { display: block; }
   window.__strafe = { courses: map.courses, mats: MATS, lights: { hemi, sun }, setNight, setTheme, player, game, keys, eff, coach, faceInsets, practice: { set: setPractice, save: practiceSave, load: practiceLoad }, goCourse, place, attract, previewCourse, body, ghost, cosmetics, preview, step, modelChunks, renderer, setView: (y, p) => { yaw = y; pitch = p; }, editor: { ed, build: edBuild, enter: enterEditor, test: edTest, back: edBack, code: edCode, decode: edDecode, publish: edPublish }, community: { cm, open: cmOpen, show: cmShow, play: cmPlay }, daily: { daily, weekly, open: dailyOpen, play: dailyPlay, load: dailyLoad, finish: dailyFinish }, practiceJump, sets: { start: startSet, best: setBest, list: SETS }, world,
     online: { net, race, submit: netSubmit, raceFinish, showComplete, openDrawer },
     replay: { state: replay, open: replayOpen, close: replayClose, watchBest }, career, ach: { check: achCheck, done: achDone, list: ACH, render: achRender }, binds: { binds, set: (id, code) => { rebinding = id; setBind(code); }, keyName }, settings, applyColors, saved: { save: saveLastRun, render: replaysRender },
-    endless: { en, start: enStart, daily: enDaily, random: enRandom, open: enOpen, save: enSave }, falls, fallMap: { load: fallMapLoad, hide: fallMapHide, view: fallView }, respawn };
+    endless: { en, start: enStart, daily: enDaily, random: enRandom, open: enOpen, save: enSave }, falls, fallMap: { load: fallMapLoad, hide: fallMapHide, view: fallView }, respawn, tut };
   requestAnimationFrame((t) => { last = t; frame(t); });
 })();

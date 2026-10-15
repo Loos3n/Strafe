@@ -18,7 +18,21 @@
   function buildMap(StrafePhysics) {
     const world = new StrafePhysics.World();
     const box = (min, max, color, extra) => world.addBox(min, max, Object.assign({ color }, extra));
-    const courses = {};
+    // Every brush and cable belongs to the level whose section built it.
+    // Each section ends by adding its level to courses, so that stamps the level
+    // on everything added since the last one; the game draws and collides only
+    // the level being played. (Unstamped pieces, like endless sections, are shared.)
+    const courseList = {}, seen = { b: 0, z: 0 };
+    const courses = new Proxy(courseList, {
+      set(o, k, v) {
+        if (!(k in o)) {
+          for (; seen.b < world.brushes.length; seen.b++) world.brushes[seen.b].course = k;
+          for (; seen.z < world.ziplines.length; seen.z++) world.ziplines[seen.z].course = k;
+        }
+        o[k] = v;
+        return true;
+      },
+    });
     const route = (min, max) => box(min, max, COLORS.route, { kind: 'route' });
     // a convex brush around a handful of points: every plane through three of
     // them with all the rest behind it is a face (used for curved ramps)
@@ -513,7 +527,8 @@
       box([tx - 340, -400, 0], [tx + 340, 300, 40], WALL, { kind: 'wall' }); // back wall
       // 1 move
       floor(0, -900); sides(0, -900, -400, 260);
-      hint(0, -500, 0, -150, { title: 'Move', body: 'WASD moves, the mouse looks. Head down the corridor.', keys: ['W', 'A', 'S', 'D'], done: 'move' });
+      box([tx - 300, 0, -500], [tx + 300, 260, -480], COLORS.route, { door: 'move', kind: 'door' });
+      hint(0, -500, 0, -150, { title: 'Move', body: 'WASD moves, the mouse looks. Tick off all three and the gate opens.', keys: ['W', 'A', 'S', 'D'], done: 'move' });
       // 2 jump the gap
       hint(-500, -900, 0, -600, { title: 'Jump', body: 'Press Space to jump the gap. Fall in and you go back to the last step.', keys: ['Space'], done: 'jump' });
       // 3 bhop across a broken floor
@@ -530,7 +545,7 @@
       floor(-4840, -6100); sides(-4840, -6100, -400, 260);
       box([tx - 300, 60, -5560], [tx + 300, 100, -5520], COLORS.route, { kind: 'route' });
       box([tx - 300, 100, -5560], [tx + 300, 260, -5520], WALL, {});
-      hint(-4840, -5500, 0, -4950, { title: 'Slide', body: 'Run, then press Shift or C to slide under the pipe. Holding crouch as you land from a jump also slides.', keys: ['Shift', 'C'], done: 'slide' });
+      hint(-4840, -5500, 0, -4950, { title: 'Slide', body: 'Run, then press Shift or C to slide under the pipe. Holding crouch as you land from a jump also slides.', keys: ['Shift', 'C'], done: 'slide', zUnder: -5560 });
       // 6 vault
       box([tx - 300, 0, -6380], [tx + 300, 44, -6340], COLORS.route, { kind: 'route' });
       floor(-6100, -7000); sides(-6100, -7000, -400, 300);
@@ -538,7 +553,7 @@
       // 7 climb and mantle onto a higher floor
       floor(-7000, -8000, 160); sides(-7000, -8000, -400, 460);
       box([tx - 120, 0, -7000], [tx + 120, 160, -6997], COLORS.route, { kind: 'route', nonsolid: true });
-      hint(-6400, -7000, 0, -6500, { title: 'Climb', body: 'Run straight at the wall and press Space to run up it. Keep holding W to pull yourself onto the ledge.', keys: ['W', 'Space'], done: 'mantle' });
+      hint(-6400, -7000, 0, -6500, { title: 'Climb', body: 'Run straight at the wall and press Space to run up it. Keep holding W to pull yourself onto the ledge.', keys: ['W', 'Space'], done: 'mantle', yTop: 150 });
       // 8 wallrun across a gap
       sides(-8000, -8600, -400, 520);
       floor(-8600, -9500, 160); sides(-8600, -9500, -400, 460);
@@ -815,7 +830,12 @@
             world.addMover([door], [0, up, 0], time);
             return { z: z - o.at, up, time };
           });
-          const here = { pos: (() => { const q = W3(x, y, z - Math.min(300, len / 2)); return q; })(), yaw: L.yaw };
+          // spawn 300 in, or short of the first obstacle when one is there (a slot
+          // over the spawn put the rider inside its wall)
+          const blocks = vaults.concat(slots, gates.map(g => g.z)).map(bz => z - bz);
+          let sd = Math.min(300, len / 2);
+          if (blocks.some(at => at > sd - 80 && at < sd + 100)) sd = Math.max(60, Math.min(...blocks) - 120);
+          const here = { pos: (() => { const q = W3(x, y, z - sd); return q; })(), yaw: L.yaw };
           if (!spawn) { spawn = here; ltrig(x - w / 2, x + w / 2, y, y + 160, z - len, z, { type: 'start' }); }
           let trig = null;
           if (spawn !== here && sg.cp) { cp++; trig = ltrig(x - w / 2, x + w / 2, y, y + 160, z - len, z, { type: 'checkpoint', idx: cp, spawn: here }); }
@@ -1716,7 +1736,7 @@
     const skylineOrder = ['s1', 's2', 's3', 's4'];
     skylineOrder.forEach((name, i) => { courses[name].key = 'S' + (i + 1); });
 
-    return { world, courses, endless, ENDLESS, order, gauntlet: gauntletOrder, night: nightOrder, harbor: harborOrder, skyline: skylineOrder, hubSpawn, COLORS };
+    return { world, courses: courseList, endless, ENDLESS, order, gauntlet: gauntletOrder, night: nightOrder, harbor: harborOrder, skyline: skylineOrder, hubSpawn, COLORS };
   }
 
   // Falling off. For any spot, the lowest a rider can be while still on the course near it:
