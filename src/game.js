@@ -2861,6 +2861,29 @@ body.touch #menu button, body.touch #drawer button { min-height: 40px; }
   const LEVEL_ORDER = ['tutorial'].concat(map.order, map.gauntlet, map.night, map.harbor, map.skyline);
   const completeEl = $('complete');
   let completeTimer = 0;
+  // A jump pressed as you land on the finish must not pick an option on the
+  // sheet: for a second after it opens nothing on it answers (keys, clicks,
+  // taps, controller), and a key already held when it opened stays ignored
+  // until it is let go and pressed again.
+  const COMPLETE_LOCK = 1000;
+  let completeArmAt = 0;
+  const completeHeld = new Set();
+  function armComplete() {
+    completeArmAt = performance.now() + COMPLETE_LOCK;
+    completeHeld.clear();
+    for (const k of keys) completeHeld.add(k);
+  }
+  const completeLocked = () => !completeEl.hidden && performance.now() < completeArmAt;
+  window.addEventListener('keydown', (e) => {
+    if (completeEl.hidden) return;
+    if (completeLocked() || completeHeld.has(e.code)) { e.preventDefault(); e.stopImmediatePropagation(); }
+  }, true);
+  // keyup still reaches the key tracking; preventDefault only stops a focused button acting on it
+  window.addEventListener('keyup', (e) => {
+    if (!completeEl.hidden && (completeLocked() || completeHeld.has(e.code))) e.preventDefault();
+    completeHeld.delete(e.code);
+  }, true);
+  completeEl.addEventListener('click', (e) => { if (completeLocked()) { e.preventDefault(); e.stopImmediatePropagation(); } }, true);
   function nextLevel(name) {
     const i = LEVEL_ORDER.indexOf(name);
     return i >= 0 && i < LEVEL_ORDER.length - 1 ? LEVEL_ORDER[i + 1] : null;
@@ -2923,6 +2946,7 @@ body.touch #menu button, body.touch #drawer button { min-height: 40px; }
     completeTimer = setTimeout(() => {
       document.body.classList.add('complete');
       completeEl.hidden = false;
+      armComplete();
       if (document.pointerLockElement) document.exitPointerLock();
       else if (locked) softLock(false);
       $('c-next').focus({ preventScroll: true });
@@ -3045,6 +3069,7 @@ body.touch #menu button, body.touch #drawer button { min-height: 40px; }
     completeTimer = setTimeout(() => {
       document.body.classList.add('complete');
       completeEl.hidden = false;
+      armComplete();
       if (document.pointerLockElement) document.exitPointerLock();
       else if (locked) softLock(false);
       $('c-next').focus({ preventScroll: true });
@@ -6341,6 +6366,7 @@ body.editing.playing #edhelp { display: block; }
     completeTimer = setTimeout(() => {
       document.body.classList.add('complete');
       completeEl.hidden = false;
+      armComplete();
       if (document.pointerLockElement) document.exitPointerLock();
       else if (locked) softLock(false);
       $('c-next').focus({ preventScroll: true });
