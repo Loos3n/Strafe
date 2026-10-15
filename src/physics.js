@@ -89,6 +89,8 @@
       this.ziplines = [];
       this.triggers = [];
       this.movers = [];
+      // when set, only this level's brushes (and ones with no level) collide; '' means none of them
+      this.solo = null;
     }
 
     // Moving pieces: the brushes stay where they were built and carry an
@@ -212,10 +214,11 @@
       const bx0 = Math.min(start[0], end[0]) + hmin[0] - 1, bx1 = Math.max(start[0], end[0]) + hmax[0] + 1;
       const by0 = Math.min(start[1], end[1]) + hmin[1] - 1, by1 = Math.max(start[1], end[1]) + hmax[1] + 1;
       const bz0 = Math.min(start[2], end[2]) + hmin[2] - 1, bz1 = Math.max(start[2], end[2]) + hmax[2] + 1;
-      const brushes = this.brushes;
+      const brushes = this.brushes, solo = this.solo;
       for (let i = 0; i < brushes.length; i++) {
         const b = brushes[i];
         if (b.props.nonsolid) continue;
+        if (solo != null && b.course && b.course !== solo) continue; // another level: not there while playing this one
         const o = b.off;
         if (o) {
           if (b.min[0] + o[0] > bx1 || b.max[0] + o[0] < bx0 || b.min[1] + o[1] > by1 || b.max[1] + o[1] < by0 || b.min[2] + o[2] > bz1 || b.max[2] + o[2] < bz0) continue;
@@ -1010,7 +1013,9 @@
       const zl = this.world.ziplines;
       if (!zl || !zl.length || this.onGround || this.zipCooldown > 0 || this.climb) return false;
       const c = this.cfg, h = [this.pos[0], this.pos[1] + c.zipHang, this.pos[2]];
+      const solo = this.world.solo;
       for (const z of zl) {
+        if (solo != null && z.course && z.course !== solo) continue;
         const d = [z.b[0] - z.a[0], z.b[1] - z.a[1], z.b[2] - z.a[2]], L2 = dot(d, d);
         if (L2 < 1) continue;
         // not the cable you just let go of, until you've touched down: a hop

@@ -465,9 +465,13 @@
     const isBox = (b) => b.faces.length === 6 && b.faces.every(f => Math.abs(f.n[0]) === 1 || Math.abs(f.n[1]) === 1 || Math.abs(f.n[2]) === 1);
     const STAND = new Set(['pad', 'block', 'lane', 'floor', 'street', 'building', 'cliff', 'wall']);
     const footprints = [];
+    // whatever is built under a level belongs to that level (drawn only with it)
+    let tagged = deco.brushes.length, under = null;
+    const tagUnder = () => { for (; tagged < deco.brushes.length; tagged++) if (under) deco.brushes[tagged].course = under; };
     for (const b of world.brushes) {
+      tagUnder(); under = b.course || null;
       if (b.props.nonsolid && !(b.props.water || b.props.lava)) continue;
-      footprints.push([b.min[0], b.min[2], b.max[0], b.max[2]]);
+      footprints.push([b.min[0], b.min[2], b.max[0], b.max[2], b.course || null]);
       if (b.min[1] <= GROUND + 1) continue;
       const cx = (b.min[0] + b.max[0]) / 2, cz = (b.min[2] + b.max[2]) / 2;
       if (b.props.water || b.props.lava) {
@@ -504,6 +508,7 @@
       if (pts.some(([x, z]) => below(x, b.min[1] - 1, z) !== null)) continue;
       deco.addBox([b.min[0], GROUND, b.min[2]], [b.max[0], b.min[1], b.max[2]], { color: b.props.color, kind: b.props.kind === 'building' || b.props.kind === 'street' ? 'building' : b.props.kind });
     }
+    tagUnder();
     // the ground, and a low city spread over it
     deco.addBox([-160000, GROUND - 40, -160000], [360000, GROUND, 160000], { color: 0x5d646b, kind: 'street' });
     let seed = 99;
@@ -515,11 +520,18 @@
           const k = i + ',' + j;
           (fpCells.get(k) || fpCells.set(k, []).get(k)).push(q);
         }
+    // the levels whose footprint a block would stand in (an empty set: none), or
+    // null when it is in the way of something every level shares
     const clear = (a) => {
+      const under = new Set();
       for (let i = Math.floor(a[0] / FP); i <= Math.floor(a[2] / FP); i++)
         for (let j = Math.floor(a[1] / FP); j <= Math.floor(a[3] / FP); j++)
-          if ((fpCells.get(i + ',' + j) || []).some(q => a[0] < q[2] + 500 && a[2] > q[0] - 500 && a[1] < q[3] + 500 && a[3] > q[1] - 500)) return false;
-      return true;
+          for (const q of fpCells.get(i + ',' + j) || []) {
+            if (!(a[0] < q[2] + 500 && a[2] > q[0] - 500 && a[1] < q[3] + 500 && a[3] > q[1] - 500)) continue;
+            if (!q[4]) return null;
+            under.add(q[4]);
+          }
+      return under;
     };
     for (let x = -137200; x < 330000; x += 2200) {
       for (let z = -70000; z < 101000; z += 2200) {
@@ -527,7 +539,11 @@
         const w = 700 + rnd() * 1100, d = 700 + rnd() * 1100, h = 250 + rnd() * rnd() * 2600;
         const ax = x + rnd() * (2000 - w), az = z + rnd() * (2000 - d), glass = rnd() < 0.25;
         const a = [ax, az, ax + w, az + d];
-        if (clear(a)) deco.addBox([a[0], GROUND, a[1]], [a[2], GROUND + h, a[3]], { color: glass ? 0x8fc4dd : 0xe4e2db, kind: 'building', lowcity: !glass });
+        const under = clear(a);
+        if (!under) continue;
+        // blocks under a level fill its patch of the city while it is hidden
+        const fill = under.size ? { fillFor: [...under].sort().join(' ') } : null;
+        deco.addBox([a[0], GROUND, a[1]], [a[2], GROUND + h, a[3]], Object.assign({ color: glass ? 0x8fc4dd : 0xe4e2db, kind: 'building', lowcity: !glass }, fill));
       }
     }
   }
@@ -665,18 +681,48 @@
     return bucketOf ? res : (res.all || { g: new THREE.BufferGeometry(), lg: new THREE.BufferGeometry() });
   }
 
+  // ------------------------------------------------------------ one level at a time
+  // Everything a level is built from (its pieces, the columns and props under
+  // them, its cables) carries the level's name, and only the level being played
+  // or previewed is drawn: the others are hidden (and don't collide, see
+  // world.solo). Low-city blocks that would stand where a level is are built
+  // as well, tagged fillFor, and fill its patch of the city while it is hidden.
+  // A group is '' (always drawn), a level name, or '~' and the fillFor levels.
+  // the built-in level a course name shows (null for none, '' for a user level: no built-in one)
+  const levelInView = (c) => !c ? null : map.courses[c] && !userCourse(c) ? c : '';
+  const groupOf = (b) => b.course || (b.props.fillFor ? '~' + b.props.fillFor : '');
+  const groupShown = (g, focus) => !g ? true : g[0] === '~' ? focus != null && !g.slice(1).split(' ').includes(focus) : focus == null || g === focus;
+  const levelObjs = [];
+  let levelFocus = null; // null: no level in view, draw them all (and no fill)
+  function levelTag(o, g) { if (g) { levelObjs.push({ o, g }); o.visible = groupShown(g, levelFocus); } return o; }
+  function setLevelFocus(f) {
+    if (f === levelFocus) return;
+    levelFocus = f;
+    for (const e of levelObjs) e.o.visible = groupShown(e.g, f);
+  }
+  // split buildGeometry's buckets into groups: { group: { bucket: part } }
+  function byGroup(parts) {
+    const out = {};
+    for (const [key, part] of Object.entries(parts)) {
+      const i = key.indexOf('|'), g = key.slice(0, i);
+      (out[g] || (out[g] = {}))[key.slice(i + 1)] = part;
+    }
+    return out;
+  }
+  const groupBucket = (bucketOf) => (b, n) => groupOf(b) + '|' + (bucketOf ? bucketOf(b, n) : 'all');
+
   const animated = { water: null, lava: null };
   const levelMoving = [];
   {
     // the low city's plain blocks are drawn as models instead (see models below)
     // (deco: visual-only dressing such as the harbor's cranes and railings, drawn but never collided with)
-    const solid = buildGeometry(b => (!b.props.nonsolid || b.props.deco) && !b.props.door && !b.props.lowcity && !b.mv, bucketFor);
+    const solid = byGroup(buildGeometry(b => (!b.props.nonsolid || b.props.deco) && !b.props.door && !b.props.lowcity && !b.mv, groupBucket(bucketFor)));
     const edgeMat = new THREE.LineBasicMaterial({ color: 0x1b2530, transparent: true, opacity: 0.1 });
-    for (const [name, part] of Object.entries(solid)) {
+    for (const [grp, parts] of Object.entries(solid)) for (const [name, part] of Object.entries(parts)) {
       const mesh = new THREE.Mesh(part.g, MATS[name]);
       mesh.castShadow = mesh.receiveShadow = true;
-      scene.add(mesh);
-      if (name !== 'asphalt' && name !== 'rock') scene.add(new THREE.LineSegments(part.lg, edgeMat));
+      scene.add(levelTag(mesh, grp));
+      if (name !== 'asphalt' && name !== 'rock') scene.add(levelTag(new THREE.LineSegments(part.lg, edgeMat), grp));
     }
     // the levels' own moving pieces (swaying blocks, gates): each its own meshes, moved every frame
     for (const mv of world.movers) {
@@ -685,17 +731,16 @@
         const mesh = new THREE.Mesh(part.g, MATS[name]);
         mesh.castShadow = mesh.receiveShadow = true;
         const lines = new THREE.LineSegments(part.lg, edgeMat);
-        for (const o of [mesh, lines]) { scene.add(o); objs.push(o); }
+        for (const o of [mesh, lines]) { scene.add(levelTag(o, groupOf(mv.brushes[0]))); objs.push(o); }
       }
       levelMoving.push({ mv, objs });
     }
-    const water = buildGeometry(b => b.props.water);
+    const water = byGroup(buildGeometry(b => b.props.water, groupBucket()));
     waterNormal.repeat.set(1 / 3, 1 / 3);
     const wm = new THREE.MeshStandardMaterial({ vertexColors: true, transparent: true, opacity: 0.86, roughness: 0.12, metalness: 0.1, envMap, envMapIntensity: 1.2, normalMap: waterNormal, normalScale: new THREE.Vector2(0.6, 0.6) });
-    const wmesh = new THREE.Mesh(water.g, wm); wmesh.receiveShadow = true;
-    scene.add(wmesh);
+    for (const [grp, w] of Object.entries(water)) { const wmesh = new THREE.Mesh(w.all.g, wm); wmesh.receiveShadow = true; scene.add(levelTag(wmesh, grp)); }
     animated.water = waterNormal;
-    const lava = buildGeometry(b => b.props.lava);
+    const lava = byGroup(buildGeometry(b => b.props.lava, groupBucket()));
     // lava: a dark crust broken by bright, slowly flowing cracks. Computed per
     // pixel in world space, so there is no texture to tile.
     const lavaMat = new THREE.ShaderMaterial({
@@ -724,10 +769,11 @@
         '}',
       ].join('\n'),
     });
-    scene.add(new THREE.Mesh(lava.g, lavaMat));
+    for (const [grp, l] of Object.entries(lava)) scene.add(levelTag(new THREE.Mesh(l.all.g, lavaMat), grp));
     animated.lava = lavaMat;
-    const glow = buildGeometry(b => b.props.glow);
-    scene.add(new THREE.Mesh(glow.g, new THREE.MeshBasicMaterial({ vertexColors: true, transparent: true, opacity: 0.9 })));
+    const glow = byGroup(buildGeometry(b => b.props.glow, groupBucket()));
+    const glowMat = new THREE.MeshBasicMaterial({ vertexColors: true, transparent: true, opacity: 0.9 });
+    for (const [grp, gl] of Object.entries(glow)) scene.add(levelTag(new THREE.Mesh(gl.all.g, glowMat), grp));
   }
 
   const roofTanks = []; // water towers on skyline roofs, placed once the models load
@@ -741,18 +787,21 @@
     const unitBox = new THREE.BoxGeometry(1, 1, 1);
     const tankGeo = new THREE.CylinderGeometry(1, 1, 1, 18);
     const legGeo = new THREE.CylinderGeometry(1, 1, 1, 6);
-    // pieces are baked into one geometry per material so the props cost a few draw calls
+    // pieces are baked into one geometry per material (and level) so the props cost a few draw calls
     const batches = new Map();
     const mtx = new THREE.Matrix4(), q = new THREE.Quaternion();
+    let grp = '';
     const add = (geo, mat, x, y, z, sx, sy, sz) => {
       const g = geo.index ? geo.toNonIndexed() : geo.clone();
       g.applyMatrix4(mtx.compose(new THREE.Vector3(x, y, z), q, new THREE.Vector3(sx, sy, sz)));
-      if (!batches.has(mat)) batches.set(mat, []);
-      batches.get(mat).push(g);
+      const byMat = batches.get(grp) || batches.set(grp, new Map()).get(grp);
+      if (!byMat.has(mat)) byMat.set(mat, []);
+      byMat.get(mat).push(g);
     };
     const isBox = (b) => b.faces.length === 6 && b.faces.every(f => Math.abs(f.n[0]) === 1 || Math.abs(f.n[1]) === 1 || Math.abs(f.n[2]) === 1);
     for (const b of world.brushes) {
       if (b.props.kind !== 'building' || !isBox(b)) continue;
+      grp = groupOf(b);
       const [x0, y0, z0] = b.min, [x1, y1, z1] = b.max;
       const w = x1 - x0, d = z1 - z0, cx = (x0 + x1) / 2, cz = (z0 + z1) / 2;
       if (y1 - y0 < 200) continue;
@@ -771,7 +820,7 @@
         const r = rand();
         if (r < 0.35) {
           // water tank on legs
-          roofTanks.push([px, y1, pz, 150 + rand() * 60, rand()]);
+          roofTanks.push([px, y1, pz, 150 + rand() * 60, rand(), grp]);
         } else if (r < 0.8) {
           // AC unit with a fan grille
           const sx = 70 + rand() * 60, sz = 50 + rand() * 50, sy = 36 + rand() * 20;
@@ -786,7 +835,7 @@
         }
       }
     }
-    for (const [mat, parts] of batches) {
+    for (const [g, byMat] of batches) for (const [mat, parts] of byMat) {
       const merged = new THREE.BufferGeometry();
       for (const attr of ['position', 'normal', 'uv']) {
         const size = parts[0].attributes[attr].itemSize;
@@ -803,7 +852,7 @@
       }
       const mesh = new THREE.Mesh(merged, mat);
       mesh.castShadow = mesh.receiveShadow = true;
-      scene.add(mesh);
+      scene.add(levelTag(mesh, g));
     }
   }
 
@@ -834,7 +883,7 @@
   function placeModels(kit, list, near, altFor) {
     const cells = new Map();
     for (const it of list) {
-      const key = cellOf(it.x, it.z);
+      const key = (it.grp || '') + '#' + cellOf(it.x, it.z); // a level's models are chunked apart: they are hidden with it
       if (!cells.has(key)) cells.set(key, new Map());
       const byName = cells.get(key);
       if (!byName.has(it.name)) byName.set(it.name, []);
@@ -868,7 +917,7 @@
       g.visible = false; scene.add(g);
       const alt = altFor ? altFor(key) : null;
       if (alt) { alt.visible = false; scene.add(alt); }
-      modelChunks.push({ g, alt, sphere, near });
+      modelChunks.push({ g, alt, sphere, near, grp: key.slice(0, key.indexOf('#')) });
     }
   }
   const chunkFrustum = new THREE.Frustum(), chunkPV = new THREE.Matrix4();
@@ -878,7 +927,7 @@
     const far = scene.fog.far + 2000;
     for (const c of modelChunks) {
       const d = c.sphere.distanceToPoint(camera.position);
-      const seen = d < far && chunkFrustum.intersectsSphere(c.sphere);
+      const seen = d < far && groupShown(c.grp, levelFocus) && chunkFrustum.intersectsSphere(c.sphere);
       c.g.visible = seen && d < c.near;
       if (c.alt) c.alt.visible = seen && d >= c.near;
     }
@@ -909,8 +958,8 @@
   models.city.then((gltf) => {
     if (!gltf) {
       // no models: draw the low city as plain blocks after all
-      const low = buildGeometry(b => !!b.props.lowcity, bucketFor);
-      for (const [name, part] of Object.entries(low)) { const m = new THREE.Mesh(part.g, MATS[name]); m.receiveShadow = true; scene.add(m); }
+      const low = byGroup(buildGeometry(b => !!b.props.lowcity, groupBucket(bucketFor)));
+      for (const [grp, parts] of Object.entries(low)) for (const [name, part] of Object.entries(parts)) { const m = new THREE.Mesh(part.g, MATS[name]); m.receiveShadow = true; scene.add(levelTag(m, grp)); }
       return;
     }
     const kit = cityKit(gltf);
@@ -932,13 +981,13 @@
       }
       const z = kit[best].size, s = Math.min(fw / z.x, fd / z.z);
       const sy = Math.min(s * 1.5, Math.max(s * 0.75, h / z.y));
-      list.push({ name: best, x: (b.min[0] + b.max[0]) / 2, y: b.min[1], z: (b.min[2] + b.max[2]) / 2, sx: s, sy, sz: s, rot: (turn ? Math.PI / 2 : 0) + (rnd() < 0.5 ? Math.PI : 0) });
+      list.push({ name: best, x: (b.min[0] + b.max[0]) / 2, y: b.min[1], z: (b.min[2] + b.max[2]) / 2, sx: s, sy, sz: s, rot: (turn ? Math.PI / 2 : 0) + (rnd() < 0.5 ? Math.PI : 0), grp: groupOf(b) });
     }
     // water towers on the skyline roofs
-    for (const [x, y, z, h, r] of roofTanks) {
+    for (const [x, y, z, h, r, grp] of roofTanks) {
       const k = kit.watertower; if (!k) break;
       const s = h / k.size.y;
-      tanks.push({ name: 'watertower', x, y, z, sx: s, sy: s, sz: s, rot: r * Math.PI * 2 });
+      tanks.push({ name: 'watertower', x, y, z, sx: s, sy: s, sz: s, rot: r * Math.PI * 2, grp });
     }
     // street level: parked cars, lamps, bins and the like where nothing is built
     const sizes = { car_sedan: 190, car_taxi: 190, car_hatchback: 170, streetlight: 330, trafficlight_A: 330, dumpster: 110, bench: 90, firehydrant: 40, trash_A: 46, box_A: 40, bush: 70 };
@@ -961,7 +1010,7 @@
           for (const [n, wgt] of pick) { if ((r -= wgt) < 0) { name = n; break; } }
           const k = kit[name]; if (!k) continue;
           const s = sizes[name] / Math.max(k.size.x, k.size.y, k.size.z);
-          street.push({ name, x: px, y: top, z: pz, sx: s, sy: s, sz: s, rot: Math.floor(rnd() * 4) * Math.PI / 2 + (name.startsWith('car') ? 0 : rnd() * 0.3) });
+          street.push({ name, x: px, y: top, z: pz, sx: s, sy: s, sz: s, rot: Math.floor(rnd() * 4) * Math.PI / 2 + (name.startsWith('car') ? 0 : rnd() * 0.3), grp: groupOf(b) });
         }
       }
     }
@@ -969,7 +1018,7 @@
     // far low-city cells fall back to their plain blocks, built per cell
     const lowByCell = new Map();
     for (const b of deco.brushes) if (b.props.lowcity) {
-      const key = cellOf((b.min[0] + b.max[0]) / 2, (b.min[2] + b.max[2]) / 2);
+      const key = groupOf(b) + '#' + cellOf((b.min[0] + b.max[0]) / 2, (b.min[2] + b.max[2]) / 2);
       if (!lowByCell.has(key)) lowByCell.set(key, new Set());
       lowByCell.get(key).add(b);
     }
@@ -1030,7 +1079,8 @@
     if (!b.props.door) continue;
     const d = buildGeometry(x => x === b);
     const m = new THREE.Mesh(d.g, new THREE.MeshLambertMaterial({ vertexColors: true, transparent: true, opacity: 0.78 }));
-    scene.add(m);
+    const holder = new THREE.Group(); holder.add(m); // the level shows the holder, the door shows itself
+    scene.add(levelTag(holder, groupOf(b)));
     doors[b.props.door] = { brush: b, mesh: m };
   }
   function setDoor(id, open) {
@@ -3271,6 +3321,7 @@ body.touch #menu button, body.touch #drawer button { min-height: 40px; }
   let acc = 0, last = performance.now(), histTimer = 0;
 
   function step() {
+    world.solo = ed.on && !game.course ? '' : levelInView(game.course); // other levels don't collide
     const cmd = buildCmd();
     if (world.movers.length) world.setTime((game.tick - game.moverTick) * TICK);
     raceHold(cmd);
@@ -3394,6 +3445,7 @@ body.touch #menu button, body.touch #drawer button { min-height: 40px; }
     sky.position.copy(camera.position);
     // the Night City levels light the world for night
     const viewing = !locked && !game.demo && attract.active ? attract.course : game.course;
+    setLevelFocus(ed.on && !game.course ? '' : levelInView(viewing));
     const vset = viewing && map.courses[viewing] && map.courses[viewing].set;
     const want = vset === 'night' ? 'night' : vset === 'harbor' ? 'dusk' : 'day';
     if (want !== theme) setTheme(want);
@@ -5499,9 +5551,9 @@ body.editing.playing #edhelp { display: block; }
   }
   // the built-in levels' cables (Cableway), drawn once
   {
-    const cf = [];
-    for (const z of world.ziplines) if (!z.custom) cf.push(...cableFaces(z.a, z.b, 2));
-    if (cf.length) scene.add(new THREE.Mesh(facesToGeo(cf), cableMat));
+    const cf = new Map();
+    for (const z of world.ziplines) if (!z.custom) { const g = z.course || ''; if (!cf.has(g)) cf.set(g, []); cf.get(g).push(...cableFaces(z.a, z.b, 2)); }
+    for (const [g, faces] of cf) scene.add(levelTag(new THREE.Mesh(facesToGeo(faces), cableMat), g));
   }
 
   // ---- entering, leaving, testing

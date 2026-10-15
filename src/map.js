@@ -18,7 +18,21 @@
   function buildMap(StrafePhysics) {
     const world = new StrafePhysics.World();
     const box = (min, max, color, extra) => world.addBox(min, max, Object.assign({ color }, extra));
-    const courses = {};
+    // Every brush and cable belongs to the level whose section built it.
+    // Each section ends by adding its level to courses, so that stamps the level
+    // on everything added since the last one; the game draws and collides only
+    // the level being played. (Unstamped pieces, like endless sections, are shared.)
+    const courseList = {}, seen = { b: 0, z: 0 };
+    const courses = new Proxy(courseList, {
+      set(o, k, v) {
+        if (!(k in o)) {
+          for (; seen.b < world.brushes.length; seen.b++) world.brushes[seen.b].course = k;
+          for (; seen.z < world.ziplines.length; seen.z++) world.ziplines[seen.z].course = k;
+        }
+        o[k] = v;
+        return true;
+      },
+    });
     const route = (min, max) => box(min, max, COLORS.route, { kind: 'route' });
     // a convex brush around a handful of points: every plane through three of
     // them with all the rest behind it is a face (used for curved ramps)
@@ -816,7 +830,12 @@
             world.addMover([door], [0, up, 0], time);
             return { z: z - o.at, up, time };
           });
-          const here = { pos: (() => { const q = W3(x, y, z - Math.min(300, len / 2)); return q; })(), yaw: L.yaw };
+          // spawn 300 in, or short of the first obstacle when one is there (a slot
+          // over the spawn put the rider inside its wall)
+          const blocks = vaults.concat(slots, gates.map(g => g.z)).map(bz => z - bz);
+          let sd = Math.min(300, len / 2);
+          if (blocks.some(at => at > sd - 80 && at < sd + 100)) sd = Math.max(60, Math.min(...blocks) - 120);
+          const here = { pos: (() => { const q = W3(x, y, z - sd); return q; })(), yaw: L.yaw };
           if (!spawn) { spawn = here; ltrig(x - w / 2, x + w / 2, y, y + 160, z - len, z, { type: 'start' }); }
           let trig = null;
           if (spawn !== here && sg.cp) { cp++; trig = ltrig(x - w / 2, x + w / 2, y, y + 160, z - len, z, { type: 'checkpoint', idx: cp, spawn: here }); }
@@ -1717,7 +1736,7 @@
     const skylineOrder = ['s1', 's2', 's3', 's4'];
     skylineOrder.forEach((name, i) => { courses[name].key = 'S' + (i + 1); });
 
-    return { world, courses, endless, ENDLESS, order, gauntlet: gauntletOrder, night: nightOrder, harbor: harborOrder, skyline: skylineOrder, hubSpawn, COLORS };
+    return { world, courses: courseList, endless, ENDLESS, order, gauntlet: gauntletOrder, night: nightOrder, harbor: harborOrder, skyline: skylineOrder, hubSpawn, COLORS };
   }
 
   // Falling off. For any spot, the lowest a rider can be while still on the course near it:
