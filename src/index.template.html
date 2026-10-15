@@ -120,6 +120,27 @@ body:not(.playing) .hud, body:not(.playing) #crosshair { visibility: hidden; }
 .kc { font-weight: 700; font-size: 14px; letter-spacing: .06em; border: 2px solid var(--ink); padding: 2px 8px; }
 #tut-done { display: none; margin: 10px 0 0; font-weight: 700; font-size: 15px; letter-spacing: .12em; text-transform: uppercase; color: #fff; background: #1f8a4c; padding: 4px 10px; width: fit-content; }
 #tut.done #tut-done { display: block; }
+#tut-pips { display: flex; gap: 4px; margin: 0 0 8px; }
+#tut-pips i { flex: 1; height: 4px; background: rgba(21,25,29,.14); }
+#tut-pips i.on { background: var(--red); }
+#tut-pips i.ok { background: #1f8a4c; }
+#tut-tasks { list-style: none; margin: 12px 0 0; padding: 0; display: grid; gap: 7px; }
+#tut-tasks:empty { display: none; }
+#tut-tasks li { display: grid; grid-template-columns: 18px 1fr auto; align-items: center; column-gap: 8px; row-gap: 4px; font-family: var(--body); font-size: 14px; font-weight: 600; }
+#tut-tasks b { width: 14px; height: 14px; border: 2px solid var(--ink); box-sizing: border-box; }
+#tut-tasks li.ok b { background: #1f8a4c; border-color: #1f8a4c; position: relative; }
+#tut-tasks li.ok b::after { content: ''; position: absolute; left: 3px; top: 0; width: 4px; height: 8px; border: solid #fff; border-width: 0 2px 2px 0; transform: rotate(45deg); }
+#tut-tasks li.ok span { color: rgba(21,25,29,.55); }
+#tut-tasks em { font-style: normal; font-variant-numeric: tabular-nums; font-size: 13px; color: rgba(21,25,29,.7); }
+#tut-tasks i { grid-column: 2 / 4; height: 4px; background: rgba(21,25,29,.12); }
+#tut-tasks u { display: block; height: 100%; width: 0; background: var(--red); transition: width .12s linear; }
+#tut-tasks li.ok u { background: #1f8a4c; }
+#tut-fb { display: none; margin: 10px 0 0; padding: 7px 10px; font-family: var(--body); font-size: 14px; line-height: 1.4; background: rgba(214,48,39,.1); border-left: 3px solid var(--red); }
+#tut-fb.show { display: block; animation: tutfb .25s ease-out; }
+#tut.done #tut-fb { display: none; }
+@keyframes tutfb { from { opacity: 0; transform: translateY(-4px); } }
+#tut.pop { animation: tutpop .35s ease-out; }
+@keyframes tutpop { 40% { transform: scale(1.04); box-shadow: 0 0 0 3px #1f8a4c, 0 10px 30px rgba(10,14,18,.18); } }
 
 /* ---------- level complete */
 body.complete #menu { display: none; }
@@ -618,10 +639,13 @@ body.touch #racehud { top: calc(56px + env(safe-area-inset-top, 0px)); left: 10p
 <div class="hud" id="racehud" hidden><p id="rh-title"></p><ol id="rh-list"></ol></div>
 <div id="racecount" hidden></div>
 <div class="hud" id="tut" hidden>
+  <div id="tut-pips" aria-hidden="true"></div>
   <p id="tut-step"></p>
   <h3 id="tut-title"></h3>
   <p id="tut-body"></p>
   <p id="tut-keys"></p>
+  <ul id="tut-tasks"></ul>
+  <p id="tut-fb" aria-live="polite"></p>
   <p id="tut-done">Done. Keep going.</p>
 </div>
 <div class="hud" id="speedwrap" data-trend="flat">
@@ -1063,6 +1087,9 @@ __AUDIO__
 </script>
 <script>
 __MAP__
+</script>
+<script>
+__TUTORIAL__
 </script>
 <script>
 // Building every level takes a moment, so let the loader

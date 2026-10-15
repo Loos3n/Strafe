@@ -120,6 +120,27 @@ body:not(.playing) .hud, body:not(.playing) #crosshair { visibility: hidden; }
 .kc { font-weight: 700; font-size: 14px; letter-spacing: .06em; border: 2px solid var(--ink); padding: 2px 8px; }
 #tut-done { display: none; margin: 10px 0 0; font-weight: 700; font-size: 15px; letter-spacing: .12em; text-transform: uppercase; color: #fff; background: #1f8a4c; padding: 4px 10px; width: fit-content; }
 #tut.done #tut-done { display: block; }
+#tut-pips { display: flex; gap: 4px; margin: 0 0 8px; }
+#tut-pips i { flex: 1; height: 4px; background: rgba(21,25,29,.14); }
+#tut-pips i.on { background: var(--red); }
+#tut-pips i.ok { background: #1f8a4c; }
+#tut-tasks { list-style: none; margin: 12px 0 0; padding: 0; display: grid; gap: 7px; }
+#tut-tasks:empty { display: none; }
+#tut-tasks li { display: grid; grid-template-columns: 18px 1fr auto; align-items: center; column-gap: 8px; row-gap: 4px; font-family: var(--body); font-size: 14px; font-weight: 600; }
+#tut-tasks b { width: 14px; height: 14px; border: 2px solid var(--ink); box-sizing: border-box; }
+#tut-tasks li.ok b { background: #1f8a4c; border-color: #1f8a4c; position: relative; }
+#tut-tasks li.ok b::after { content: ''; position: absolute; left: 3px; top: 0; width: 4px; height: 8px; border: solid #fff; border-width: 0 2px 2px 0; transform: rotate(45deg); }
+#tut-tasks li.ok span { color: rgba(21,25,29,.55); }
+#tut-tasks em { font-style: normal; font-variant-numeric: tabular-nums; font-size: 13px; color: rgba(21,25,29,.7); }
+#tut-tasks i { grid-column: 2 / 4; height: 4px; background: rgba(21,25,29,.12); }
+#tut-tasks u { display: block; height: 100%; width: 0; background: var(--red); transition: width .12s linear; }
+#tut-tasks li.ok u { background: #1f8a4c; }
+#tut-fb { display: none; margin: 10px 0 0; padding: 7px 10px; font-family: var(--body); font-size: 14px; line-height: 1.4; background: rgba(214,48,39,.1); border-left: 3px solid var(--red); }
+#tut-fb.show { display: block; animation: tutfb .25s ease-out; }
+#tut.done #tut-fb { display: none; }
+@keyframes tutfb { from { opacity: 0; transform: translateY(-4px); } }
+#tut.pop { animation: tutpop .35s ease-out; }
+@keyframes tutpop { 40% { transform: scale(1.04); box-shadow: 0 0 0 3px #1f8a4c, 0 10px 30px rgba(10,14,18,.18); } }
 
 /* ---------- level complete */
 body.complete #menu { display: none; }
@@ -618,10 +639,13 @@ body.touch #racehud { top: calc(56px + env(safe-area-inset-top, 0px)); left: 10p
 <div class="hud" id="racehud" hidden><p id="rh-title"></p><ol id="rh-list"></ol></div>
 <div id="racecount" hidden></div>
 <div class="hud" id="tut" hidden>
+  <div id="tut-pips" aria-hidden="true"></div>
   <p id="tut-step"></p>
   <h3 id="tut-title"></h3>
   <p id="tut-body"></p>
   <p id="tut-keys"></p>
+  <ul id="tut-tasks"></ul>
+  <p id="tut-fb" aria-live="polite"></p>
   <p id="tut-done">Done. Keep going.</p>
 </div>
 <div class="hud" id="speedwrap" data-trend="flat">
@@ -7122,7 +7146,8 @@ window.STRAFE_ASSETS = {"city":"Z2xURgIAAABU+ggAYFIAAEpTT057ImFzc2V0Ijp7ImdlbmVy
       box([tx - 340, -400, 0], [tx + 340, 300, 40], WALL, { kind: 'wall' }); // back wall
       // 1 move
       floor(0, -900); sides(0, -900, -400, 260);
-      hint(0, -500, 0, -150, { title: 'Move', body: 'WASD moves, the mouse looks. Head down the corridor.', keys: ['W', 'A', 'S', 'D'], done: 'move' });
+      box([tx - 300, 0, -500], [tx + 300, 260, -480], COLORS.route, { door: 'move', kind: 'door' });
+      hint(0, -500, 0, -150, { title: 'Move', body: 'WASD moves, the mouse looks. Tick off all three and the gate opens.', keys: ['W', 'A', 'S', 'D'], done: 'move' });
       // 2 jump the gap
       hint(-500, -900, 0, -600, { title: 'Jump', body: 'Press Space to jump the gap. Fall in and you go back to the last step.', keys: ['Space'], done: 'jump' });
       // 3 bhop across a broken floor
@@ -7139,7 +7164,7 @@ window.STRAFE_ASSETS = {"city":"Z2xURgIAAABU+ggAYFIAAEpTT057ImFzc2V0Ijp7ImdlbmVy
       floor(-4840, -6100); sides(-4840, -6100, -400, 260);
       box([tx - 300, 60, -5560], [tx + 300, 100, -5520], COLORS.route, { kind: 'route' });
       box([tx - 300, 100, -5560], [tx + 300, 260, -5520], WALL, {});
-      hint(-4840, -5500, 0, -4950, { title: 'Slide', body: 'Run, then press Shift or C to slide under the pipe. Holding crouch as you land from a jump also slides.', keys: ['Shift', 'C'], done: 'slide' });
+      hint(-4840, -5500, 0, -4950, { title: 'Slide', body: 'Run, then press Shift or C to slide under the pipe. Holding crouch as you land from a jump also slides.', keys: ['Shift', 'C'], done: 'slide', zUnder: -5560 });
       // 6 vault
       box([tx - 300, 0, -6380], [tx + 300, 44, -6340], COLORS.route, { kind: 'route' });
       floor(-6100, -7000); sides(-6100, -7000, -400, 300);
@@ -7147,7 +7172,7 @@ window.STRAFE_ASSETS = {"city":"Z2xURgIAAABU+ggAYFIAAEpTT057ImFzc2V0Ijp7ImdlbmVy
       // 7 climb and mantle onto a higher floor
       floor(-7000, -8000, 160); sides(-7000, -8000, -400, 460);
       box([tx - 120, 0, -7000], [tx + 120, 160, -6997], COLORS.route, { kind: 'route', nonsolid: true });
-      hint(-6400, -7000, 0, -6500, { title: 'Climb', body: 'Run straight at the wall and press Space to run up it. Keep holding W to pull yourself onto the ledge.', keys: ['W', 'Space'], done: 'mantle' });
+      hint(-6400, -7000, 0, -6500, { title: 'Climb', body: 'Run straight at the wall and press Space to run up it. Keep holding W to pull yourself onto the ledge.', keys: ['W', 'Space'], done: 'mantle', yTop: 150 });
       // 8 wallrun across a gap
       sides(-8000, -8600, -400, 520);
       floor(-8600, -9500, 160); sides(-8600, -9500, -400, 460);
@@ -8353,6 +8378,171 @@ window.STRAFE_ASSETS = {"city":"Z2xURgIAAABU+ggAYFIAAEpTT057ImFzc2V0Ijp7ImdlbmVy
 
   root.StrafeMap = { buildMap, fallGrid, isScenery };
 })(typeof window !== 'undefined' ? window : globalThis);
+
+</script>
+<script>
+// Strafe tutorial goals: what each station asks you to do, tracked live from
+// your input, movement and events. Plain logic with no page in it, so the bot
+// test runs the same goals the game does; game.js draws the card, opens the
+// gates and sends you back to the start of a station you skipped.
+(function () {
+  // tasks: [id, label, need, format]; format says how progress reads on the card
+  // say: tips the goal can show, keyboard text with {key} names, then the touch text
+  const GOALS = {
+    move: {
+      gate: 'move',
+      tasks: [['look', 'Look around with the mouse', 1, 'bar'], ['run', 'Run forward', 1, 'bar'], ['side', 'Sidestep left and right', 2, 'count']],
+      tick(s, p, cmd) {
+        if (s.yaw0 !== undefined) s.turn += Math.abs(cmd.yaw - s.yaw0) + Math.abs(cmd.pitch - s.pitch0);
+        s.yaw0 = cmd.yaw; s.pitch0 = cmd.pitch;
+        set(s, 'look', s.turn / 2.4);
+        if (cmd.forward > 0 && p.hspeed() > 150) set(s, 'run', s.have.run + 1 / 40);
+        if (cmd.side < 0) s.left++;
+        if (cmd.side > 0) s.right++;
+        set(s, 'side', (s.left > 12) + (s.right > 12));
+      },
+      stuck: ['Turn the camera with the mouse, run with {forward}, sidestep with {left} and {right}. The gate opens when all three are ticked.',
+        'Drag on the right to look, push the stick to run and sidestep. The gate opens when all three are ticked.'],
+    },
+    jump: {
+      tasks: [['jump', 'Jump the gap', 1, 'check']],
+      fall: ['Jump just before the edge, with {forward} held so you carry speed over.', 'Tap Jump just before the edge, with the stick pushed up.'],
+      skip: ['Jump this one with {jump}.', 'Tap Jump to clear this one.'],
+    },
+    bhop: {
+      tasks: [['hops', 'Chain hops without stopping', 3, 'count']],
+      tick(s, p, cmd, events) {
+        for (const e of events) if (e.type === 'jump') {
+          // jumping within a few ticks of touching down keeps the chain going
+          s.streak = s.ground <= 10 ? s.streak + 1 : 0;
+          set(s, 'hops', Math.max(s.have.hops, s.streak));
+        }
+        s.ground = p.onGround ? s.ground + 1 : 0;
+        if (s.ground === 16 && s.streak > 0 && !s.isDone) { s.streak = 0; s.say = 'stop'; }
+      },
+      say: { stop: ['Chain broken: you stood on the ground. Keep {jump} held through the landing.', 'Chain broken: you stood on the ground. Keep Jump held through the landing.'] },
+      fall: ['Keep {jump} held the whole way and you hop the moment you land.', 'Keep Jump held the whole way and you hop the moment you land.'],
+      skip: ['You stopped between jumps. Hold {jump} through every landing so the hops chain.', 'You stopped between jumps. Hold Jump through every landing so the hops chain.'],
+    },
+    strafe: {
+      gate: 'strafe',
+      tasks: [['speed', 'Reach 350 u/s', 350, 'speed']],
+      tick(s, p, cmd) {
+        set(s, 'speed', Math.max(s.have.speed, p.hspeed()));
+        // strafing only works in the air: say so if they run about on the floor
+        if (p.onGround) s.ground++; else { s.ground = 0; s.air++; }
+        if (cmd.forward > 0 && !p.onGround && cmd.side) s.wAir++;
+        if (s.wAir === 40) s.say = 'w';
+        else if (s.ground === 150 && !s.isDone) s.say = s.air ? 'air' : 'jump';
+      },
+      say: {
+        w: ['Let go of {forward} in the air. Strafe with {left} or {right} alone.', 'Let go of the stick in the air. Hold Jump and swipe on it.'],
+        air: ['Strafing only adds speed in the air. Keep hopping with {jump} held while you turn.', 'Strafing only adds speed in the air. Keep Jump held while you swipe.'],
+        jump: ['Start hopping: hold {jump}, let go of {forward}, then turn with {left} or {right}.', 'Hold Jump, then swipe left and right on it.'],
+      },
+      stuck: ['Small smooth turns win. Swing the mouse right with {right} held, then left with {left}, like carving an S.',
+        'Small smooth swipes win: right, then left, like carving an S.'],
+    },
+    slide: {
+      tasks: [['slide', 'Slide', 1, 'check'], ['under', 'Get under the pipe', 1, 'check']],
+      tick(s, p) { if (s.zUnder !== undefined && p.pos[2] < s.zUnder) set(s, 'under', 1); },
+      on: { slide: (s) => set(s, 'slide', 1) },
+      skip: ['That was a crouch walk. Get running first, then press {duck} to slide.', 'That was a crouch walk. Get running first, then tap Crouch to slide.'],
+      stuck: ['Back up, run at the pipe, and press {duck} a few steps before it.', 'Back up, run at the pipe, and tap Crouch a few steps before it.'],
+    },
+    vault: {
+      tasks: [['vault', 'Vault the low wall', 1, 'check']],
+      on: { vault: (s) => set(s, 'vault', 1), mantle: (s) => set(s, 'vault', 1) },
+      skip: ['That was a jump, not a vault. Run into the wall and press {jump} as you reach it.', 'That was a jump, not a vault. Run into the wall and tap Jump as you reach it.'],
+    },
+    mantle: {
+      tasks: [['climb', 'Run up the wall', 1, 'check'], ['top', 'Pull onto the ledge', 1, 'check']],
+      tick(s, p) { if (s.have.climb && p.onGround && p.pos[1] > s.yTop) set(s, 'top', 1); },
+      on: { climb: (s) => set(s, 'climb', 1), mantle: (s) => { set(s, 'climb', 1); set(s, 'top', 1); } },
+      stuck: ['Run straight at the red strip, not at an angle, and press {jump} at the wall. Keep {forward} held.',
+        'Run straight at the red strip and tap Jump at the wall. Keep the stick pushed up.'],
+    },
+    wallrun: {
+      tasks: [['run', 'Run along the wall', 1, 'check'], ['kick', 'Kick off it (bonus)', 1, 'check']],
+      on: { wallrun: (s) => set(s, 'run', 1), walljump: (s) => { if (s.have.run) set(s, 'kick', 1); } },
+      need: ['run'], // kicking off is the bonus: landing off the wall still passes
+      fall: ['Jump toward a side wall at a slight angle, with {forward} held, and you run along it.', 'Jump toward a side wall at a slight angle, with the stick pushed up.'],
+      skip: ['You jumped it. Run along the wall this time.', 'You jumped it. Run along the wall this time.'],
+    },
+    surf: {
+      tasks: [['ride', 'Ride the ramp', 0.6, 'sec']],
+      tick(s, p, cmd, events, env) {
+        const on = !p.onGround && env.surfing;
+        if (on) set(s, 'ride', s.have.ride + env.dt);
+        if (on && cmd.forward > 0) s.wRamp++;
+        if (s.wRamp === 25) s.say = 'w';
+      },
+      say: { w: ['Let go of {forward} on the ramp. It pulls you off the slope.', 'Let the stick go up: push it sideways toward the ramp only.'] },
+      fall: ['Hold the key toward the ramp: {left} if it is on your left, {right} if it is on your right.', 'Push the stick toward the ramp and keep it there.'],
+    },
+  };
+  function set(s, id, v) {
+    const t = s.tasks.find(t => t.id === id);
+    if (!t) return;
+    s.have[id] = v;
+    t.ok = v >= t.need - 1e-6;
+  }
+
+  function create() {
+    const T = { step: -1, s: null, fails: 0, retries: 0 };
+    // a fresh attempt at the current station
+    T.attempt = function (keep) {
+      const id = T.goal, g = GOALS[id];
+      const old = T.s;
+      T.s = { have: {}, tasks: g.tasks.map(([id, label, need, fmt]) => ({ id, label, need, fmt, ok: false })),
+        turn: 0, left: 0, right: 0, streak: 0, ground: 0, air: 0, wAir: 0, wRamp: 0, t: 0, isDone: false, say: null, zUnder: T.zUnder, yTop: T.yTop };
+      for (const t of T.s.tasks) T.s.have[t.id] = 0;
+      // moves you have already shown stay ticked
+      if (keep && old) for (const t of T.s.tasks) if (old.tasks.find(o => o.id === t.id && o.ok)) set(T.s, t.id, t.need);
+    };
+    T.enter = function (idx, step) {
+      T.step = idx; T.goal = step.done; T.fails = 0;
+      T.zUnder = step.zUnder; T.yTop = step.yTop;
+      T.s = null; T.attempt();
+    };
+    T.done = () => !!T.s && T.s.isDone;
+    // runs once per tick with that tick's events; true on the tick the station is passed
+    T.tick = function (p, cmd, events, env) {
+      if (!T.s || T.s.isDone) return false;
+      const g = GOALS[T.goal], s = T.s;
+      s.t += env.dt;
+      if (g.on) for (const e of events) if (g.on[e.type]) g.on[e.type](s);
+      if (T.goal === 'jump') for (const e of events) if (e.type === 'jump') set(s, 'jump', 1);
+      if (g.tick) g.tick(s, p, cmd, events, env);
+      const need = g.need || s.tasks.map(t => t.id);
+      if (need.every(id => s.tasks.find(t => t.id === id).ok)) { s.isDone = true; return true; }
+      return false;
+    };
+    // fell in: same station, start the attempt over
+    T.fell = function () { if (!T.s || T.s.isDone) return null; T.retries++; T.attempt(true); return GOALS[T.goal].fall ? 'fall' : null; };
+    // walked into the next station without the move: go back, unless it has beaten you twice
+    T.skipped = function () {
+      if (!T.s || T.s.isDone) return null;
+      T.fails++; T.retries++;
+      if (!GOALS[T.goal].skip || T.fails > 2) return 'pass';
+      T.attempt(true);
+      return 'skip';
+    };
+    T.stuck = () => !!T.s && !T.s.isDone && GOALS[T.goal].stuck && T.s.t > 14;
+    // the tip text for a message id: [keyboard, touch]
+    T.text = function (id) {
+      const g = GOALS[T.goal];
+      if (!g) return null;
+      return id === 'fall' || id === 'skip' || id === 'stuck' ? g[id] : g.say && g.say[id];
+    };
+    T.gate = () => GOALS[T.goal] && GOALS[T.goal].gate;
+    return T;
+  }
+  const gates = Object.values(GOALS).map(g => g.gate).filter(Boolean);
+  const api = { create, GOALS, gates };
+  if (typeof module !== 'undefined') module.exports = api;
+  (typeof window !== 'undefined' ? window : globalThis).StrafeTutorial = api;
+})();
 
 </script>
 <script>
@@ -9937,6 +10127,7 @@ body.touch #menu button, body.touch #drawer button { min-height: 40px; }
     place(game.cpSpawn);
     respawnFade();
     A.play('respawn');
+    tutorialFell();
   }
   // a quick dip to black on respawn, so a fall reads as a cut instead of a jump in place
   function respawnFade() {
@@ -10089,7 +10280,7 @@ body.touch #menu button, body.touch #drawer button { min-height: 40px; }
       if (t.type === 'kill') { careerCount('falls'); falls.fell(); respawn(); return; }
       if (t.course !== game.course) continue;
       if (t.type === 'start') inStart = true;
-      else if (t.type === 'hint') enterStep(t);
+      else if (t.type === 'hint') { if (enterStep(t)) return; }
       else if (t.type === 'checkpoint' && t.idx > game.cp && game.course === 'endless') enGate(t);
       else if (t.type === 'checkpoint' && t.idx > game.cp) {
         // with checkpoints off you still pass them (splits, the marker moves on), but a fall goes back to the start
@@ -10635,7 +10826,6 @@ body.touch #menu button, body.touch #drawer button { min-height: 40px; }
   function handleEvents() {
     for (const e of player.events) {
       if (EVENT_SFX[e.type]) A.play(EVENT_SFX[e.type]);
-      tutorialEvent(e.type);
       if (e.type === 'land' && e.speed > 120) A.play('land', { speed: e.speed, surface: surfaceOf(player.groundBrush) });
       if (e.type === 'jump' || e.type === 'land') coachEnd();
       if (e.type === 'jump') {
@@ -11397,7 +11587,7 @@ body.touch #menu button, body.touch #drawer button { min-height: 40px; }
   }
 
   // ------------------------------------------------------------ tutorial
-  const tut = { step: -1, done: false, hops: 0, surfTicks: 0 };
+  const tut = { step: -1, T: StrafeTutorial.create(), fbUntil: 0, stuckShown: false };
   const tutEl = $('tut');
   // the same steps told with the on-screen controls
   const TOUCH_TUT = {
@@ -11415,31 +11605,68 @@ body.touch #menu button, body.touch #drawer button { min-height: 40px; }
   const BOUND_WORD = { WASD: ['forward', 'left', 'back', 'right'], 'Shift or C': ['duck'], Space: ['jump'], Shift: ['duck'], C: ['duck'], W: ['forward'], A: ['left'], S: ['back'], D: ['right'] };
   const boundText = (t) => bindsDefault() ? t : t.replace(/\bWASD\b|Shift or C|\bSpace\b|\bShift\b|\b[WASDC]\b/g, (w) => { const n = BOUND_WORD[w].map(a => keyName(binds[a])); return n.join(n.every(x => x.length === 1) ? '' : ' '); });
   function resetTutorial() {
-    tut.step = -1; tut.done = false;
-    setDoor('strafe', false);
+    tut.step = -1; tut.T = StrafeTutorial.create(); tut.fbUntil = 0;
+    for (const g of StrafeTutorial.gates) setDoor(g, false);
     tutEl.hidden = true;
+    $('tut-fb').classList.remove('show');
   }
   function stepInfo() { return tut.step >= 0 ? map.courses.tutorial.steps[tut.step] : null; }
+  // true when it sent you back to the start of the station you skipped
   function enterStep(t) {
-    if (game.course !== 'tutorial' || t.idx <= tut.step) return;
+    if (game.course !== 'tutorial' || t.idx <= tut.step) return false;
+    if (tut.step >= 0 && !tut.T.done()) {
+      const r = tut.T.skipped();
+      if (r === 'skip') {
+        place(game.cpSpawn); respawnFade(); A.play('respawn');
+        tutSay('skip');
+        renderStep();
+        return true;
+      }
+      if (r === 'pass') toast('Moving on. Practise the ' + stepInfo().title.toLowerCase() + ' later', 2600);
+    }
     if (t.idx > game.cp) { game.cp = t.idx; game.cpSpawn = t.spawn; }
-    // the previous step counts as done once you reach the next one
-    tut.step = t.idx; tut.done = false; tut.hops = 0; tut.surfTicks = 0;
+    tut.step = t.idx; tut.stuckShown = false;
+    tut.T.enter(t.idx, map.courses.tutorial.steps[t.idx]);
+    $('tut-fb').classList.remove('show'); tut.fbUntil = 0;
     renderStep();
+    return false;
+  }
+  // a tip from the station's goal: keyboard text names the player's own keys
+  function tutSay(id) {
+    const t = tut.T.text(id);
+    if (!t) return;
+    const el = $('tut-fb');
+    el.textContent = TOUCH ? t[1] : t[0].replace(/\{(\w+)\}/g, (_, a) => keyName(binds[a]));
+    el.classList.remove('show'); void el.offsetWidth; el.classList.add('show');
+    tut.fbUntil = performance.now() + (id === 'stuck' ? 9000 : 5000);
   }
   function renderStep(final) {
     tutEl.hidden = false;
-    tutEl.classList.toggle('done', tut.done);
+    const n = map.courses.tutorial.steps.length;
+    const pips = $('tut-pips');
+    pips.textContent = '';
+    for (let i = 0; i < n; i++) {
+      const d = document.createElement('i');
+      if (final || i < tut.step || (i === tut.step && tut.T.done())) d.className = 'ok';
+      else if (i === tut.step) d.className = 'on';
+      pips.appendChild(d);
+    }
     if (final) {
+      tutEl.classList.add('done');
       $('tut-step').textContent = 'Tutorial complete';
       $('tut-title').textContent = 'You know the moves';
-      $('tut-body').textContent = (TOUCH ? 'Tap II' : 'Press Esc') + ' and pick a level. Surf and Bhop are the gentlest starts; Crossover uses everything you just did.';
+      const secs = game.finished !== null ? (game.finished * TICK).toFixed(1) + ' s' : '';
+      const r = tut.T.retries;
+      $('tut-body').textContent = (secs ? 'Finished in ' + secs + (r ? ' with ' + r + (r === 1 ? ' retry' : ' retries') : ', no retries') + '. ' : '') +
+        (TOUCH ? 'Tap II' : 'Press Esc') + ' and pick a level. Surf and Bhop are the gentlest starts; Crossover uses everything you just did.';
       $('tut-keys').textContent = '';
-      tutEl.classList.add('done');
+      $('tut-tasks').textContent = '';
+      $('tut-fb').classList.remove('show');
       return;
     }
     const s = stepInfo();
-    const n = map.courses.tutorial.steps.length;
+    tutEl.classList.toggle('done', tut.T.done());
+    $('tut-done').textContent = tut.T.gate() ? 'Gate open. Keep going.' : 'Done. Keep going.';
     $('tut-step').textContent = 'Step ' + (tut.step + 1) + ' of ' + n;
     $('tut-title').textContent = s.title;
     const tt = TOUCH && TOUCH_TUT[s.title];
@@ -11447,38 +11674,58 @@ body.touch #menu button, body.touch #drawer button { min-height: 40px; }
     const keysEl = $('tut-keys');
     keysEl.textContent = '';
     for (const k of tt ? tt[1] : [...new Set(s.keys.map(boundText))]) { const kc = document.createElement('span'); kc.className = 'kc'; kc.textContent = k; keysEl.appendChild(kc); }
+    const list = $('tut-tasks');
+    list.textContent = '';
+    for (const task of tut.T.s.tasks) {
+      const li = document.createElement('li');
+      li.dataset.id = task.id;
+      li.innerHTML = '<b></b><span></span><em></em><i><u></u></i>';
+      li.children[1].textContent = TOUCH ? task.label.replace(' with the mouse', '') : task.label;
+      list.appendChild(li);
+    }
+    tutProgress();
   }
-  function completeStep() {
-    if (tut.done) return;
-    tut.done = true;
-    const s = stepInfo();
-    if (s && s.done === 'strafe') { setDoor('strafe', true); toast('Gate open'); }
-    A.play('checkpoint');
-    renderStep();
-  }
-  function tutorialEvent(type) {
-    const s = game.course === 'tutorial' && stepInfo();
-    if (!s || tut.done) return;
-    if (s.done === 'jump' && type === 'jump') completeStep();
-    else if (s.done === 'bhop' && type === 'jump' && ++tut.hops >= 3) completeStep();
-    else if (s.done === 'slide' && type === 'slide') completeStep();
-    else if (s.done === 'vault' && (type === 'vault' || type === 'mantle')) completeStep();
-    else if (s.done === 'mantle' && (type === 'mantle' || type === 'climb')) completeStep();
-    else if (s.done === 'wallrun' && type === 'wallrun') completeStep();
-  }
-  function tutorialTick() {
-    const s = game.course === 'tutorial' && stepInfo();
-    if (!s || tut.done) return;
-    if (s.done === 'move' && player.hspeed() > 200) completeStep();
-    else if (s.done === 'strafe' && player.hspeed() >= 350) completeStep();
-    else if (s.done === 'surf') {
-      tut.surfTicks = !player.onGround && surfing() ? tut.surfTicks + 1 : 0;
-      if (tut.surfTicks > 60) completeStep();
+  // the live part of the card: ticks, counts and bars
+  function tutProgress() {
+    const st = tut.T.s;
+    if (!st) return;
+    for (const li of $('tut-tasks').children) {
+      const task = st.tasks.find(t => t.id === li.dataset.id), have = st.have[task.id], f = Math.min(1, have / task.need);
+      li.classList.toggle('ok', task.ok);
+      li.children[2].textContent = task.fmt === 'count' ? Math.min(have, task.need) + ' / ' + task.need
+        : task.fmt === 'speed' ? Math.round(Math.min(have, task.need)) + ' / ' + task.need
+        : task.fmt === 'sec' ? Math.min(have, task.need).toFixed(1) + ' / ' + task.need + ' s' : '';
+      li.children[3].hidden = task.fmt === 'check';
+      li.children[3].firstChild.style.width = (f * 100).toFixed(1) + '%';
     }
   }
+  function tutorialTick(cmd, events) {
+    if (game.course !== 'tutorial' || tut.step < 0 || !tut.T.s) return;
+    if (tut.fbUntil && performance.now() > tut.fbUntil) { tut.fbUntil = 0; $('tut-fb').classList.remove('show'); }
+    if (tut.T.done()) return;
+    if (tut.T.tick(player, cmd, events, { dt: TICK, surfing: surfing() })) {
+      const g = tut.T.gate();
+      if (g) { setDoor(g, true); toast('Gate open'); }
+      A.play('checkpoint');
+      tutEl.classList.remove('pop'); void tutEl.offsetWidth; tutEl.classList.add('pop');
+      $('tut-fb').classList.remove('show'); tut.fbUntil = 0;
+      renderStep();
+      return;
+    }
+    if (tut.T.s.say) { tutSay(tut.T.s.say); tut.T.s.say = null; }
+    if (!tut.stuckShown && tut.T.stuck()) { tut.stuckShown = true; tutSay('stuck'); }
+    if (game.tick % 4 === 0) tutProgress();
+  }
+  // fell in: the station starts over, with a tip on what went wrong
+  function tutorialFell() {
+    if (game.course !== 'tutorial' || tut.step < 0) return;
+    const r = tut.T.fell();
+    if (r) tutSay(r);
+    renderStep();
+  }
   function finishTutorial() {
-    tut.step = -1;
     renderStep(true);
+    tut.step = -1;
   }
 
   // footsteps from distance covered, faster and lighter on walls
@@ -11598,9 +11845,10 @@ body.touch #menu button, body.touch #drawer button { min-height: 40px; }
       ghost.tick(game.tick - game.startTick);
     }
     careerTick();
+    const evs = player.events.slice();
     handleEvents();
     handleTriggers();
-    tutorialTick();
+    tutorialTick(cmd, evs);
   }
 
   function frame(now) {
@@ -14773,7 +15021,7 @@ body.editing.playing #edhelp { display: block; }
   window.__strafe = { courses: map.courses, mats: MATS, lights: { hemi, sun }, setNight, setTheme, player, game, keys, eff, coach, faceInsets, practice: { set: setPractice, save: practiceSave, load: practiceLoad }, goCourse, place, attract, previewCourse, body, ghost, cosmetics, preview, step, modelChunks, renderer, setView: (y, p) => { yaw = y; pitch = p; }, editor: { ed, build: edBuild, enter: enterEditor, test: edTest, back: edBack, code: edCode, decode: edDecode, publish: edPublish }, community: { cm, open: cmOpen, show: cmShow, play: cmPlay }, daily: { daily, weekly, open: dailyOpen, play: dailyPlay, load: dailyLoad, finish: dailyFinish }, practiceJump, sets: { start: startSet, best: setBest, list: SETS }, world,
     online: { net, race, submit: netSubmit, raceFinish, showComplete, openDrawer },
     replay: { state: replay, open: replayOpen, close: replayClose, watchBest }, career, ach: { check: achCheck, done: achDone, list: ACH, render: achRender }, binds: { binds, set: (id, code) => { rebinding = id; setBind(code); }, keyName }, settings, applyColors, saved: { save: saveLastRun, render: replaysRender },
-    endless: { en, start: enStart, daily: enDaily, random: enRandom, open: enOpen, save: enSave }, falls, fallMap: { load: fallMapLoad, hide: fallMapHide, view: fallView }, respawn };
+    endless: { en, start: enStart, daily: enDaily, random: enRandom, open: enOpen, save: enSave }, falls, fallMap: { load: fallMapLoad, hide: fallMapHide, view: fallView }, respawn, tut };
   requestAnimationFrame((t) => { last = t; frame(t); });
 })();
 

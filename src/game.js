@@ -1571,6 +1571,7 @@ body.touch #menu button, body.touch #drawer button { min-height: 40px; }
     place(game.cpSpawn);
     respawnFade();
     A.play('respawn');
+    tutorialFell();
   }
   // a quick dip to black on respawn, so a fall reads as a cut instead of a jump in place
   function respawnFade() {
@@ -1723,7 +1724,7 @@ body.touch #menu button, body.touch #drawer button { min-height: 40px; }
       if (t.type === 'kill') { careerCount('falls'); falls.fell(); respawn(); return; }
       if (t.course !== game.course) continue;
       if (t.type === 'start') inStart = true;
-      else if (t.type === 'hint') enterStep(t);
+      else if (t.type === 'hint') { if (enterStep(t)) return; }
       else if (t.type === 'checkpoint' && t.idx > game.cp && game.course === 'endless') enGate(t);
       else if (t.type === 'checkpoint' && t.idx > game.cp) {
         // with checkpoints off you still pass them (splits, the marker moves on), but a fall goes back to the start
@@ -2269,7 +2270,6 @@ body.touch #menu button, body.touch #drawer button { min-height: 40px; }
   function handleEvents() {
     for (const e of player.events) {
       if (EVENT_SFX[e.type]) A.play(EVENT_SFX[e.type]);
-      tutorialEvent(e.type);
       if (e.type === 'land' && e.speed > 120) A.play('land', { speed: e.speed, surface: surfaceOf(player.groundBrush) });
       if (e.type === 'jump' || e.type === 'land') coachEnd();
       if (e.type === 'jump') {
@@ -3031,7 +3031,7 @@ body.touch #menu button, body.touch #drawer button { min-height: 40px; }
   }
 
   // ------------------------------------------------------------ tutorial
-  const tut = { step: -1, done: false, hops: 0, surfTicks: 0 };
+  const tut = { step: -1, T: StrafeTutorial.create(), fbUntil: 0, stuckShown: false };
   const tutEl = $('tut');
   // the same steps told with the on-screen controls
   const TOUCH_TUT = {
@@ -3049,31 +3049,68 @@ body.touch #menu button, body.touch #drawer button { min-height: 40px; }
   const BOUND_WORD = { WASD: ['forward', 'left', 'back', 'right'], 'Shift or C': ['duck'], Space: ['jump'], Shift: ['duck'], C: ['duck'], W: ['forward'], A: ['left'], S: ['back'], D: ['right'] };
   const boundText = (t) => bindsDefault() ? t : t.replace(/\bWASD\b|Shift or C|\bSpace\b|\bShift\b|\b[WASDC]\b/g, (w) => { const n = BOUND_WORD[w].map(a => keyName(binds[a])); return n.join(n.every(x => x.length === 1) ? '' : ' '); });
   function resetTutorial() {
-    tut.step = -1; tut.done = false;
-    setDoor('strafe', false);
+    tut.step = -1; tut.T = StrafeTutorial.create(); tut.fbUntil = 0;
+    for (const g of StrafeTutorial.gates) setDoor(g, false);
     tutEl.hidden = true;
+    $('tut-fb').classList.remove('show');
   }
   function stepInfo() { return tut.step >= 0 ? map.courses.tutorial.steps[tut.step] : null; }
+  // true when it sent you back to the start of the station you skipped
   function enterStep(t) {
-    if (game.course !== 'tutorial' || t.idx <= tut.step) return;
+    if (game.course !== 'tutorial' || t.idx <= tut.step) return false;
+    if (tut.step >= 0 && !tut.T.done()) {
+      const r = tut.T.skipped();
+      if (r === 'skip') {
+        place(game.cpSpawn); respawnFade(); A.play('respawn');
+        tutSay('skip');
+        renderStep();
+        return true;
+      }
+      if (r === 'pass') toast('Moving on. Practise the ' + stepInfo().title.toLowerCase() + ' later', 2600);
+    }
     if (t.idx > game.cp) { game.cp = t.idx; game.cpSpawn = t.spawn; }
-    // the previous step counts as done once you reach the next one
-    tut.step = t.idx; tut.done = false; tut.hops = 0; tut.surfTicks = 0;
+    tut.step = t.idx; tut.stuckShown = false;
+    tut.T.enter(t.idx, map.courses.tutorial.steps[t.idx]);
+    $('tut-fb').classList.remove('show'); tut.fbUntil = 0;
     renderStep();
+    return false;
+  }
+  // a tip from the station's goal: keyboard text names the player's own keys
+  function tutSay(id) {
+    const t = tut.T.text(id);
+    if (!t) return;
+    const el = $('tut-fb');
+    el.textContent = TOUCH ? t[1] : t[0].replace(/\{(\w+)\}/g, (_, a) => keyName(binds[a]));
+    el.classList.remove('show'); void el.offsetWidth; el.classList.add('show');
+    tut.fbUntil = performance.now() + (id === 'stuck' ? 9000 : 5000);
   }
   function renderStep(final) {
     tutEl.hidden = false;
-    tutEl.classList.toggle('done', tut.done);
+    const n = map.courses.tutorial.steps.length;
+    const pips = $('tut-pips');
+    pips.textContent = '';
+    for (let i = 0; i < n; i++) {
+      const d = document.createElement('i');
+      if (final || i < tut.step || (i === tut.step && tut.T.done())) d.className = 'ok';
+      else if (i === tut.step) d.className = 'on';
+      pips.appendChild(d);
+    }
     if (final) {
+      tutEl.classList.add('done');
       $('tut-step').textContent = 'Tutorial complete';
       $('tut-title').textContent = 'You know the moves';
-      $('tut-body').textContent = (TOUCH ? 'Tap II' : 'Press Esc') + ' and pick a level. Surf and Bhop are the gentlest starts; Crossover uses everything you just did.';
+      const secs = game.finished !== null ? (game.finished * TICK).toFixed(1) + ' s' : '';
+      const r = tut.T.retries;
+      $('tut-body').textContent = (secs ? 'Finished in ' + secs + (r ? ' with ' + r + (r === 1 ? ' retry' : ' retries') : ', no retries') + '. ' : '') +
+        (TOUCH ? 'Tap II' : 'Press Esc') + ' and pick a level. Surf and Bhop are the gentlest starts; Crossover uses everything you just did.';
       $('tut-keys').textContent = '';
-      tutEl.classList.add('done');
+      $('tut-tasks').textContent = '';
+      $('tut-fb').classList.remove('show');
       return;
     }
     const s = stepInfo();
-    const n = map.courses.tutorial.steps.length;
+    tutEl.classList.toggle('done', tut.T.done());
+    $('tut-done').textContent = tut.T.gate() ? 'Gate open. Keep going.' : 'Done. Keep going.';
     $('tut-step').textContent = 'Step ' + (tut.step + 1) + ' of ' + n;
     $('tut-title').textContent = s.title;
     const tt = TOUCH && TOUCH_TUT[s.title];
@@ -3081,38 +3118,58 @@ body.touch #menu button, body.touch #drawer button { min-height: 40px; }
     const keysEl = $('tut-keys');
     keysEl.textContent = '';
     for (const k of tt ? tt[1] : [...new Set(s.keys.map(boundText))]) { const kc = document.createElement('span'); kc.className = 'kc'; kc.textContent = k; keysEl.appendChild(kc); }
+    const list = $('tut-tasks');
+    list.textContent = '';
+    for (const task of tut.T.s.tasks) {
+      const li = document.createElement('li');
+      li.dataset.id = task.id;
+      li.innerHTML = '<b></b><span></span><em></em><i><u></u></i>';
+      li.children[1].textContent = TOUCH ? task.label.replace(' with the mouse', '') : task.label;
+      list.appendChild(li);
+    }
+    tutProgress();
   }
-  function completeStep() {
-    if (tut.done) return;
-    tut.done = true;
-    const s = stepInfo();
-    if (s && s.done === 'strafe') { setDoor('strafe', true); toast('Gate open'); }
-    A.play('checkpoint');
-    renderStep();
-  }
-  function tutorialEvent(type) {
-    const s = game.course === 'tutorial' && stepInfo();
-    if (!s || tut.done) return;
-    if (s.done === 'jump' && type === 'jump') completeStep();
-    else if (s.done === 'bhop' && type === 'jump' && ++tut.hops >= 3) completeStep();
-    else if (s.done === 'slide' && type === 'slide') completeStep();
-    else if (s.done === 'vault' && (type === 'vault' || type === 'mantle')) completeStep();
-    else if (s.done === 'mantle' && (type === 'mantle' || type === 'climb')) completeStep();
-    else if (s.done === 'wallrun' && type === 'wallrun') completeStep();
-  }
-  function tutorialTick() {
-    const s = game.course === 'tutorial' && stepInfo();
-    if (!s || tut.done) return;
-    if (s.done === 'move' && player.hspeed() > 200) completeStep();
-    else if (s.done === 'strafe' && player.hspeed() >= 350) completeStep();
-    else if (s.done === 'surf') {
-      tut.surfTicks = !player.onGround && surfing() ? tut.surfTicks + 1 : 0;
-      if (tut.surfTicks > 60) completeStep();
+  // the live part of the card: ticks, counts and bars
+  function tutProgress() {
+    const st = tut.T.s;
+    if (!st) return;
+    for (const li of $('tut-tasks').children) {
+      const task = st.tasks.find(t => t.id === li.dataset.id), have = st.have[task.id], f = Math.min(1, have / task.need);
+      li.classList.toggle('ok', task.ok);
+      li.children[2].textContent = task.fmt === 'count' ? Math.min(have, task.need) + ' / ' + task.need
+        : task.fmt === 'speed' ? Math.round(Math.min(have, task.need)) + ' / ' + task.need
+        : task.fmt === 'sec' ? Math.min(have, task.need).toFixed(1) + ' / ' + task.need + ' s' : '';
+      li.children[3].hidden = task.fmt === 'check';
+      li.children[3].firstChild.style.width = (f * 100).toFixed(1) + '%';
     }
   }
+  function tutorialTick(cmd, events) {
+    if (game.course !== 'tutorial' || tut.step < 0 || !tut.T.s) return;
+    if (tut.fbUntil && performance.now() > tut.fbUntil) { tut.fbUntil = 0; $('tut-fb').classList.remove('show'); }
+    if (tut.T.done()) return;
+    if (tut.T.tick(player, cmd, events, { dt: TICK, surfing: surfing() })) {
+      const g = tut.T.gate();
+      if (g) { setDoor(g, true); toast('Gate open'); }
+      A.play('checkpoint');
+      tutEl.classList.remove('pop'); void tutEl.offsetWidth; tutEl.classList.add('pop');
+      $('tut-fb').classList.remove('show'); tut.fbUntil = 0;
+      renderStep();
+      return;
+    }
+    if (tut.T.s.say) { tutSay(tut.T.s.say); tut.T.s.say = null; }
+    if (!tut.stuckShown && tut.T.stuck()) { tut.stuckShown = true; tutSay('stuck'); }
+    if (game.tick % 4 === 0) tutProgress();
+  }
+  // fell in: the station starts over, with a tip on what went wrong
+  function tutorialFell() {
+    if (game.course !== 'tutorial' || tut.step < 0) return;
+    const r = tut.T.fell();
+    if (r) tutSay(r);
+    renderStep();
+  }
   function finishTutorial() {
-    tut.step = -1;
     renderStep(true);
+    tut.step = -1;
   }
 
   // footsteps from distance covered, faster and lighter on walls
@@ -3232,9 +3289,10 @@ body.touch #menu button, body.touch #drawer button { min-height: 40px; }
       ghost.tick(game.tick - game.startTick);
     }
     careerTick();
+    const evs = player.events.slice();
     handleEvents();
     handleTriggers();
-    tutorialTick();
+    tutorialTick(cmd, evs);
   }
 
   function frame(now) {
@@ -6407,6 +6465,6 @@ body.editing.playing #edhelp { display: block; }
   window.__strafe = { courses: map.courses, mats: MATS, lights: { hemi, sun }, setNight, setTheme, player, game, keys, eff, coach, faceInsets, practice: { set: setPractice, save: practiceSave, load: practiceLoad }, goCourse, place, attract, previewCourse, body, ghost, cosmetics, preview, step, modelChunks, renderer, setView: (y, p) => { yaw = y; pitch = p; }, editor: { ed, build: edBuild, enter: enterEditor, test: edTest, back: edBack, code: edCode, decode: edDecode, publish: edPublish }, community: { cm, open: cmOpen, show: cmShow, play: cmPlay }, daily: { daily, weekly, open: dailyOpen, play: dailyPlay, load: dailyLoad, finish: dailyFinish }, practiceJump, sets: { start: startSet, best: setBest, list: SETS }, world,
     online: { net, race, submit: netSubmit, raceFinish, showComplete, openDrawer },
     replay: { state: replay, open: replayOpen, close: replayClose, watchBest }, career, ach: { check: achCheck, done: achDone, list: ACH, render: achRender }, binds: { binds, set: (id, code) => { rebinding = id; setBind(code); }, keyName }, settings, applyColors, saved: { save: saveLastRun, render: replaysRender },
-    endless: { en, start: enStart, daily: enDaily, random: enRandom, open: enOpen, save: enSave }, falls, fallMap: { load: fallMapLoad, hide: fallMapHide, view: fallView }, respawn };
+    endless: { en, start: enStart, daily: enDaily, random: enRandom, open: enOpen, save: enSave }, falls, fallMap: { load: fallMapLoad, hide: fallMapHide, view: fallView }, respawn, tut };
   requestAnimationFrame((t) => { last = t; frame(t); });
 })();

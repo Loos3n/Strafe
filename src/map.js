@@ -513,7 +513,8 @@
       box([tx - 340, -400, 0], [tx + 340, 300, 40], WALL, { kind: 'wall' }); // back wall
       // 1 move
       floor(0, -900); sides(0, -900, -400, 260);
-      hint(0, -500, 0, -150, { title: 'Move', body: 'WASD moves, the mouse looks. Head down the corridor.', keys: ['W', 'A', 'S', 'D'], done: 'move' });
+      box([tx - 300, 0, -500], [tx + 300, 260, -480], COLORS.route, { door: 'move', kind: 'door' });
+      hint(0, -500, 0, -150, { title: 'Move', body: 'WASD moves, the mouse looks. Tick off all three and the gate opens.', keys: ['W', 'A', 'S', 'D'], done: 'move' });
       // 2 jump the gap
       hint(-500, -900, 0, -600, { title: 'Jump', body: 'Press Space to jump the gap. Fall in and you go back to the last step.', keys: ['Space'], done: 'jump' });
       // 3 bhop across a broken floor
@@ -530,7 +531,7 @@
       floor(-4840, -6100); sides(-4840, -6100, -400, 260);
       box([tx - 300, 60, -5560], [tx + 300, 100, -5520], COLORS.route, { kind: 'route' });
       box([tx - 300, 100, -5560], [tx + 300, 260, -5520], WALL, {});
-      hint(-4840, -5500, 0, -4950, { title: 'Slide', body: 'Run, then press Shift or C to slide under the pipe. Holding crouch as you land from a jump also slides.', keys: ['Shift', 'C'], done: 'slide' });
+      hint(-4840, -5500, 0, -4950, { title: 'Slide', body: 'Run, then press Shift or C to slide under the pipe. Holding crouch as you land from a jump also slides.', keys: ['Shift', 'C'], done: 'slide', zUnder: -5560 });
       // 6 vault
       box([tx - 300, 0, -6380], [tx + 300, 44, -6340], COLORS.route, { kind: 'route' });
       floor(-6100, -7000); sides(-6100, -7000, -400, 300);
@@ -538,7 +539,7 @@
       // 7 climb and mantle onto a higher floor
       floor(-7000, -8000, 160); sides(-7000, -8000, -400, 460);
       box([tx - 120, 0, -7000], [tx + 120, 160, -6997], COLORS.route, { kind: 'route', nonsolid: true });
-      hint(-6400, -7000, 0, -6500, { title: 'Climb', body: 'Run straight at the wall and press Space to run up it. Keep holding W to pull yourself onto the ledge.', keys: ['W', 'Space'], done: 'mantle' });
+      hint(-6400, -7000, 0, -6500, { title: 'Climb', body: 'Run straight at the wall and press Space to run up it. Keep holding W to pull yourself onto the ledge.', keys: ['W', 'Space'], done: 'mantle', yTop: 150 });
       // 8 wallrun across a gap
       sides(-8000, -8600, -400, 520);
       floor(-8600, -9500, 160); sides(-8600, -9500, -400, 460);
