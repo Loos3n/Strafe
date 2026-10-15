@@ -7198,24 +7198,8 @@ window.STRAFE_ASSETS = {"city":"Z2xURgIAAABU+ggAYFIAAEpTT057ImFzc2V0Ijp7ImdlbmVy
         { t: 'surf', face: 65, len: 3000, drop: -180, dx: -460 },
         { t: 'pad', len: 3000, w: 1400, end: true },
       ] });
-    gauntlet('g6', 151000, 10000, {
-      name: 'Terminal', type: 'Mixed', difficulty: 6, palette: [0x15191d, 0xdb2f2a, 0x8f55e0, 0xf08a24], pool: 'lava',
-      desc: 'Gauntlet 6. The longest and hardest: the smallest blocks, steep ramps, transfers both ways, and one checkpoint at the halfway mark.',
-      segs: [
-        { t: 'pad', len: 600 },
-        { t: 'bhop', gap: 74, n: 12, size: 104, step: 295, lat: [0, 80, -80, 40, -40] },
-        { t: 'surf', face: 65, len: 3200, drop: 600 },
-        { t: 'surf', face: 65, len: 3000, drop: 450, dx: 500 },
-        { t: 'surf', face: 60, len: 3000, drop: -200, dx: -500 },
-        { t: 'pad', len: 3000, w: 1400 },
-        { t: 'bhop', gap: 74, n: 14, size: 96, step: 300, zig: 85, drift: 30 },
-        { t: 'surf', face: 65, len: 3000, drop: 500 },
-        { t: 'surf', face: 65, len: 3000, drop: 500, dx: 480 },
-        { t: 'pad', len: 3000, w: 1400, cp: true },
-        { t: 'bhop', gap: 74, n: 12, size: 96, step: 310, dy: 15, zig: 95 },
-        { t: 'surf', face: 65, len: 2600, drop: 900 },
-        { t: 'pad', len: 3000, w: 1400, end: true },
-      ] });
+    // Terminal, the Gauntlet's last level, is laid out by the route kit (further
+    // down) so its pads can carry departure gates
 
     // ------------------------------------------------------------ route kit
     // Long surf and bhop runs in the Downtown style: a route of pieces laid
@@ -7313,12 +7297,41 @@ window.STRAFE_ASSETS = {"city":"Z2xURgIAAABU+ggAYFIAAEpTT057ImFzc2V0Ijp7ImdlbmVy
             lbox(a, b, y - 22, y - 4, z + 2, z + 10, g); lbox(a, b, y - 22, y - 4, z - len - 10, z - len - 2, g);
           }
           if (sg.lip) lbox(x - w / 2 + 160, x + w / 2 - 160, y - 130, y, z - 3, z, { color: COLORS.route, kind: 'route' });
+          // climb: the pad's front is a wall RISE high, straight up from the pad before (no gap):
+          // run at it, jump, climb and pull up. A red panel marks it.
+          if (sg.climb) {
+            lbox(x - w / 2, x + w / 2, y - (sg.rise || 0) - 400, y - 60, z - 40, z, { color: COLORS.roofSide, kind: 'building' });
+            lbox(x - 140, x + 140, y - (sg.rise || 0) + 20, y - 4, z, z + 3, { color: COLORS.route, kind: 'route' });
+          }
+          // obstacles across the pad, each at OFF along it: vault rails (knee high, vault
+          // or hop them), slots (a wall with a gap under it: slide through) and gates
+          // (a door that slides up and down on a clock: time your run)
+          const across = (list) => (list || []).map(o => typeof o === 'number' ? { at: o } : o);
+          const vaults = across(sg.vault).map(o => {
+            lbox(x - w / 2, x + w / 2, y, y + 44, z - o.at - 24, z - o.at, { color: COLORS.route, kind: 'route' });
+            return z - o.at;
+          });
+          const slots = across(sg.slot).map(o => {
+            lbox(x - w / 2, x + w / 2, y + 62, y + 420, z - o.at - 40, z - o.at, { color: COLORS.route, kind: 'route' });
+            lbox(x - w / 2, x + w / 2, y + 62, y + 70, z - o.at - 44, z - o.at + 4, { color: 0xfff1b8, nonsolid: true, glow: true });
+            return z - o.at;
+          });
+          const gates = across(sg.gate).map(o => {
+            const up = o.up || 360, time = o.time || 1.2;
+            const door = lbox(x - w / 2, x + w / 2, y, y + 320, z - o.at - 32, z - o.at, { color: 0xffc21a, kind: 'route' });
+            world.addMover([door], [0, up, 0], time);
+            return { z: z - o.at, up, time };
+          });
           const here = { pos: (() => { const q = W3(x, y, z - Math.min(300, len / 2)); return q; })(), yaw: L.yaw };
           if (!spawn) { spawn = here; ltrig(x - w / 2, x + w / 2, y, y + 160, z - len, z, { type: 'start' }); }
           let trig = null;
           if (spawn !== here && sg.cp) { cp++; trig = ltrig(x - w / 2, x + w / 2, y, y + 160, z - len, z, { type: 'checkpoint', idx: cp, spawn: here }); }
           else if (spawn !== here && sg.end) ltrig(x - w / 2, x + w / 2, y, y + 220, z - len, z, { type: 'end' });
           const it = { t: sg.t, x, y, z0: z, z1: z - len, w, len, end: !!sg.end };
+          if (sg.climb) it.climb = sg.rise || 0;
+          if (vaults.length) it.vaults = vaults;
+          if (slots.length) it.slots = slots;
+          if (gates.length) it.gates = gates;
           Object.defineProperty(it, 'trig', { value: trig, enumerable: false });
           L.items.push(it); prevPad = it;
           z -= len;
@@ -7332,10 +7345,18 @@ window.STRAFE_ASSETS = {"city":"Z2xURgIAAABU+ggAYFIAAEpTT057ImFzc2V0Ijp7ImdlbmVy
         } else if (sg.t === 'zip') {
           // a zipline off the pad's far edge: jump from the edge, grab the
           // cable, ride it down to the next pad. Posts stand beside the cable.
-          const dx = sg.dx || 0, ay = y + 140, by = ay - sg.drop, ex = x + dx, z0 = z + 60, z1 = z - sg.len;
+          // off the end of another cable: no roof between, this one hangs FALL below
+          // where the last let you go and GAP on, so you drop onto it
+          const chain = prev && prev.t === 'zip';
+          const dx = sg.dx || 0, ay = chain ? prev.endY - (sg.fall || 300) : y + (sg.hang !== undefined ? sg.hang : 140), by = ay - sg.drop, ex = x + dx;
+          if (chain) z -= sg.gap || 300;
+          if (sg.sx) x += sg.sx; // starting off to one side (beside a wall you run off the end of)
+          const z0 = chain ? z : z + 60, z1 = z - sg.len;
           world.ziplines.push({ a: W3(x, ay, z0), b: W3(ex, by, z1) });
           const post = { color: COLORS.route, kind: 'route' }, foot = by - 84 - 600;
-          lbox(x + 48, x + 80, y, ay + 16, z0 - 16, z0 + 16, post); lbox(x - 8, x + 80, ay + 4, ay + 16, z0 - 6, z0 + 6, post);
+          // (off a wallrun the post stands on the wall's side, out of the way of your kick)
+          const ps = prev && prev.t === 'wall' ? prev.side : 1, pa = (u, v) => [x + ps * u, x + ps * v].sort((m, n) => m - n);
+          lbox(...pa(48, 80), chain || ay < y + 40 ? ay - 600 : y, ay + 16, z0 - 16, z0 + 16, post); lbox(...pa(-8, 80), ay + 4, ay + 16, z0 - 6, z0 + 6, chain || sg.sx ? Object.assign({ nonsolid: true, deco: true }, post) : post); // (where you fly in under it, the arm is only drawn)
           lbox(ex + 48, ex + 80, foot, by + 16, z1 - 16, z1 + 16, post); lbox(ex - 8, ex + 80, by + 4, by + 16, z1 - 6, z1 + 6, post);
           // the cable itself: drawn, never solid
           L.items.push({ t: 'zip', x, y, ex, z0, z1, endY: by });
@@ -7346,8 +7367,21 @@ window.STRAFE_ASSETS = {"city":"Z2xURgIAAABU+ggAYFIAAEpTT057ImFzc2V0Ijp7ImdlbmVy
           // a gap with a billboard along one side: wallrun it to the next pad
           const s = sg.side, wx = x + s * 330;
           lbox(wx - 20, wx + 20, y - 250, y + 420, z - 50, z - sg.len, { color: COLORS.route, kind: 'route' });
-          L.items.push({ t: 'wall', x, y, side: s, wx, z0: z, z1: z - sg.gap });
+          L.items.push({ t: 'wall', x, y, side: s, wx, z0: z, z1: z - sg.gap, kick: sg.kick });
           z -= sg.gap;
+        } else if (sg.t === 'w2w') {
+          // wall to wall: N billboards down a narrow alley, swapping sides, each
+          // overlapping the last. Wallrun one, kick across to the next.
+          const n = sg.n || 2, len = sg.len || 560, step = sg.step || 420, half = sg.half || 190, dy = sg.dy || 0;
+          const walls = [];
+          for (let k = 0; k < n; k++) {
+            const s = sg.side * (k % 2 ? -1 : 1), wx = x + s * (half + 20), z0 = z - 60 - k * step, wy = y + k * dy;
+            lbox(wx - 20, wx + 20, wy - 300, wy + 420, z0 - len, z0, { color: COLORS.route, kind: 'route' });
+            walls.push({ side: s, wx, z0, z1: z0 - len });
+          }
+          const gap = 60 + (n - 1) * step + len + (sg.out || 160);
+          L.items.push({ t: 'w2w', x, y, side: sg.side, half, walls, z0: z, z1: z - gap, kickAt: sg.kickAt, lastKick: sg.lastKick, inset: sg.inset });
+          z -= gap;
         } else if (sg.t === 'bhop') {
           const size = sg.size, h = size / 2, hd = (sg.deep || (sg.gap ? sg.step - sg.gap : size)) / 2;
           for (let k = 0; k < sg.n; k++) {
@@ -7356,8 +7390,18 @@ window.STRAFE_ASSETS = {"city":"Z2xURgIAAABU+ggAYFIAAEpTT057ImFzc2V0Ijp7ImdlbmVy
             const lat = sg.zig ? (k % 2 ? sg.zig : -sg.zig) : sg.lat ? sg.lat[k % sg.lat.length] : 0;
             const cz = z - (k === 0 ? (sg.first || sg.step) - hd : sg.step);
             z = cz;
-            lbox(x + lat - h, x + lat + h, y - 60, y, cz - hd, cz + hd, solidProps({ color: col, kind: 'block' }));
-            L.items.push({ t: 'block', x: x + lat, y, z0: cz + hd, z1: cz - hd, cz, w: size, d: hd * 2 });
+            // sway: the blocks slide side to side (D across, TIME seconds each way),
+            // neighbours swinging opposite ways, centred on where they would stand
+            const sw = sg.sway && (!sg.sway.from || k >= sg.sway.from) ? (k % 2 ? -sg.sway.d : sg.sway.d) : 0;
+            const bx = x + lat - sw / 2;
+            const blk = lbox(bx - h, bx + h, y - 60, y, cz - hd, cz + hd, solidProps({ color: col, kind: 'block' }));
+            const it = { t: 'block', x: x + lat, y, z0: cz + hd, z1: cz - hd, cz, w: size, d: hd * 2 };
+            if (sw) {
+              const a = L.at(0, 0), b = L.at(sw, 0);
+              world.addMover([blk], [b[0] - a[0], 0, b[1] - a[1]], sg.sway.time);
+              Object.assign(it, { base: bx, sway: sw, time: sg.sway.time });
+            }
+            L.items.push(it);
             lo = Math.min(lo, y);
           }
           z -= hd;
@@ -7528,14 +7572,14 @@ window.STRAFE_ASSETS = {"city":"Z2xURgIAAABU+ggAYFIAAEpTT057ImFzc2V0Ijp7ImdlbmVy
     routeKit('bhop', -75000, 90000, 3000, {
       name: 'Bhop', type: 'Bhop', difficulty: 2, color: COLORS.bhop, palette: [COLORS.bhop, 0xffb340, 0xe5533d], base: 0, pool: 'lava',
       skyline: { lo: 1200, hi: 6500, seed: 23 },
-      desc: 'Four block lines over a lava street with widening gaps, turning on islands, then speed lanes and a long jump.',
+      desc: 'Four block lines over a lava street with widening gaps, one swinging side to side, turning on islands, then speed lanes and a long jump.',
       segs: [
         { t: 'pad', len: 500, w: 500 },
         { t: 'bhop', gap: 44, n: 10, size: 160, step: 240 },
         { t: 'pad', gap: 130, len: 400, w: 400, cp: true }, { t: 'turn', dir: 1 },
         { t: 'bhop', gap: 44, n: 10, size: 150, step: 256, lat: [0, 70, -70, 0, 100, -60] },
         { t: 'pad', gap: 130, len: 400, w: 400, cp: true }, { t: 'turn', dir: -1 },
-        { t: 'bhop', gap: 44, n: 10, size: 144, step: 272, lat: [0, 60, -60, 40, -110, 120] },
+        { t: 'bhop', gap: 44, n: 10, size: 144, step: 272, sway: { d: 120, time: 1.6 } },
         { t: 'lane', gap: 120, len: 2400, w: 256 },
         { t: 'pad', gap: 400, rise: -300, len: 700, w: 600, cp: true }, { t: 'turn', dir: 1 },
         { t: 'bhop', gap: 44, n: 10, size: 136, step: 288, lat: [0, 90, -90, 60, -60, 0] },
@@ -7573,7 +7617,7 @@ window.STRAFE_ASSETS = {"city":"Z2xURgIAAABU+ggAYFIAAEpTT057ImFzc2V0Ijp7ImdlbmVy
     routeKit('stairway', -8000, 90000, 3000, {
       name: 'Stairway', type: 'Bhop', difficulty: 4, color: COLORS.stair[1], palette: COLORS.stair, base: -1500, pool: 'lava',
       skyline: { lo: 0, hi: 6000, seed: 53 },
-      desc: 'Five block lines that climb and fall over the lava street, turning on corner islands. Steer the corners in the air.',
+      desc: 'Five block lines that climb and fall over the lava street, turning on corner islands, the last one swinging. Steer the corners in the air.',
       segs: [
         { t: 'pad', len: 500, w: 500 },
         { t: 'bhop', gap: 50, n: 7, size: 136, step: 265, dy: 14 },
@@ -7584,7 +7628,7 @@ window.STRAFE_ASSETS = {"city":"Z2xURgIAAABU+ggAYFIAAEpTT057ImFzc2V0Ijp7ImdlbmVy
         { t: 'pad', gap: 130, len: 360, w: 360, cp: true }, { t: 'turn', dir: -1 },
         { t: 'bhop', gap: 74, n: 10, size: 112, step: 300, dy: -15, lat: [0, 90, -90] },
         { t: 'pad', gap: 130, len: 360, w: 360 }, { t: 'turn', dir: 1 },
-        { t: 'bhop', gap: 70, n: 12, size: 112, step: 280, zig: 75 },
+        { t: 'bhop', gap: 70, n: 12, size: 112, step: 280, zig: 75, sway: { d: 120, time: 1.5, from: 6 } },
         { t: 'pad', gap: 130, len: 500, w: 500, end: true },
       ] });
 
@@ -7594,25 +7638,25 @@ window.STRAFE_ASSETS = {"city":"Z2xURgIAAABU+ggAYFIAAEpTT057ImFzc2V0Ijp7ImdlbmVy
     routeKit('crossover', 22000, 90000, 9000, {
       name: 'Crossover', type: 'Mixed', difficulty: 5, color: 0x1d2a35, palette: [COLORS.surf[1], COLORS.bhop, COLORS.surf[3], 0xffb340], base: 0,
       skyline: { lo: 1500, hi: 8000, seed: 71 },
-      desc: 'All of it, twice, round two corners: slide a roof onto a ramp, surf a transfer, bhop, wallrun a billboard and mantle the next roof.',
+      desc: 'All of it, twice, round two corners: slide under a sign and down a roof onto a ramp, surf a transfer, bhop, go wall to wall, then blocks straight onto a wallrun and a climb to the last roof.',
       segs: [
-        { t: 'pad', len: 700, w: 900 },
+        { t: 'pad', len: 700, w: 900, slot: [300] },
         { t: 'slide', len: 1500, drop: 400, base: 0 },
         { t: 'surf', face: 60, len: 3200, drop: 400 },
         { t: 'surf', face: 65, len: 3200, drop: 400, dx: 550, gap: 1200 },
         { t: 'pad', len: 3000, w: 1400, cp: true }, { t: 'turn', dir: 1 },
         { t: 'bhop', gap: 80, n: 8, size: 128, step: 275, lat: [0, 110, -110, 50, -50] },
         { t: 'pad', gap: 130, len: 800, w: 900 },
-        { t: 'wall', side: 1, len: 700, gap: 550 },
-        { t: 'pad', rise: 120, len: 1100, w: 1100, lip: true, cp: true }, { t: 'turn', dir: -1 },
+        { t: 'w2w', side: 1, n: 2 },
+        { t: 'pad', rise: -250, len: 1100, w: 1100, cp: true }, { t: 'turn', dir: -1 },
         { t: 'slide', len: 1500, drop: 400, base: 0 },
         { t: 'surf', face: 60, len: 3400, drop: 450 },
         { t: 'surf', face: 65, len: 3200, drop: 400, dx: -450, gap: 1000 },
         { t: 'pad', len: 3000, w: 1400, cp: true },
-        { t: 'bhop', gap: 80, n: 8, size: 120, step: 285, zig: 100 },
-        { t: 'pad', gap: 130, len: 800, w: 900 },
+        { t: 'bhop', gap: 80, n: 8, size: 120, step: 285, lat: [0, 100, -100, 100, -100, -80, -165, -250] },
         { t: 'wall', side: -1, len: 700, gap: 550 },
-        { t: 'pad', rise: 120, len: 900, w: 900, lip: true, end: true },
+        { t: 'pad', rise: 120, len: 600, w: 900, lip: true },
+        { t: 'pad', rise: 180, climb: true, len: 900, w: 900, end: true },
       ] });
 
     // ------------------------------------------------------------ night city
@@ -7625,14 +7669,14 @@ window.STRAFE_ASSETS = {"city":"Z2xURgIAAABU+ggAYFIAAEpTT057ImFzc2V0Ijp7ImdlbmVy
     night('n1', 200000, 30000, 7000, {
       name: 'Neon Mile', type: 'Mixed', difficulty: 2, color: 0xff2bd6, palette: [NBLOCK[0], NRAMP[1], NRAMP[0], NBLOCK[1]],
       skyline: { lo: 0, hi: 9000, seed: 101, step: 1400, size: 640 },
-      desc: 'Night City 1. Hop a block line, drop onto a ramp, then ride a ramp that bends right round a tower to a lit roof.',
+      desc: 'Night City 1. Hop a block line, drop onto a ramp, ride a ramp that bends right round a tower to a lit roof, vault its barriers and hop to the end.',
       segs: [
         { t: 'pad', len: 600 },
         { t: 'bhop', gap: 50, n: 7, size: 176, step: 250 },
         { t: 'pad', gap: 120, len: 600, w: 700 },
         { t: 'surf', face: 55, len: 3000, drop: 400 },
         { t: 'curve', dir: 1, face: 55, R: 4200, drop: 700, fall: 700, gap: 900 },
-        { t: 'pad', len: 3000, w: 1400, cp: true },
+        { t: 'pad', len: 3000, w: 1400, cp: true, vault: [900, 1500] },
         { t: 'bhop', gap: 60, n: 7, size: 160, step: 255, lat: [0, 50, -50] },
         { t: 'pad', gap: 120, len: 600, end: true },
       ] });
@@ -7640,7 +7684,7 @@ window.STRAFE_ASSETS = {"city":"Z2xURgIAAABU+ggAYFIAAEpTT057ImFzc2V0Ijp7ImdlbmVy
     night('n2', 245000, 30000, 7500, {
       name: 'Afterhours', type: 'Mixed', difficulty: 3, color: 0x18c8ff, palette: [NRAMP[1], NRAMP[0], NBLOCK[1], NRAMP[2]],
       skyline: { lo: 0, hi: 9500, seed: 113, step: 1400, size: 640 },
-      desc: 'Night City 2. Slide a roof into a ramp that bends left, transfer across, then hop blocks and wallrun a billboard to the finish.',
+      desc: 'Night City 2. Slide a roof into a ramp that bends left, transfer across, hop blocks, wallrun a billboard straight onto more blocks, then climb to the finish.',
       segs: [
         { t: 'pad', len: 700, w: 900 },
         { t: 'slide', len: 1500, drop: 400, base: -4000 },
@@ -7649,36 +7693,37 @@ window.STRAFE_ASSETS = {"city":"Z2xURgIAAABU+ggAYFIAAEpTT057ImFzc2V0Ijp7ImdlbmVy
         { t: 'pad', len: 3000, w: 1400, cp: true }, { t: 'turn', dir: 1 },
         { t: 'bhop', gap: 56, n: 9, size: 144, step: 265, lat: [0, 70, -70, 0] },
         { t: 'pad', gap: 130, len: 800, w: 900 },
-        { t: 'wall', side: 1, len: 700, gap: 550 },
-        { t: 'pad', rise: 120, len: 900, w: 900, lip: true, end: true },
+        { t: 'wall', side: 1, len: 700, gap: 450 },
+        { t: 'bhop', gap: 60, n: 6, size: 136, step: 275, first: 200, lat: [0, 50, -50] },
+        { t: 'pad', gap: 120, len: 600, w: 800 },
+        { t: 'pad', rise: 180, climb: true, len: 800, w: 900, end: true },
       ] });
     night('n3', 290000, 30000, 8000, {
       name: 'Overpass', type: 'Mixed', difficulty: 3, color: 0x9b4dff, palette: [NBLOCK[3], NRAMP[0], NRAMP[3], NBLOCK[0]],
       skyline: { lo: 0, hi: 10000, seed: 127, step: 1400, size: 640 },
-      desc: 'Night City 3. Two bends that turn opposite ways, with a jump across between them, then zigzag blocks and a wallrun.',
+      desc: 'Night City 3. Two bends that turn opposite ways, with a jump across between them, a slide under a sign, then blocks that lead you straight onto a wallrun.',
       segs: [
         { t: 'pad', len: 600 },
         { t: 'bhop', gap: 64, n: 8, size: 150, step: 260, zig: 60 },
         { t: 'pad', gap: 120, len: 600, w: 700 },
         { t: 'curve', dir: 1, face: 60, R: 3600, drop: 600 },
         { t: 'curve', dir: -1, face: 60, R: 3600, drop: 600, gap: 900, fall: 700, dx: 400 },
-        { t: 'pad', len: 3000, w: 1400, cp: true },
-        { t: 'bhop', gap: 62, n: 9, size: 136, step: 270, zig: 60 },
-        { t: 'pad', gap: 130, len: 800, w: 900 },
+        { t: 'pad', len: 3000, w: 1400, cp: true, slot: [1600] },
+        { t: 'bhop', gap: 62, n: 9, size: 136, step: 270, lat: [0, 60, -60, 60, -60, 0, -80, -165, -250] },
         { t: 'wall', side: -1, len: 700, gap: 550 },
         { t: 'pad', rise: 120, len: 900, w: 900, lip: true, end: true },
       ] });
     night('n4', 200000, -30000, 9000, {
       name: 'Blackout', type: 'Mixed', difficulty: 4, color: 0xffa31f, palette: [NRAMP[2], NRAMP[1], NBLOCK[2], NRAMP[0]],
       skyline: { lo: 0, hi: 11000, seed: 131, step: 1400, size: 640 },
-      desc: 'Night City 4. A hairpin: two bends joined into one half turn, a transfer off its end, a climbing block line, then slide into a last bend.',
+      desc: 'Night City 4. A hairpin: two bends joined into one half turn, a transfer off its end, a shutter to time, a climbing block line, then slide into a last bend.',
       segs: [
         { t: 'pad', len: 600 },
         { t: 'surf', face: 60, len: 3000, drop: 450 },
         { t: 'curve', dir: -1, face: 60, R: 3000, drop: 450, gap: 900, fall: 700, dx: 300 },
         { t: 'curve', dir: -1, face: 60, R: 3000, drop: 450, join: true },
         { t: 'surf', face: 65, len: 3000, drop: 400, dx: -400, gap: 900, fall: 600 },
-        { t: 'pad', len: 3000, w: 1400, cp: true },
+        { t: 'pad', len: 3000, w: 1400, cp: true, gate: [{ at: 2100, time: 1.2 }] },
         { t: 'bhop', gap: 70, n: 10, size: 120, step: 280, dy: 6, zig: 90 },
         { t: 'pad', gap: 130, len: 700, w: 800 },
         { t: 'slide', len: 1500, drop: 400, base: -4000 },
@@ -7688,7 +7733,7 @@ window.STRAFE_ASSETS = {"city":"Z2xURgIAAABU+ggAYFIAAEpTT057ImFzc2V0Ijp7ImdlbmVy
     night('n5', 245000, -30000, 10000, {
       name: 'Signal', type: 'Mixed', difficulty: 5, color: 0x3dff9e, palette: [NRAMP[3], NBLOCK[0], NRAMP[1], NBLOCK[3]],
       skyline: { lo: 0, hi: 12000, seed: 149, step: 1400, size: 640 },
-      desc: 'Night City 5. Small zigzag blocks straight into a hairpin, falling blocks, a wallrun, then a slide into two bends that turn opposite ways.',
+      desc: 'Night City 5. Small zigzag blocks straight into a hairpin, falling blocks, wall to wall over an alley, then a slide into two bends that turn opposite ways.',
       segs: [
         { t: 'pad', len: 600 },
         { t: 'bhop', gap: 80, n: 11, size: 112, step: 285, zig: 100 },
@@ -7699,8 +7744,8 @@ window.STRAFE_ASSETS = {"city":"Z2xURgIAAABU+ggAYFIAAEpTT057ImFzc2V0Ijp7ImdlbmVy
         { t: 'pad', len: 3000, w: 1400, cp: true },
         { t: 'bhop', gap: 68, n: 9, size: 112, step: 290, dy: 15, lat: [0, 80, -80, 40, -40] },
         { t: 'pad', gap: 130, len: 800, w: 900 },
-        { t: 'wall', side: 1, len: 700, gap: 550 },
-        { t: 'pad', rise: 120, len: 1100, w: 1100, lip: true },
+        { t: 'w2w', side: 1, n: 2 },
+        { t: 'pad', rise: -300, len: 1100, w: 1100 },
         { t: 'slide', len: 1500, drop: 400, base: -4000 },
         { t: 'curve', dir: -1, face: 60, R: 3400, drop: 600 },
         { t: 'curve', dir: 1, face: 65, R: 3400, drop: 600, gap: 900, fall: 700, dx: -400 },
@@ -7709,10 +7754,12 @@ window.STRAFE_ASSETS = {"city":"Z2xURgIAAABU+ggAYFIAAEpTT057ImFzc2V0Ijp7ImdlbmVy
     night('n6', 320000, -30000, 11000, {
       name: 'Skyline', type: 'Mixed', difficulty: 6, color: 0xff3b5c, palette: [NBLOCK[0], NRAMP[0], NRAMP[2], NBLOCK[1]],
       skyline: { lo: 0, hi: 13000, seed: 163, step: 1400, size: 640 },
-      desc: 'Night City 6. The longest: the smallest blocks, a hairpin into an opposite bend, a wallrun, then a second hairpin into a climbing ramp. One checkpoint.',
+      desc: 'Night City 6. A run built on walls: blocks that throw you onto a billboard and off it onto more blocks, a hairpin into an opposite bend, wall to wall down three billboards, then kick off a wall onto a ramp and a last bend. One checkpoint.',
       segs: [
         { t: 'pad', len: 600 },
-        { t: 'bhop', gap: 74, n: 12, size: 104, step: 295, lat: [0, 100, -100, 50, -50] },
+        { t: 'bhop', gap: 74, n: 12, size: 104, step: 295, lat: [0, 100, -100, 50, -50, 0, 100, -100, 50, 85, 170, 250] },
+        { t: 'wall', side: 1, len: 700, gap: 450 },
+        { t: 'bhop', gap: 74, n: 6, size: 112, step: 290, first: 200, lat: [150, 60, -60, 0, 60, -60] },
         { t: 'pad', gap: 120, len: 500, w: 600 },
         { t: 'slide', len: 1500, drop: 400, base: -4000 },
         { t: 'curve', dir: -1, face: 65, R: 3000, drop: 500 },
@@ -7721,9 +7768,10 @@ window.STRAFE_ASSETS = {"city":"Z2xURgIAAABU+ggAYFIAAEpTT057ImFzc2V0Ijp7ImdlbmVy
         { t: 'pad', len: 3000, w: 1400, cp: true },
         { t: 'bhop', gap: 74, n: 14, size: 96, step: 300, zig: 105 },
         { t: 'pad', gap: 130, len: 800, w: 900 },
-        { t: 'wall', side: -1, len: 700, gap: 550 },
-        { t: 'pad', rise: 120, len: 1100, w: 1100, lip: true },
-        { t: 'surf', face: 65, len: 2600, drop: 800 },
+        { t: 'w2w', side: -1, n: 3 },
+        { t: 'pad', rise: -300, len: 900, w: 900 },
+        { t: 'wall', side: 1, len: 700, gap: 550 },
+        { t: 'surf', face: 65, len: 2600, drop: 800, fall: 300, gap: 100 },
         { t: 'curve', dir: 1, face: 65, R: 3400, drop: 600, gap: 900, fall: 700, dx: -300 },
         { t: 'curve', dir: 1, face: 65, R: 3400, drop: 600, join: true },
         { t: 'surf', face: 65, len: 3000, drop: -200, dx: 450, gap: 900, fall: 500 },
@@ -7768,7 +7816,7 @@ window.STRAFE_ASSETS = {"city":"Z2xURgIAAABU+ggAYFIAAEpTT057ImFzc2V0Ijp7ImdlbmVy
               const p = W3(it.cx, yy, zz);
               world.addBox([p[0] - 9, yy + 2, p[2] - 9], [p[0] + 9, yy + 20, p[2] + 9], { color: 0xffb347, nonsolid: true, glow: true });
             }
-          } else if (it.t === 'block') {
+          } else if (it.t === 'block' && !it.sway) {
             // a thin dark kerb under each block, so the line reads against the water
             dbox(it.x - it.w / 2 - 6, it.x + it.w / 2 + 6, it.y - 70, it.y - 58, it.z1 - 6, it.z0 + 6, DECO(steel, 'wall'));
           }
@@ -7812,7 +7860,7 @@ window.STRAFE_ASSETS = {"city":"Z2xURgIAAABU+ggAYFIAAEpTT057ImFzc2V0Ijp7ImdlbmVy
     harbor('h1', 200000, -100000, 9000, {
       name: 'Dockside', type: 'Mixed', difficulty: 5, color: 0xe67e22, palette: [HBLOCK[0], HRAMP[0], HRAMP[1], HBLOCK[1]],
       skyline: { seed: 211 }, lighthouse: [-2600, 1800],
-      desc: 'Harbor 2. Zigzag blocks off the quay, two narrow ramps with a wide transfer, a bend round the cranes, climbing blocks and a wallrun.',
+      desc: 'Harbor 2. Zigzag blocks off the quay, two narrow ramps with a wide transfer, a bend round the cranes, vault the crates, climbing blocks, a wallrun and a climb to the finish.',
       segs: [
         { t: 'pad', len: 600, w: 700 },
         { t: 'bhop', gap: 76, n: 10, size: 112, step: 285, zig: 85 },
@@ -7822,35 +7870,36 @@ window.STRAFE_ASSETS = {"city":"Z2xURgIAAABU+ggAYFIAAEpTT057ImFzc2V0Ijp7ImdlbmVy
         { t: 'pad', len: 3000, w: 1400, cp: true }, { t: 'turn', dir: 1 },
         { t: 'curve', dir: -1, face: 65, R: 3200, drop: 550 },
         { t: 'surf', face: 65, len: 3000, drop: 450, dx: -480, gap: 1000, fall: 600 },
-        { t: 'pad', len: 3000, w: 1400, cp: true },
+        { t: 'pad', len: 3000, w: 1400, cp: true, vault: [1000, 1500, 2000] },
         { t: 'bhop', gap: 72, n: 10, size: 104, step: 290, dy: 12, lat: [0, 90, -90, 40, -40] },
         { t: 'pad', gap: 130, len: 800, w: 900 },
         { t: 'wall', side: 1, len: 700, gap: 550 },
-        { t: 'pad', rise: 120, len: 900, w: 900, lip: true, end: true },
+        { t: 'pad', rise: 120, len: 600, w: 900, lip: true },
+        { t: 'pad', rise: 180, climb: true, len: 900, w: 900, end: true },
       ] });
     harbor('h2', 260000, -100000, 10000, {
       name: 'Gantry', type: 'Mixed', difficulty: 5, color: 0xc0392b, palette: [HRAMP[2], HBLOCK[1], HRAMP[0], HBLOCK[2]],
       skyline: { seed: 223 },
-      desc: 'Harbor 1. Slide a roof into a hairpin, transfer off its end, hop small blocks to a speed lane, long jump, then a falling line and a wallrun.',
+      desc: 'Harbor 1. Slide a roof into a hairpin, transfer off its end, time the dock gate, hop small blocks to a speed lane, long jump, then a falling line and wall to wall down an alley.',
       segs: [
         { t: 'pad', len: 700, w: 900 },
         { t: 'slide', len: 1500, drop: 400, base: 0 },
         { t: 'curve', dir: 1, face: 65, R: 3000, drop: 500 },
         { t: 'curve', dir: 1, face: 65, R: 3000, drop: 500, join: true },
         { t: 'surf', face: 65, len: 3000, drop: 450, dx: 520, gap: 1100, fall: 600 },
-        { t: 'pad', len: 3000, w: 1400, cp: true },
+        { t: 'pad', len: 3000, w: 1400, cp: true, gate: [{ at: 2100, time: 1.1 }] },
         { t: 'bhop', gap: 82, n: 11, size: 104, step: 295, zig: 100 },
         { t: 'lane', gap: 120, len: 2400, w: 224 },
         { t: 'pad', gap: 420, rise: -300, len: 700, w: 600, cp: true }, { t: 'turn', dir: -1 },
         { t: 'bhop', gap: 82, n: 10, size: 104, step: 300, dy: -14, lat: [0, 100, -100, 60, -60] },
         { t: 'pad', gap: 130, len: 800, w: 900 },
-        { t: 'wall', side: -1, len: 700, gap: 550 },
-        { t: 'pad', rise: 120, len: 900, w: 900, lip: true, end: true },
+        { t: 'w2w', side: -1, n: 2 },
+        { t: 'pad', rise: -250, len: 900, w: 900, end: true },
       ] });
     harbor('h3', 320000, -100000, 13000, {
       name: 'Breakwater', type: 'Surf', difficulty: 6, color: 0x2bb39a, palette: [HRAMP[1], HRAMP[3], HRAMP[0], HRAMP[2]], gorge: 520,
       skyline: { seed: 227 },
-      desc: 'Harbor 3. A cut through the breakwater: five steep banks that swap sides with long gaps, then blocks, a slide and two opposite bends.',
+      desc: 'Harbor 3. A cut through the breakwater: five steep banks that swap sides with long gaps, then blocks that swing with the tide, a slide and two opposite bends.',
       segs: [
         { t: 'pad', len: 600 },
         { t: 'bank', side: -1, face: 65, len: 3400, drop: 400 },
@@ -7859,7 +7908,7 @@ window.STRAFE_ASSETS = {"city":"Z2xURgIAAABU+ggAYFIAAEpTT057ImFzc2V0Ijp7ImdlbmVy
         { t: 'bank', side: 1, face: 65, len: 3200, drop: 400, gap: 1050 },
         { t: 'bank', side: -1, face: 65, len: 3000, drop: 400, gap: 1050 },
         { t: 'pad', len: 4200, w: 1400, cp: true, x: 0 },
-        { t: 'bhop', gap: 84, n: 10, size: 100, step: 300, zig: 95 },
+        { t: 'bhop', gap: 84, n: 10, size: 100, step: 300, zig: 70, sway: { d: 140, time: 1.5 } },
         { t: 'pad', gap: 130, len: 800, w: 800 }, { t: 'turn', dir: 1 },
         { t: 'slide', len: 1500, drop: 400, base: 0 },
         { t: 'curve', dir: 1, face: 65, R: 3200, drop: 550 },
@@ -7887,7 +7936,7 @@ window.STRAFE_ASSETS = {"city":"Z2xURgIAAABU+ggAYFIAAEpTT057ImFzc2V0Ijp7ImdlbmVy
     harbor('h5', 260000, -160000, 11000, {
       name: 'Lighthouse', type: 'Bhop', difficulty: 7, color: 0xf1c40f, palette: [HBLOCK[2], HBLOCK[0], HBLOCK[3], HBLOCK[1]],
       skyline: { seed: 233 }, lighthouse: [2400, -2400],
-      desc: 'Harbor 5. Climb to the light: rising lines of the smallest blocks round three corners, wallruns between them, then one ramp down.',
+      desc: 'Harbor 5. Climb to the light: rising lines of the smallest blocks round three corners, a wallrun into a climb, wall to wall down the tower, then one ramp down.',
       segs: [
         { t: 'pad', len: 500, w: 500 },
         { t: 'bhop', gap: 74, n: 10, size: 104, step: 290, dy: 16, zig: 90 },
@@ -7895,34 +7944,36 @@ window.STRAFE_ASSETS = {"city":"Z2xURgIAAABU+ggAYFIAAEpTT057ImFzc2V0Ijp7ImdlbmVy
         { t: 'bhop', gap: 78, n: 10, size: 96, step: 300, dy: 14, lat: [0, 100, -100, 50, -50] },
         { t: 'pad', gap: 130, len: 800, w: 900, cp: true },
         { t: 'wall', side: 1, len: 700, gap: 550 },
-        { t: 'pad', rise: 120, len: 600, w: 700, lip: true }, { t: 'turn', dir: -1 },
+        { t: 'pad', rise: 120, len: 500, w: 700, lip: true },
+        { t: 'pad', rise: 180, climb: true, len: 600, w: 700 }, { t: 'turn', dir: -1 },
         { t: 'bhop', gap: 76, n: 11, size: 96, step: 300, dy: 15, zig: 95 },
         { t: 'pad', gap: 130, len: 400, w: 400 }, { t: 'turn', dir: -1 },
         { t: 'bhop', gap: 80, n: 10, size: 96, step: 300, dy: 12, lat: [0, 110, -110, 60, -60] },
         { t: 'pad', gap: 130, len: 800, w: 900 },
-        { t: 'wall', side: -1, len: 700, gap: 550 },
-        { t: 'pad', rise: 120, len: 900, w: 900, lip: true },
+        { t: 'w2w', side: -1, n: 3 },
+        { t: 'pad', rise: -300, len: 900, w: 900 },
         { t: 'surf', face: 65, len: 3000, drop: 900 },
         { t: 'pad', len: 1400, w: 1200, end: true },
       ] });
     harbor('h6', 320000, -160000, 13000, {
       name: 'Riptide', type: 'Mixed', difficulty: 7, color: 0x8e44ad, palette: [HBLOCK[3], HRAMP[0], HBLOCK[1], HRAMP[2]],
       skyline: { seed: 239 },
-      desc: 'Harbor 6. The hardest run in the game, with one checkpoint: tiny blocks into a hairpin, wide transfers, an opposite bend, a wallrun and a last climbing ramp.',
+      desc: 'Harbor 6. The hardest run in the game, and the tide moves it: swinging blocks into a hairpin, wide transfers, two lock gates, more swinging blocks, a wallrun onto a block line, then a bend and a last climbing ramp. One checkpoint.',
       segs: [
         { t: 'pad', len: 600 },
-        { t: 'bhop', gap: 86, n: 12, size: 96, step: 305, zig: 105 },
+        { t: 'bhop', gap: 86, n: 12, size: 104, step: 305, sway: { d: 180, time: 1.3 } },
         { t: 'pad', gap: 120, len: 500, w: 600 },
         { t: 'slide', len: 1500, drop: 400, base: 0 },
         { t: 'curve', dir: 1, face: 65, R: 3000, drop: 500 },
         { t: 'curve', dir: 1, face: 65, R: 3000, drop: 500, join: true },
         { t: 'surf', face: 65, len: 3000, drop: 450, dx: 540, gap: 1150, fall: 600 },
         { t: 'surf', face: 65, len: 3000, drop: 450, dx: -560, gap: 1150 },
-        { t: 'pad', len: 3000, w: 1400, cp: true },
-        { t: 'bhop', gap: 86, n: 12, size: 96, step: 310, lat: [0, 90, -90, 50, -50] },
+        { t: 'pad', len: 3000, w: 1400, cp: true, gate: [{ at: 1100, time: 1.0 }, { at: 2100, time: 1.3 }] },
+        { t: 'bhop', gap: 86, n: 12, size: 96, step: 310, lat: [0, 70, -70, 40, -40], sway: { d: 160, time: 1.3 } },
         { t: 'pad', gap: 130, len: 800, w: 900 },
-        { t: 'wall', side: 1, len: 700, gap: 550 },
-        { t: 'pad', rise: 120, len: 1100, w: 1100, lip: true }, { t: 'turn', dir: -1 },
+        { t: 'wall', side: 1, len: 700, gap: 450 },
+        { t: 'bhop', gap: 86, n: 6, size: 112, step: 300, first: 200, lat: [0, 60, -60] },
+        { t: 'pad', gap: 120, len: 1100, w: 1100 }, { t: 'turn', dir: -1 },
         { t: 'surf', face: 65, len: 2600, drop: 800 },
         { t: 'curve', dir: -1, face: 65, R: 3200, drop: 600, gap: 950, fall: 700, dx: 400 },
         { t: 'surf', face: 65, len: 3000, drop: -250, dx: -480, gap: 950, fall: 500 },
@@ -7939,13 +7990,14 @@ window.STRAFE_ASSETS = {"city":"Z2xURgIAAABU+ggAYFIAAEpTT057ImFzc2V0Ijp7ImdlbmVy
     skyline('s1', 200000, -240000, 9000, {
       name: 'Wireline', type: 'Parkour', difficulty: 3, color: SPAL[0], palette: [SPAL[0], SPAL[1], SPAL[2], SPAL[3]],
       skyline: { seed: 307 },
-      desc: 'Cableway 1. Learn the cable: jump off the edge and grab it, ride it down, hop a line of blocks, wallrun a gap and ride two more.',
+      desc: 'Cableway 1. Learn the moves: ride a cable, vault the rails, hop blocks, slide under a sign, climb a wall to the next cable and wallrun a gap.',
       segs: [
         { t: 'pad', len: 900, w: 800 },
         { t: 'zip', len: 2400, drop: 700 },
-        { t: 'pad', len: 1800, w: 900, cp: true },
+        { t: 'pad', len: 1800, w: 900, cp: true, vault: [500, 1000] },
         { t: 'bhop', gap: 70, n: 8, size: 128, step: 280 },
-        { t: 'pad', gap: 120, len: 900, w: 900 },
+        { t: 'pad', gap: 120, len: 900, w: 900, slot: [400] },
+        { t: 'pad', rise: 180, climb: true, len: 700, w: 900 },
         { t: 'zip', len: 3000, drop: 900 },
         { t: 'pad', len: 1800, w: 900, cp: true }, { t: 'turn', dir: 1 },
         { t: 'wall', side: 1, len: 700, gap: 550 },
@@ -7957,7 +8009,7 @@ window.STRAFE_ASSETS = {"city":"Z2xURgIAAABU+ggAYFIAAEpTT057ImFzc2V0Ijp7ImdlbmVy
     skyline('s2', 260000, -240000, 11000, {
       name: 'Cable Car', type: 'Mixed', difficulty: 4, color: SPAL[1], palette: [SPAL[1], SPAL[0], SPAL[3], SPAL[2]],
       skyline: { seed: 311 },
-      desc: 'Cableway 2. Ride off the end of a cable straight onto a surf ramp, transfer, then a line of blocks to a long cable down.',
+      desc: 'Cableway 2. Ride off the end of a cable straight onto a surf ramp, transfer, hop blocks to a long cable down, then time a gate and go wall to wall to the finish.',
       segs: [
         { t: 'pad', len: 900, w: 800 },
         { t: 'zip', len: 2600, drop: 800 },
@@ -7967,14 +8019,14 @@ window.STRAFE_ASSETS = {"city":"Z2xURgIAAABU+ggAYFIAAEpTT057ImFzc2V0Ijp7ImdlbmVy
         { t: 'bhop', gap: 76, n: 9, size: 120, step: 285, zig: 80 },
         { t: 'pad', gap: 120, len: 900, w: 900 }, { t: 'turn', dir: -1 },
         { t: 'zip', len: 3600, drop: 1200 },
-        { t: 'pad', len: 2000, w: 1000, cp: true },
-        { t: 'wall', side: -1, len: 700, gap: 550 },
-        { t: 'pad', rise: 120, len: 900, w: 900, lip: true, end: true },
+        { t: 'pad', len: 2000, w: 1000, cp: true, gate: [{ at: 900, time: 1.1 }] },
+        { t: 'w2w', side: -1, n: 2 },
+        { t: 'pad', rise: -250, len: 900, w: 900, end: true },
       ] });
     skyline('s3', 320000, -240000, 13000, {
       name: 'Highwire', type: 'Mixed', difficulty: 5, color: SPAL[2], palette: [SPAL[2], SPAL[3], SPAL[0], SPAL[1]],
       skyline: { seed: 313 },
-      desc: 'Cableway 3. Cable to cable with only a short roof between, a bend off the end of a ride, tight blocks and a wallrun to the last line.',
+      desc: 'Cableway 3. Cable to cable with only a short roof between, a bend off the end of a ride, tight blocks, then wallrun off the end of a billboard straight onto the last cable.',
       segs: [
         { t: 'pad', len: 800, w: 800 },
         { t: 'zip', len: 2400, drop: 700 },
@@ -7986,33 +8038,55 @@ window.STRAFE_ASSETS = {"city":"Z2xURgIAAABU+ggAYFIAAEpTT057ImFzc2V0Ijp7ImdlbmVy
         { t: 'zip', len: 3000, drop: 1000 },
         { t: 'curve', dir: -1, face: 60, R: 3200, drop: 500, dx: 330, fall: 300, gap: 200 },
         { t: 'pad', len: 3000, w: 1400, cp: true },
-        { t: 'wall', side: 1, len: 700, gap: 550 },
-        { t: 'pad', rise: 120, len: 900, w: 900, lip: true },
-        { t: 'zip', len: 2800, drop: 900 },
+        { t: 'wall', side: 1, len: 500, gap: 450, kick: 9 },
+        { t: 'zip', len: 2800, drop: 900, sx: 280, dx: -280, hang: 120 },
         { t: 'pad', len: 2000, w: 1000, end: true },
       ] });
     skyline('s4', 380000, -240000, 15000, {
       name: 'Long Haul', type: 'Mixed', difficulty: 6, color: SPAL[3], palette: [SPAL[3], SPAL[1], SPAL[2], SPAL[0]],
       skyline: { seed: 317 },
-      desc: 'Cableway 4. The longest ride in the game into two narrow ramps, the smallest blocks, three cables in a row and a last wallrun.',
+      desc: 'Cableway 4. Eight cables and only three roofs: drop from cable to cable in mid air, ride off one onto two narrow ramps, then wallrun off the end of a billboard onto the last two.',
       segs: [
         { t: 'pad', len: 800, w: 700 },
         { t: 'zip', len: 4400, drop: 1600 },
+        { t: 'zip', len: 2600, drop: 800, fall: 300, gap: 500 },
         { t: 'surf', face: 65, len: 3000, drop: 450, dx: -140, fall: 300, gap: 200 },
         { t: 'surf', face: 65, len: 3000, drop: 450, dx: 500, gap: 1100 },
         { t: 'pad', len: 3000, w: 1400, cp: true },
         { t: 'bhop', gap: 84, n: 11, size: 100, step: 300, zig: 100 },
         { t: 'pad', gap: 120, len: 900, w: 900 }, { t: 'turn', dir: -1 },
         { t: 'zip', len: 2600, drop: 800 },
-        { t: 'pad', len: 1200, w: 700 },
-        { t: 'zip', len: 2600, drop: 800, dx: -200 },
-        { t: 'pad', len: 1200, w: 700 },
-        { t: 'zip', len: 2600, drop: 800, dx: 200 },
+        { t: 'zip', len: 2600, drop: 800, fall: 300, gap: 500 },
+        { t: 'zip', len: 2600, drop: 800, fall: 300, gap: 550 },
         { t: 'pad', len: 1800, w: 900, cp: true }, { t: 'turn', dir: 1 },
         { t: 'bhop', gap: 84, n: 10, size: 96, step: 305, lat: [0, 90, -90, 50, -50] },
         { t: 'pad', gap: 130, len: 800, w: 900 },
-        { t: 'wall', side: -1, len: 700, gap: 550 },
-        { t: 'pad', rise: 120, len: 900, w: 900, lip: true, end: true },
+        { t: 'wall', side: -1, len: 500, gap: 450, kick: 9 },
+        { t: 'zip', len: 2600, drop: 800, sx: -280, dx: 280, hang: 120 },
+        { t: 'zip', len: 2600, drop: 800, fall: 300, gap: 550 },
+        { t: 'pad', len: 1800, w: 900, end: true },
+      ] });
+
+    // ------------------------------------------------------------ terminal (gauntlet 6)
+    // The Gauntlet's finale on the route kit: the same blocks and ramps, with
+    // departure gates on the pads between them that open and shut on a clock.
+    routeKit('g6', 151000, 0, 10000, {
+      name: 'Terminal', type: 'Mixed', difficulty: 6, color: 0x15191d, palette: [0x15191d, 0xdb2f2a, 0x8f55e0, 0xf08a24], set: 'gauntlet', base: 2000, pool: 'lava',
+      desc: 'Gauntlet 6. The longest and hardest: the smallest blocks, steep ramps, transfers both ways, and departure gates on every pad that open and shut on a clock. Arrive as they open. One checkpoint.',
+      segs: [
+        { t: 'pad', len: 600 },
+        { t: 'bhop', gap: 74, n: 12, size: 104, step: 295, lat: [0, 80, -80, 40, -40] },
+        { t: 'surf', face: 65, len: 3200, drop: 600 },
+        { t: 'surf', face: 65, len: 3000, drop: 450, dx: 500 },
+        { t: 'surf', face: 60, len: 3000, drop: -200, dx: -500 },
+        { t: 'pad', len: 3000, w: 1400, gate: [{ at: 1500, time: 1.0 }] },
+        { t: 'bhop', gap: 74, n: 14, size: 96, step: 300, zig: 85, drift: 30 },
+        { t: 'surf', face: 65, len: 3000, drop: 500 },
+        { t: 'surf', face: 65, len: 3000, drop: 500, dx: 480 },
+        { t: 'pad', len: 3000, w: 1400, cp: true, gate: [{ at: 1000, time: 0.9 }, { at: 2000, time: 1.2 }] },
+        { t: 'bhop', gap: 74, n: 12, size: 96, step: 310, dy: 15, zig: 95 },
+        { t: 'surf', face: 65, len: 2600, drop: 900 },
+        { t: 'pad', len: 3000, w: 1400, end: true },
       ] });
 
     // ------------------------------------------------------------ endless
@@ -8227,7 +8301,7 @@ window.STRAFE_ASSETS = {"city":"Z2xURgIAAABU+ggAYFIAAEpTT057ImFzc2V0Ijp7ImdlbmVy
     { course: 'surf', title: 'Spillway', stars: [56, 80],
       brief: 'Mercer: "The Blues have the bridges watched. Only way across the reservoir tonight is down the spillway ramps. Ride the slopes, don\'t fall in."',
       debrief: 'Juno is waiting at the far bank. "They know a runner is moving my drives," she says. "Keep going, Kite. Two more and it is done."' },
-    { course: 'crossover', title: 'Shortcut', stars: [58, 83],
+    { course: 'crossover', title: 'Shortcut', stars: [60, 87],
       brief: 'Mercer: "Juno is paying double for speed. Roof, ramp, blocks, wall. One line, no stopping. I want you there before the Blues finish their shift change."',
       debrief: 'You make the handoff with seconds to spare. On the way out you see the drive\'s label in the streetlight: "CITY WATER AUTHORITY, AUDIT, DO NOT COPY".' },
     { course: 'downtown', title: 'Courier', stars: [70, 100],
@@ -8258,7 +8332,8 @@ window.STRAFE_ASSETS = {"city":"Z2xURgIAAABU+ggAYFIAAEpTT057ImFzc2V0Ijp7ImdlbmVy
   // Levels whose layout changed enough that old times no longer compare. Each
   // reset drops their times and ghosts once; stars already earned stay. The
   // suffix is the leaderboard field they post under now.
-  const REBUILT = { surf: '_v3', bhop: '_v3', canyon: '_v3', stairway: '_v3', crossover: '_v4', cascade: '_v6', g1: '_v2', g2: '_v2', g3: '_v2', g4: '_v2', g5: '_v2', g6: '_v2', n1: '_v2', n2: '_v2', n3: '_v2', n4: '_v2', n5: '_v2', n6: '_v2' };
+  const REBUILT = { surf: '_v3', bhop: '_v4', canyon: '_v3', stairway: '_v4', crossover: '_v5', cascade: '_v6', g1: '_v2', g2: '_v2', g3: '_v2', g4: '_v2', g5: '_v2', g6: '_v3', n1: '_v3', n2: '_v3', n3: '_v3', n4: '_v3', n5: '_v3', n6: '_v3',
+    h1: '_v2', h2: '_v2', h3: '_v2', h5: '_v2', h6: '_v2', s1: '_v2', s2: '_v2', s3: '_v2', s4: '_v2' };
   // levels players build: the editor's own ('custom') and community ones ('c:<id>')
   const isCommunity = (c) => typeof c === 'string' && c.startsWith('c:');
   const userCourse = (c) => c === 'custom' || c === 'endless' || isCommunity(c);
@@ -8268,10 +8343,10 @@ window.STRAFE_ASSETS = {"city":"Z2xURgIAAABU+ggAYFIAAEpTT057ImFzc2V0Ijp7ImdlbmVy
   // rebuilt). A community level's medals scale from its maker's best time,
   // which is the platinum (shown as Author).
   const MEDALS = [{ k: 'plat', n: 'Platinum' }, { k: 'gold', n: 'Gold' }, { k: 'silver', n: 'Silver' }, { k: 'bronze', n: 'Bronze' }];
-  const MEDAL_PAR = { surf: 62.4, bhop: 55.3, roofs: 76.3, canyon: 62.7, stairway: 53.4, crossover: 65.1, downtown: 77.5, cascade: 25.3, spire: 62.0, freerun: 62.3,
-    g1: 24.8, g2: 32.4, g3: 48.4, g4: 49.6, g5: 58.7, g6: 74.0, n1: 31.9, n2: 33.9, n3: 45.0, n4: 44.6, n5: 71.2, n6: 79.6,
-    h1: 59.3, h2: 59.3, h3: 53.1, h4: 58.6, h5: 69.8, h6: 74.2,
-    s1: 36.3, s2: 37.9, s3: 50.5, s4: 61.2 };
+  const MEDAL_PAR = { surf: 62.4, bhop: 54.9, roofs: 76.3, canyon: 62.7, stairway: 53.4, crossover: 66.8, downtown: 77.5, cascade: 25.3, spire: 62.0, freerun: 62.3,
+    g1: 24.8, g2: 32.4, g3: 48.4, g4: 49.6, g5: 58.7, g6: 80.4, n1: 31.9, n2: 42.1, n3: 43.7, n4: 44.6, n5: 72.2, n6: 90.8,
+    h1: 61.9, h2: 61.9, h3: 53.1, h4: 58.6, h5: 75.2, h6: 83.8,
+    s1: 38.1, s2: 39.5, s3: 46.7, s4: 63.6 };
   const communityAuthor = {}; // community course -> its maker's time, from the server
   // [platinum, gold, silver, bronze] in ticks, or null for levels without medals
   function medalTimes(course) {
@@ -8302,7 +8377,9 @@ window.STRAFE_ASSETS = {"city":"Z2xURgIAAABU+ggAYFIAAEpTT057ImFzc2V0Ijp7ImdlbmVy
   }
   const RESETS = [['strafe.rebuild.v2', ['surf', 'bhop', 'canyon', 'stairway', 'crossover']],
     ['strafe.rebuild.v3', ['surf', 'canyon', 'crossover', 'cascade']], ['strafe.rebuild.v4', ['cascade']], ['strafe.rebuild.v5', ['cascade']], ['strafe.rebuild.v6', ['cascade']],
-    ['strafe.rebuild.v7', ['bhop', 'stairway', 'crossover', 'g1', 'g2', 'g3', 'g4', 'g5', 'g6', 'n1', 'n2', 'n3', 'n4', 'n5', 'n6']]];
+    ['strafe.rebuild.v7', ['bhop', 'stairway', 'crossover', 'g1', 'g2', 'g3', 'g4', 'g5', 'g6', 'n1', 'n2', 'n3', 'n4', 'n5', 'n6']],
+    // level pass: new wallruns, moving pieces, parkour and finales
+    ['strafe.rebuild.v8', ['bhop', 'stairway', 'crossover', 'g6', 'n1', 'n2', 'n3', 'n4', 'n5', 'n6', 'h1', 'h2', 'h3', 'h5', 'h6', 's1', 's2', 's3', 's4']]];
   for (const [flag, list] of RESETS) {
     if (load(flag)) continue;
     for (const c of list) {
@@ -8850,16 +8927,28 @@ window.STRAFE_ASSETS = {"city":"Z2xURgIAAABU+ggAYFIAAEpTT057ImFzc2V0Ijp7ImdlbmVy
   }
 
   const animated = { water: null, lava: null };
+  const levelMoving = [];
   {
     // the low city's plain blocks are drawn as models instead (see models below)
     // (deco: visual-only dressing such as the harbor's cranes and railings, drawn but never collided with)
-    const solid = buildGeometry(b => (!b.props.nonsolid || b.props.deco) && !b.props.door && !b.props.lowcity, bucketFor);
+    const solid = buildGeometry(b => (!b.props.nonsolid || b.props.deco) && !b.props.door && !b.props.lowcity && !b.mv, bucketFor);
     const edgeMat = new THREE.LineBasicMaterial({ color: 0x1b2530, transparent: true, opacity: 0.1 });
     for (const [name, part] of Object.entries(solid)) {
       const mesh = new THREE.Mesh(part.g, MATS[name]);
       mesh.castShadow = mesh.receiveShadow = true;
       scene.add(mesh);
       if (name !== 'asphalt' && name !== 'rock') scene.add(new THREE.LineSegments(part.lg, edgeMat));
+    }
+    // the levels' own moving pieces (swaying blocks, gates): each its own meshes, moved every frame
+    for (const mv of world.movers) {
+      const objs = [];
+      for (const [name, part] of Object.entries(buildGeometry(b => b.mv === mv, bucketFor))) {
+        const mesh = new THREE.Mesh(part.g, MATS[name]);
+        mesh.castShadow = mesh.receiveShadow = true;
+        const lines = new THREE.LineSegments(part.lg, edgeMat);
+        for (const o of [mesh, lines]) { scene.add(o); objs.push(o); }
+      }
+      levelMoving.push({ mv, objs });
     }
     const water = buildGeometry(b => b.props.water);
     waterNormal.repeat.set(1 / 3, 1 / 3);
@@ -11431,10 +11520,10 @@ body.touch #menu button, body.touch #drawer button { min-height: 40px; }
     raceFrame(dt);
     // moving pieces: in the editor they keep moving on the clock; in play
     // they're drawn between their last two ticks, like you are
-    if (ed.moving && ed.moving.length) {
+    if (ed.moving && ed.moving.length || levelMoving.length) {
       if (ed.on) world.setTime(now / 1000);
       const k = ed.on ? 1 : alpha;
-      for (const m of ed.moving) {
+      for (const m of levelMoving.concat(ed.moving || [])) {
         const o = m.mv.off, d = m.mv.delta;
         for (const ob of m.objs) ob.position.set(o[0] - d[0] * (1 - k), o[1] - d[1] * (1 - k), o[2] - d[2] * (1 - k));
       }

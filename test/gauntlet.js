@@ -87,6 +87,7 @@ function brain(plan) {
 const only = process.argv[2], cpArg = +(process.argv[3] || 0);
 let ok = true;
 for (const name of gauntlet) {
+  if (courses[name].route) continue; // (Terminal is on the route kit: test/routes.js rides it)
   if (only && only !== name) continue;
   const c = courses[name];
   const p = new P.Player(world);

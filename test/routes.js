@@ -8,7 +8,7 @@ const noisy = require('./noise.js')();
 const P = globalThis.StrafePhysics; const M = globalThis.StrafeMap.buildMap(P), { world, courses } = M;
 const DIRS = [[0, -1], [1, 0], [0, 1], [-1, 0]];
 const wrap = a => Math.atan2(Math.sin(a), Math.cos(a));
-const LEVELS = ['surf', 'bhop', 'canyon', 'stairway', 'crossover'].concat(globalThis.StrafeMap.buildMap(P).night, globalThis.StrafeMap.buildMap(P).harbor, globalThis.StrafeMap.buildMap(P).skyline);
+const LEVELS = ['surf', 'bhop', 'canyon', 'stairway', 'crossover'].concat(globalThis.StrafeMap.buildMap(P).gauntlet.filter(n => courses[n].route), globalThis.StrafeMap.buildMap(P).night, globalThis.StrafeMap.buildMap(P).harbor, globalThis.StrafeMap.buildMap(P).skyline);
 
 function frameOf(lg) {
   const f = DIRS[lg.h], r = DIRS[(lg.h + 1) % 4];
@@ -28,6 +28,11 @@ function strafeTo(q, i, tx, tz) {
 const rampAim = (q, r) => r.t === 'curve' ? [r.cx + r.dir * 200, Math.min(r.z0 - 300, q.pos[2] - 600)]
   : [r.cx + (q.pos[0] < r.cx ? -200 : 200), Math.min(r.z0 - 300, q.pos[2] - 600)];
 const isRamp = (it) => it.t === 'ramp' || it.t === 'curve';
+// where a block stands at time t: swaying blocks slide out and back
+const ease = (t, T) => (1 - Math.cos(Math.PI * t / T)) / 2;
+const bx = (it, t) => it.sway ? it.base + it.sway * ease(t, it.time) : it.x;
+// is a gate's door up clear of your head over [t0, t1]?
+const gateOpen = (g, t0, t1) => { for (let t = t0; t <= t1; t += 0.02) if (g.up * ease(t, g.time) < 110) return false; return true; };
 // curved ramps are ridden in world coordinates, piece by piece
 function curveAt(curves, p, slack) {
   for (const c of curves) for (let j = 0; j < c.chords.length; j++) {
@@ -41,11 +46,18 @@ function curveAt(curves, p, slack) {
 function brain(F, st) {
   // q: the player seen in this leg's frame
   return (p, q, n, i) => {
-    const plan = F.items, z = q.pos[2];
+    const plan = F.items, z = q.pos[2], now = i * 0.01;
+    if (p.wallrun) st.lastSide = p.wallrun.side; else if (p.onGround) st.lastSide = 0;
+    // climbing a wall or pulling up onto it: keep pushing in
+    if (p.climb || p.mantle) return { forward: 1, yaw: 0 };
     // a zipline: let it carry you, then fly for the pad under its end
     if (p.zip) return { yaw: 0 };
     const zp = plan.find(it => it.t === 'zip' && z <= it.z0 + 200 && z >= it.z1);
-    if (zp && !p.onGround && z > zp.z0 - 300) return { forward: 1, yaw: Math.atan2(-(zp.x - q.pos[0]), 300) };
+    if (zp && !p.onGround && !p.wallrun && z > zp.z0 - 300) {
+      // under the cable's line where we'll meet it
+      const u = Math.min(1, Math.max(0, (zp.z0 - z + 300) / (zp.z0 - zp.z1))), cx = zp.x + (zp.ex - zp.x) * u;
+      return { forward: 1, yaw: Math.atan2(-(cx - q.pos[0]), 300) };
+    }
     if (n) st.ramp = plan.findIndex(it => it.t === 'ramp' && z <= it.z0 + 50 && z >= it.z1 - 50);
     if (p.onGround) st.ramp = -1;
     if (n && st.ramp >= 0) {
@@ -66,13 +78,46 @@ function brain(F, st) {
     if (sl && p.onGround) return { forward: 1, duck: true, yaw: Math.atan2(-(sl.x - q.pos[0]) * 0.5, 300) };
     // a wallrun gap: hold the line, kick off the wall late
     const wl = plan.find(it => it.t === 'wall' && z <= it.z0 + 5 && z >= it.z1 - 60);
-    if (wl && !p.onGround) return { forward: 1, yaw: 0, side: !p.wallrun && (q.pos[0] - wl.x - wl.side * 285) * wl.side < 0 ? wl.side : 0, jump: !!(p.wallrun && p.wallrun.t > 0.9 && !p.prevJump) };
+    // kicked off the wall: fly for whatever comes after it
+    const kicked = wl && !p.onGround && !p.wallrun && st.lastSide && (plan[plan.indexOf(wl) + 1] || {}).t === 'block' ? plan.indexOf(wl) + 1 : 0;
+    if (wl && !p.onGround && !kicked) {
+      // < 0: short of the wall. Steer for it only on the way in
+      const off = (q.pos[0] - wl.x - wl.side * 285) * wl.side, seek = !p.wallrun && !st.lastSide;
+      return { forward: seek && off < -50 ? 0 : 1, yaw: 0, side: seek && off < 0 ? wl.side : 0, jump: !!(p.wallrun && p.wallrun.t > (wl.kick || 0.9) && !p.prevJump) };
+    }
+    // wall to wall: strafe for the wall ahead, run it, kick across near its end
+    const ww = plan.find(it => it.t === 'w2w' && z <= it.z0 + 5 && z >= it.z1 - 60);
+    if (ww && !p.onGround) {
+      const j = p.wallrun ? ww.walls.findIndex(w => w.side === p.wallrun.side) : -1;
+      if (p.wallrun) {
+        const w = ww.walls.reduce((a, b) => (b.side === p.wallrun.side && z <= b.z0 + 40 && z >= b.z1 - 40) ? b : a, null) || ww.walls[j];
+        const last = w === ww.walls[ww.walls.length - 1];
+        return { forward: 1, yaw: 0, jump: !p.prevJump && z < w.z1 + (last ? (ww.lastKick || 200) : (ww.kickAt || 330)) };
+      }
+      // the next wall: the first one not behind us whose side is not the wall we just left
+      const nw = ww.walls.find(w => z > w.z1 + 150 && w.side !== st.lastSide);
+      // side key alone gains sideways speed in the air; W again once beside the wall
+      if (nw) return (nw.wx - q.pos[0]) * nw.side > 70 ? { forward: 0, yaw: 0, side: nw.side } : { forward: 1, yaw: 0, side: nw.side };
+      return { forward: 1, yaw: 0, side: 0 };
+    }
     const cur = plan.findIndex(it => (it.t === 'pad' || it.t === 'lane' || it.t === 'block') && z <= it.z0 + 2 && z >= it.z1 - 2 && Math.abs(q.pos[1] - it.y) < 4 && p.onGround);
     let k = plan.findIndex(it => it.z0 < z - (it.t === 'block' ? 0 : 2));
     if (cur >= 0) k = cur + 1;
+    if (kicked && plan[kicked] && plan[kicked].t === 'block') k = kicked;
     if (k < 0) k = plan.length - 1;
     const t = plan[Math.min(k, plan.length - 1)];
     const here = plan[cur];
+    // a gate ahead on this pad: wait short of it until it will be open as we pass
+    const gt = here && here.gates && p.onGround && here.gates.find(g => z > g.z + 10);
+    if (gt) {
+      const d = z - gt.z, tA = d / Math.max(q.hspeed, 230) + (q.hspeed < 150 ? 0.3 : 0);
+      if (!gateOpen(gt, now + tA - 0.12, now + tA + 0.2) && d < 420) return { yaw: Math.atan2(-q.vel[0], -q.vel[2]) };
+      if (d < 420) return { forward: 1, yaw: Math.atan2(-(here.x - q.pos[0]), 300) };
+    }
+    // a slot: crouch into a slide under it
+    if (here && here.slots && here.slots.some(sz => z - sz < 320 && z > sz - 80)) return { forward: 1, duck: true, yaw: Math.atan2(-(here.x - q.pos[0]), 300) };
+    // vault rails: hop them as they come
+    if (here && here.vaults && p.onGround && here.vaults.some(vz => z - vz < 38 && z - vz > 0)) return { forward: 1, jump: true, yaw: Math.atan2(-(here.x - q.pos[0]), 300) };
     // the next thing is a zipline: run straight under it and jump off the edge
     if (t.t === 'zip' && p.onGround) return { forward: 1, yaw: Math.atan2(-(t.x - q.pos[0]), Math.max(120, Math.min(400, z - (here ? here.z1 : z)))), jump: !!here && z < here.z1 + 40 };
     // after a slide the next thing is a ramp below: fly at it
@@ -87,6 +132,17 @@ function brain(F, st) {
       return { forward: 1, yaw: Math.atan2(-(ax - q.pos[0]), -(aimZ - z)), jump: lined && z < edgeZ + 80 };
     }
     if (t.t === 'slide') return { forward: 1, yaw: Math.atan2(-(t.x - q.pos[0]), 300) };
+    // a climb: run square at the wall and jump into it
+    if (t.climb && (here || !p.onGround) && z < t.z0 + 400) return { forward: 1, yaw: Math.atan2(-(t.x - q.pos[0]) * 0.3, 300), jump: z < t.z0 + 34 };
+    if (t.t === 'w2w') {
+      const w0 = t.walls[0], want = t.x + w0.side * (t.half - (t.inset || 30));
+      return { forward: 1, yaw: 0, side: !p.onGround ? w0.side : (q.pos[0] - want) * w0.side < -5 ? w0.side : (q.pos[0] - want) * w0.side > 5 ? -w0.side : 0, jump: p.onGround && here && z < here.z1 + 40 };
+    }
+    if (t.t === 'wall' && here && here.t === 'block') {
+      // off the last block of a line: hop at the wall's near end
+      const want = t.x + t.side * 270;
+      return { forward: 1, yaw: Math.atan2(-(want - q.pos[0]), -(t.z0 - 250 - z)), jump: (z - here.cz) < 10 };
+    }
     if (t.t === 'wall') {
       const s = t.side, want = t.x + s * 280;
       return { forward: 1, yaw: 0, side: !p.onGround ? 0 : (q.pos[0] - want) * s < -5 ? s : (q.pos[0] - want) * s > 5 ? -s : 0, jump: p.onGround && here && z < here.z1 + 40 };
@@ -102,18 +158,23 @@ function brain(F, st) {
       return { forward: 1, yaw: Math.atan2(-(ln.x - q.pos[0]), 400), jump: hop };
     }
     // off an updraft: aim well onto the roof, not its front edge
+    let tx = bx(t, now);
+    if (t.sway && !p.onGround) {
+      const dy0 = q.pos[1] - t.y, disc0 = q.vel[1] * q.vel[1] + 1600 * dy0;
+      if (disc0 >= 0) tx = bx(t, now + (q.vel[1] + Math.sqrt(disc0)) / 800);
+    } else if (t.sway) tx = bx(t, now + 0.6);
     const tz = t.t === 'block' ? t.cz : Math.max(t.z1 + 100, Math.min(t.z0 - (here && here.launch || (!p.onGround && plan[k - 1] && plan[k - 1].launch) ? 700 : 120), z - 300));
-    const dx = t.x - q.pos[0], dz = tz - z;
+    const dx = tx - q.pos[0], dz = tz - z;
     const yaw = Math.atan2(-dx, -dz);
     if (p.onGround && here && here.t === 'pad' && q.hspeed > 420) return { yaw: Math.atan2(-q.vel[0], -q.vel[2]) }; // brake
     if (!p.onGround) {
       const g = 800, dy = q.pos[1] - t.y, vy = q.vel[1];
       const disc = vy * vy + 2 * g * dy;
-      if (disc < 0) return strafeTo(q, i, t.x, tz);
+      if (disc < 0) return strafeTo(q, i, tx, tz);
       const T = (vy + Math.sqrt(disc)) / g;
       if (T < 0.02) return { forward: 1, yaw };
       const wx = dx / T, wz = dz / T;
-      if (Math.hypot(wx, wz) > q.hspeed + 15) return strafeTo(q, i, t.x, tz);
+      if (Math.hypot(wx, wz) > q.hspeed + 15) return strafeTo(q, i, tx, tz);
       const ex = wx - q.vel[0], ez = wz - q.vel[2];
       if (Math.hypot(ex, ez) < 6) return {};
       return { forward: 1, yaw: Math.atan2(-ex, -ez) };
@@ -121,7 +182,7 @@ function brain(F, st) {
     let take = true;
     if (here) {
       const hx = -Math.sin(yaw), hz = -Math.cos(yaw);
-      take = here.t === 'block' ? (q.pos[0] - here.x) * hx + (z - here.cz) * hz > 12 : z < here.z1 + 90;
+      take = here.t === 'block' ? (q.pos[0] - bx(here, now)) * hx + (z - here.cz) * hz > 12 : z < here.z1 + 90;
       if (t.t === 'pad' && here.t === 'pad' && t.y <= here.y + 1 && t.z0 >= here.z1 - 5) take = false;
       if (t.t === 'lane' && here.t !== 'block') take = z < here.z1 + 90;
     }
@@ -178,6 +239,7 @@ function run(name, cpArg) {
     } else c0 = brains[k](p, q, n, i);
     const cmd = { forward: c0.forward || 0, side: c0.side || 0, jump: !!c0.jump, duck: !!c0.duck, yaw: (c0.yaw === undefined ? 0 : c0.yaw) + F.yaw, pitch: 0 };
     noisy(cmd);
+    if (world.movers.length) world.setTime(i * 0.01);
     p.tick(cmd, 0.01);
     p.prevJump = cmd.jump;
     if (process.env.V && i % +process.env.V === 0) console.log(i, 'leg', k, 'x', lx | 0, 'y', p.pos[1] | 0, 'z', lz | 0, 'hs', p.hspeed() | 0, p.onGround ? 'G' : '', p.wallrun ? 'WR' : '', p.slide ? 'SL' : '', p.mantle ? 'MA' : '', p.climb ? 'CL' : '', p.events.map(e => e.type).join(' '));

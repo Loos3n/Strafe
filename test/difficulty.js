@@ -9,7 +9,7 @@ const path = require('path');
 require('../src/physics.js'); require('../src/map.js');
 const M = globalThis.StrafeMap.buildMap(globalThis.StrafePhysics);
 const RUNNER = { roofs: 'city', downtown: 'city', cascade: 'advanced', spire: 'advanced', freerun: 'advanced' };
-for (const n of M.gauntlet) RUNNER[n] = 'gauntlet';
+for (const n of M.gauntlet) RUNNER[n] = M.courses[n].route ? 'routes' : 'gauntlet';
 for (const n of ['surf', 'bhop', 'canyon', 'stairway', 'crossover'].concat(M.night, M.harbor, M.skyline)) RUNNER[n] = 'routes';
 const levels = process.argv[2] ? process.argv[2].split(',') : M.order.concat(M.gauntlet, M.night, M.harbor, M.skyline);
 const SEEDS = +(process.argv[3] || 8), NOISE = process.argv[4] || '0.06';

@@ -28,7 +28,7 @@ function itemsOf(name) {
         if (it.t === 'block' || it.t === 'pad' || it.t === 'lane') {
           const zc = it.t === 'block' ? it.cz : (it.z0 + it.z1) / 2, hw = it.w / 2, hd = it.t === 'block' ? (it.d || it.w) / 2 : Math.abs(it.z0 - it.z1) / 2;
           const [x, z] = at(it.x, zc), swap = lg.h % 2 === 1;
-          out.push({ t: it.t === 'lane' ? 'pad' : it.t, x, y: it.y, z, hx: swap ? hd : hw, hz: swap ? hw : hd });
+          out.push({ t: it.t === 'lane' ? 'pad' : it.t, x, y: it.y, z, hx: swap ? hd : hw, hz: swap ? hw : hd, sway: !!it.sway });
         } else out.push({ t: 'other' });
       }
     }
@@ -47,6 +47,7 @@ function linesOf(name) {
     if (it[i].t !== 'block' || it[i - 1].t === 'block') continue;
     let j = i; while (j < it.length && it[j].t === 'block') j++;
     if (it[i - 1].t !== 'pad') continue;
+    if (it.slice(i, j).some(b => b.sway)) continue; // swinging blocks: a steady-speed probe can't time them (test/routes.js rides them)
     lines.push({ from: it[i - 1], blocks: it.slice(i, j), to: it[j] && it[j].t === 'pad' ? it[j] : null });
   }
   return lines;

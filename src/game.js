@@ -38,7 +38,7 @@
     { course: 'surf', title: 'Spillway', stars: [56, 80],
       brief: 'Mercer: "The Blues have the bridges watched. Only way across the reservoir tonight is down the spillway ramps. Ride the slopes, don\'t fall in."',
       debrief: 'Juno is waiting at the far bank. "They know a runner is moving my drives," she says. "Keep going, Kite. Two more and it is done."' },
-    { course: 'crossover', title: 'Shortcut', stars: [58, 83],
+    { course: 'crossover', title: 'Shortcut', stars: [60, 87],
       brief: 'Mercer: "Juno is paying double for speed. Roof, ramp, blocks, wall. One line, no stopping. I want you there before the Blues finish their shift change."',
       debrief: 'You make the handoff with seconds to spare. On the way out you see the drive\'s label in the streetlight: "CITY WATER AUTHORITY, AUDIT, DO NOT COPY".' },
     { course: 'downtown', title: 'Courier', stars: [70, 100],
@@ -69,7 +69,8 @@
   // Levels whose layout changed enough that old times no longer compare. Each
   // reset drops their times and ghosts once; stars already earned stay. The
   // suffix is the leaderboard field they post under now.
-  const REBUILT = { surf: '_v3', bhop: '_v3', canyon: '_v3', stairway: '_v3', crossover: '_v4', cascade: '_v6', g1: '_v2', g2: '_v2', g3: '_v2', g4: '_v2', g5: '_v2', g6: '_v2', n1: '_v2', n2: '_v2', n3: '_v2', n4: '_v2', n5: '_v2', n6: '_v2' };
+  const REBUILT = { surf: '_v3', bhop: '_v4', canyon: '_v3', stairway: '_v4', crossover: '_v5', cascade: '_v6', g1: '_v2', g2: '_v2', g3: '_v2', g4: '_v2', g5: '_v2', g6: '_v3', n1: '_v3', n2: '_v3', n3: '_v3', n4: '_v3', n5: '_v3', n6: '_v3',
+    h1: '_v2', h2: '_v2', h3: '_v2', h5: '_v2', h6: '_v2', s1: '_v2', s2: '_v2', s3: '_v2', s4: '_v2' };
   // levels players build: the editor's own ('custom') and community ones ('c:<id>')
   const isCommunity = (c) => typeof c === 'string' && c.startsWith('c:');
   const userCourse = (c) => c === 'custom' || c === 'endless' || isCommunity(c);
@@ -79,10 +80,10 @@
   // rebuilt). A community level's medals scale from its maker's best time,
   // which is the platinum (shown as Author).
   const MEDALS = [{ k: 'plat', n: 'Platinum' }, { k: 'gold', n: 'Gold' }, { k: 'silver', n: 'Silver' }, { k: 'bronze', n: 'Bronze' }];
-  const MEDAL_PAR = { surf: 62.4, bhop: 55.3, roofs: 76.3, canyon: 62.7, stairway: 53.4, crossover: 65.1, downtown: 77.5, cascade: 25.3, spire: 62.0, freerun: 62.3,
-    g1: 24.8, g2: 32.4, g3: 48.4, g4: 49.6, g5: 58.7, g6: 74.0, n1: 31.9, n2: 33.9, n3: 45.0, n4: 44.6, n5: 71.2, n6: 79.6,
-    h1: 59.3, h2: 59.3, h3: 53.1, h4: 58.6, h5: 69.8, h6: 74.2,
-    s1: 36.3, s2: 37.9, s3: 50.5, s4: 61.2 };
+  const MEDAL_PAR = { surf: 62.4, bhop: 54.9, roofs: 76.3, canyon: 62.7, stairway: 53.4, crossover: 66.8, downtown: 77.5, cascade: 25.3, spire: 62.0, freerun: 62.3,
+    g1: 24.8, g2: 32.4, g3: 48.4, g4: 49.6, g5: 58.7, g6: 80.4, n1: 31.9, n2: 42.1, n3: 43.7, n4: 44.6, n5: 72.2, n6: 90.8,
+    h1: 61.9, h2: 61.9, h3: 53.1, h4: 58.6, h5: 75.2, h6: 83.8,
+    s1: 38.1, s2: 39.5, s3: 46.7, s4: 63.6 };
   const communityAuthor = {}; // community course -> its maker's time, from the server
   // [platinum, gold, silver, bronze] in ticks, or null for levels without medals
   function medalTimes(course) {
@@ -113,7 +114,9 @@
   }
   const RESETS = [['strafe.rebuild.v2', ['surf', 'bhop', 'canyon', 'stairway', 'crossover']],
     ['strafe.rebuild.v3', ['surf', 'canyon', 'crossover', 'cascade']], ['strafe.rebuild.v4', ['cascade']], ['strafe.rebuild.v5', ['cascade']], ['strafe.rebuild.v6', ['cascade']],
-    ['strafe.rebuild.v7', ['bhop', 'stairway', 'crossover', 'g1', 'g2', 'g3', 'g4', 'g5', 'g6', 'n1', 'n2', 'n3', 'n4', 'n5', 'n6']]];
+    ['strafe.rebuild.v7', ['bhop', 'stairway', 'crossover', 'g1', 'g2', 'g3', 'g4', 'g5', 'g6', 'n1', 'n2', 'n3', 'n4', 'n5', 'n6']],
+    // level pass: new wallruns, moving pieces, parkour and finales
+    ['strafe.rebuild.v8', ['bhop', 'stairway', 'crossover', 'g6', 'n1', 'n2', 'n3', 'n4', 'n5', 'n6', 'h1', 'h2', 'h3', 'h5', 'h6', 's1', 's2', 's3', 's4']]];
   for (const [flag, list] of RESETS) {
     if (load(flag)) continue;
     for (const c of list) {
@@ -661,16 +664,28 @@
   }
 
   const animated = { water: null, lava: null };
+  const levelMoving = [];
   {
     // the low city's plain blocks are drawn as models instead (see models below)
     // (deco: visual-only dressing such as the harbor's cranes and railings, drawn but never collided with)
-    const solid = buildGeometry(b => (!b.props.nonsolid || b.props.deco) && !b.props.door && !b.props.lowcity, bucketFor);
+    const solid = buildGeometry(b => (!b.props.nonsolid || b.props.deco) && !b.props.door && !b.props.lowcity && !b.mv, bucketFor);
     const edgeMat = new THREE.LineBasicMaterial({ color: 0x1b2530, transparent: true, opacity: 0.1 });
     for (const [name, part] of Object.entries(solid)) {
       const mesh = new THREE.Mesh(part.g, MATS[name]);
       mesh.castShadow = mesh.receiveShadow = true;
       scene.add(mesh);
       if (name !== 'asphalt' && name !== 'rock') scene.add(new THREE.LineSegments(part.lg, edgeMat));
+    }
+    // the levels' own moving pieces (swaying blocks, gates): each its own meshes, moved every frame
+    for (const mv of world.movers) {
+      const objs = [];
+      for (const [name, part] of Object.entries(buildGeometry(b => b.mv === mv, bucketFor))) {
+        const mesh = new THREE.Mesh(part.g, MATS[name]);
+        mesh.castShadow = mesh.receiveShadow = true;
+        const lines = new THREE.LineSegments(part.lg, edgeMat);
+        for (const o of [mesh, lines]) { scene.add(o); objs.push(o); }
+      }
+      levelMoving.push({ mv, objs });
     }
     const water = buildGeometry(b => b.props.water);
     waterNormal.repeat.set(1 / 3, 1 / 3);
@@ -3242,10 +3257,10 @@ body.touch #menu button, body.touch #drawer button { min-height: 40px; }
     raceFrame(dt);
     // moving pieces: in the editor they keep moving on the clock; in play
     // they're drawn between their last two ticks, like you are
-    if (ed.moving && ed.moving.length) {
+    if (ed.moving && ed.moving.length || levelMoving.length) {
       if (ed.on) world.setTime(now / 1000);
       const k = ed.on ? 1 : alpha;
-      for (const m of ed.moving) {
+      for (const m of levelMoving.concat(ed.moving || [])) {
         const o = m.mv.off, d = m.mv.delta;
         for (const ob of m.objs) ob.position.set(o[0] - d[0] * (1 - k), o[1] - d[1] * (1 - k), o[2] - d[2] * (1 - k));
       }
