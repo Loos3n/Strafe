@@ -499,6 +499,7 @@ body[data-colors=contrast] { --ahead: #5cf2ff; --behind: #ff4df0; }
 .onrow { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin: 8px 0; }
 .onrow input, .onrow select, #c-post input { font: inherit; font-size: 15px; color: #eef1f4; background: rgba(255,255,255,.08); border: 1px solid rgba(255,255,255,.22); padding: 8px 10px; min-width: 0; flex: 1; }
 .onrow select option { color: #111; }
+.savecode { font-size: 13px; letter-spacing: .04em; word-break: break-all; flex: 1; min-width: 0; color: #eef1f4; }
 #race-code { text-transform: uppercase; letter-spacing: .2em; max-width: 8em; }
 .onmsg { font-size: 13px; color: rgba(236,240,244,.7); margin: 4px 0; line-height: 1.4; }
 .onmsg:empty { display: none; }
@@ -867,6 +868,16 @@ body.touch #racehud { top: calc(56px + env(safe-area-inset-top, 0px)); left: 10p
           <p class="label">Your name</p>
           <form class="onrow" id="on-nameform"><input id="on-name" maxlength="16" placeholder="Pick a name" autocomplete="off" spellcheck="false"><button class="ghost" id="on-namesave">Save</button></form>
           <p class="onmsg" id="on-namemsg"></p>
+        </div>
+        <div class="group">
+          <p class="label">Your save on other devices</p>
+          <div id="sv-have" hidden>
+            <p class="onmsg">Your times, stars, medals and unlocks follow your name. To carry on in another browser, on your phone or in the desktop app, enter this save code there. Keep it private: anyone with it can post as you.</p>
+            <div class="onrow"><code id="sv-code" class="savecode"></code><button type="button" class="ghost small" id="sv-show">Show</button><button type="button" class="ghost small" id="sv-copy">Copy</button></div>
+          </div>
+          <form class="onrow" id="sv-form"><input id="sv-input" placeholder="Save code from another device" autocomplete="off" spellcheck="false" aria-label="Save code"><button class="ghost">Load</button></form>
+          <p class="onmsg">Only runs the server has checked come across, so a save edited by hand can't be carried over.</p>
+          <p class="onmsg" id="sv-msg"></p>
         </div>
         <div class="group">
           <p class="label">Race friends</p>

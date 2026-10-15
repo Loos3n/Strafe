@@ -1847,6 +1847,7 @@ body.touch #menu button, body.touch #drawer button { min-height: 40px; }
       saved(course) { const g = course in runs ? runs[course] : (runs[course] = load(GHOST_KEY + course)); return g ? { e: g.e, s: g.s } : null; },
       useRemote(course, g) { remote = g ? { course, g } : null; },
       remoteFor: (course) => !!(remote && remote.course === course),
+      put(course, g) { runs[course] = { e: g.e, s: g.s }; save(GHOST_KEY + course, runs[course]); },
       forget(course) { delete runs[course]; try { localStorage.removeItem(GHOST_KEY + course); } catch (e) { /* storage blocked */ } },
       root,
       tint(c) {
@@ -3562,27 +3563,161 @@ body.touch #menu button, body.touch #drawer button { min-height: 40px; }
     if (game.course === course) netRenderComplete();
     lbRender();
   }
-  // a new name: make the account, then bring this device's best times over
+  // a new name: make the account, then bring this device's best runs over
   async function netRegister(name) {
     const res = await api('/register', { name });
     Object.assign(net, { id: res.id, token: res.token, name: res.name });
     saveNet();
-    const legacy = {}, mine = lbMine();
-    for (const c of LEVEL_ORDER) {
-      if (!best[c]) continue;
-      const g = ghost.saved(c);
-      if (g && g.e === 4 && Array.isArray(g.s)) {
-        try { await api('/run', { course: lbKey(c), ticks: best[c], ghost: g }); continue; } catch (e) { /* fall back to an older time */ }
-      }
-      legacy[lbKey(c)] = best[c];
-    }
-    for (const k in mine) if (typeof mine[k] === 'number' && k !== 'at' && !(legacy[k] <= mine[k])) legacy[k] = mine[k];
-    try { await api('/import', { times: legacy }); } catch (e) { /* already imported */ }
+    await netUpload({});
     const p = net.pending;
     net.pending = null;
     net.boards = {};
     if (p) await netSubmit(p.course, p.ticks, p.run);
     lbRender();
+  }
+  // post this device's best runs that beat the player's online times. Each
+  // goes with its replay and has to pass the server's run check; a time with
+  // no replay stays on this device only.
+  const NOPOST_KEY = 'strafe.nopost.v1';
+  async function netUpload(online) {
+    if (!canPost()) return 0;
+    const refused = load(NOPOST_KEY) || {};
+    let n = 0;
+    for (const c of LEVEL_ORDER) {
+      const k = lbKey(c), t = best[c];
+      if (!t || (online[k] && online[k] <= t) || refused[k] === t) continue;
+      const g = ghost.saved(c);
+      if (!g || g.e !== GHOST_EVERY || !Array.isArray(g.s)) continue;
+      try { await api('/run', { course: k, ticks: t, ghost: g }); n++; } catch (e) {
+        if (e.status === 429) break;
+        if (e.status === 422) { refused[k] = t; save(NOPOST_KEY, refused); }
+      }
+    }
+    return n;
+  }
+
+  // ------------------------------------------------------------ save across devices
+  // The save code is the player's sign-in (id.key). Entering it on another
+  // device signs that device in and brings over what the server has checked:
+  // best times (and with them stars, medals, achievements and the unlocks
+  // they earn), set runs, daily and weekly finishes and Endless bests. Nothing
+  // is ever taken from a device's own save except runs that pass the server's
+  // checks, so a save edited by hand can't spread to an account or a device.
+  const SAVE_CODE = /^[0-9a-f]{16}\.[0-9a-f]{32}$/;
+  const fromKey = Object.fromEntries(LEVEL_ORDER.map(c => [lbKey(c), c]));
+  const okTicks = (t) => Number.isInteger(t) && t >= 100 && t <= 360000;
+  function applyProgress(p) {
+    const got = { levels: 0, stars: 0, ach: 0 }, ghosts = [], sets = [];
+    const times = p && p.times || {};
+    const starsBefore = storyStars(), achBefore = achCount();
+    for (const k in times) {
+      const t = times[k];
+      if (!okTicks(t)) continue;
+      const c = fromKey[k] || (isCommunity(k) ? k : null);
+      if (c) {
+        if (!best[c] || t < best[c]) {
+          if (!best[c]) got.levels++;
+          best[c] = t; delete bestSplits[c];
+          if (!isCommunity(c)) ghosts.push([c, k, t]);
+        }
+        continue;
+      }
+      const set = k.match(/^set:([a-z]+)$/);
+      if (set && SETS[set[1]] && (!setBest[set[1]] || t < setBest[set[1]].ticks)) { setBest[set[1]] = { ticks: t, legs: null, at: Date.now() }; sets.push(set[1]); continue; }
+      const ch = k.match(/^([dw]):(\d{4}-\d\d-\d\d)$/);
+      if (ch) { const C = ch[1] === 'd' ? daily : weekly; if (!C.days[ch[2]] || t < C.days[ch[2]]) C.days[ch[2]] = t; }
+    }
+    // story jobs, in order, from checked times on their levels
+    for (let i = 0; i < STORY.length; i++) {
+      const job = STORY[i], t = times[lbKey(job.course)];
+      if (!(i === 0 || storyProgress[i - 1])) break;
+      if (!okTicks(t)) { if (storyProgress[i]) continue; break; }
+      const secs = t * TICK, prev = storyProgress[i] || { stars: 0, best: null };
+      storyProgress[i] = { stars: Math.max(prev.stars, starCount(job, secs)), best: prev.best === null ? secs : Math.min(prev.best, secs) };
+    }
+    for (const day in p && p.endless || {}) {
+      const r = p.endless[day];
+      if (!r || !Number.isInteger(r.sections) || !Number.isInteger(r.ticks)) continue;
+      const run = { sections: r.sections, ticks: r.ticks };
+      if (enBetter(run, enSave.best)) enSave.best = run;
+      if (enBetter(run, enSave.days[day])) enSave.days[day] = run; // its splits were from a slower run
+    }
+    for (const d of Object.keys(enSave.days).sort().slice(0, -7)) delete enSave.days[d];
+    for (const C of CHALLENGES) C.days = Object.fromEntries(Object.keys(C.days).sort().slice(-120).map(k => [k, C.days[k]]));
+    career.community = Math.max(career.community, Object.keys(times).filter(isCommunity).length);
+    career.sets = Math.max(career.sets, Object.keys(times).filter(k => /^set:/.test(k)).length);
+    career.published = Math.max(career.published, p && Number.isInteger(p.published) ? p.published : 0);
+    save(BEST_KEY, best); save(SPLITS_KEY, bestSplits); save(STORY_KEY, storyProgress); save(SET_KEY, setBest);
+    save(ENDLESS_KEY, enSave); save(STATS_KEY, career);
+    for (const C of CHALLENGES) save(C.key, { days: C.days });
+    achCheck(true);
+    got.stars = storyStars() - starsBefore; got.ach = achCount() - achBefore;
+    return { got, ghosts, sets };
+  }
+  // fetch the replays behind restored times, so ghosts race your real best
+  async function fetchGhosts(list, sets) {
+    for (const [c, k, t] of list) {
+      try {
+        const r = await api('/ghost?course=' + encodeURIComponent(k) + '&id=' + net.id);
+        if (r.ticks === t && best[c] === t && r.ghost && r.ghost.e === GHOST_EVERY) ghost.put(c, r.ghost);
+      } catch (e) { /* the ghost can wait */ }
+    }
+    for (const set of sets) {
+      try {
+        const r = await api('/ghost?course=set:' + set + '&id=' + net.id), legs = r.ghost && r.ghost.legs;
+        if (!Array.isArray(legs) || !setBest[set] || r.ticks !== setBest[set].ticks) continue;
+        setBest[set].legs = legs.map(l => l.t); save(SET_KEY, setBest);
+        save(SET_GHOST_KEY + set, legs.map(l => ({ e: l.e, s: l.s })));
+      } catch (e) { /* the set ghost can wait */ }
+    }
+  }
+  // bring this device up to date with the account: on start, and after a save code
+  async function netSync() {
+    const p = await api('/progress');
+    if (p.name) { net.name = p.name; saveNet(); }
+    const res = applyProgress(p);
+    const sent = await netUpload(p.times || {});
+    if (sent) net.boards = {};
+    if (res.got.levels || res.got.stars || res.got.ach || sent) progressChanged();
+    fetchGhosts(res.ghosts, res.sets);
+    return res.got;
+  }
+  function progressChanged() {
+    buildLevelList(); buildStory(); refreshTitle(); lbRender();
+    cosmetics.apply();
+  }
+  const saveCode = () => net.id && net.token ? net.token : '';
+  async function useSaveCode(raw, msgEl) {
+    const code = String(raw || '').toLowerCase().replace(/[^0-9a-f.]/g, '');
+    msgEl.className = 'onmsg';
+    if (!SAVE_CODE.test(code)) { msgEl.className = 'onmsg err'; msgEl.textContent = "That isn't a save code. It's 49 characters with a dot after the first 16."; return false; }
+    if (code === net.token) { msgEl.textContent = 'This device already uses that save.'; return false; }
+    if (net.token && !confirm('This device posts as ' + net.name + ' now. Switch to the other save? You will need ' + net.name + "'s save code to switch back.")) return false;
+    msgEl.textContent = 'Loading…';
+    const keep = { id: net.id, token: net.token, name: net.name };
+    Object.assign(net, { id: code.slice(0, 16), token: code, name: null });
+    try {
+      const got = await netSync();
+      net.boards = {};
+      if (race.ws) raceSend({ t: 'hello', name: net.name });
+      $('on-name').value = net.name;
+      $('on-namemsg').className = 'onmsg'; $('on-namemsg').textContent = 'You post as ' + net.name + '.';
+      msgEl.textContent = 'Loaded ' + net.name + "'s save: " + [got.levels + (got.levels === 1 ? ' level' : ' levels'),
+        got.stars + (got.stars === 1 ? ' star' : ' stars'), got.ach + (got.ach === 1 ? ' achievement' : ' achievements')].join(', ') + ' new on this device.';
+      saveRender();
+      return true;
+    } catch (e) {
+      Object.assign(net, keep); saveNet();
+      msgEl.className = 'onmsg err';
+      msgEl.textContent = e.status === 401 ? "That save code doesn't match a player." : e.message;
+      return false;
+    }
+  }
+  function saveRender() {
+    const has = !!saveCode();
+    $('sv-have').hidden = !has;
+    $('sv-code').textContent = has ? '•'.repeat(12) : '';
+    $('sv-code').dataset.shown = '';
   }
   async function netSetName(name, msgEl) {
     msgEl.className = 'onmsg'; msgEl.textContent = 'Saving…';
@@ -3604,6 +3739,22 @@ body.touch #menu button, body.touch #drawer button { min-height: 40px; }
     if (ok) netRenderComplete();
   });
   $('on-nameform').addEventListener('submit', (e) => { e.preventDefault(); netSetName($('on-name').value, $('on-namemsg')); });
+  $('sv-show').addEventListener('click', () => {
+    const el = $('sv-code'), on = !el.dataset.shown;
+    el.dataset.shown = on ? '1' : '';
+    el.textContent = on ? saveCode() : '•'.repeat(12);
+    $('sv-show').textContent = on ? 'Hide' : 'Show';
+  });
+  $('sv-copy').addEventListener('click', async () => {
+    const msg = $('sv-msg');
+    msg.className = 'onmsg';
+    try { await navigator.clipboard.writeText(saveCode()); msg.textContent = 'Copied. Enter it on your other device under Online.'; }
+    catch (e) { $('sv-show').click(); msg.textContent = 'Copy the code shown above.'; }
+  });
+  $('sv-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    if (await useSaveCode($('sv-input').value, $('sv-msg'))) $('sv-input').value = '';
+  });
 
   // the Online pane: name, race room and the full board
   function fillLevels(sel, value) {
@@ -3616,6 +3767,8 @@ body.touch #menu button, body.touch #drawer button { min-height: 40px; }
     $('on-name').value = net.name || '';
     $('on-namemsg').className = 'onmsg';
     $('on-namemsg').textContent = net.token ? '' : 'Pick a name to post your times and race.';
+    saveRender();
+    $('sv-msg').textContent = '';
     const ol = $('on-level');
     fillLevels(ol, typeof selected === 'string' && selected !== 'custom' ? selected : null);
     if (!ol.querySelector('optgroup')) {
@@ -3884,7 +4037,7 @@ body.touch #menu button, body.touch #drawer button { min-height: 40px; }
   (async () => {
     try {
       if (net.token) {
-        try { const me = await api('/me'); net.name = me.name; saveNet(); } catch (e) { if (e.status === 401) { net.token = null; net.id = null; saveNet(); } else throw e; }
+        try { await netSync(); } catch (e) { if (e.status === 401) { net.token = null; net.id = null; saveNet(); } else throw e; }
       } else await api('/board?course=tutorial');
       net.ok = true;
     } catch (e) { net.ok = false; }

@@ -82,16 +82,18 @@ check('set ghost has every level', sg.status === 200 && sg.body.ghost.legs.lengt
 check('no posting to a set board directly', (await call('/api/run', { course: 'set:skyline', ticks: run.ticks, ghost: g }, a.body.token)).status === 400);
 check('unknown set board', (await call('/api/board?course=set:nope')).status === 404);
 
-// rename and import
+// rename; unchecked times are refused; progress for a save code
 check('rename', (await call('/api/name', { name: 'Anna ' + tag }, a.body.token)).body.name === 'Anna ' + tag);
 check('rename to taken', (await call('/api/name', { name: 'ben ' + tag }, a.body.token)).status === 409);
-const im = await call('/api/import', { times: { roofs: 9000, [run.key]: run.ticks + 50, nope: 100 } }, a.body.token);
-check('import older times', im.body.imported === 1, JSON.stringify(im.body));
-check('import only once', (await call('/api/import', { times: { surf_v3: 9000 } }, a.body.token)).body.imported === 0);
+const im = await call('/api/import', { times: { roofs: 9000, [run.key]: 100 } }, a.body.token);
+check('import refused', im.status === 410, JSON.stringify(im.body));
 const me = await call('/api/me', null, a.body.token);
-check('me', me.body.name === 'Anna ' + tag && me.body.times.roofs === 9000 && me.body.times[run.key] === run.ticks && me.body.imported);
+check('me', me.body.name === 'Anna ' + tag && me.body.times[run.key] === run.ticks && !('roofs' in me.body.times));
 const rb = await call('/api/board?course=roofs');
-check('imported time is marked', rb.body.rows.some(r => r.id === a.body.id && r.legacy && !r.ghost));
+check('no imported time on the board', !rb.body.rows.some(r => r.id === a.body.id));
+const pg = await call('/api/progress', null, a.body.token);
+check('progress has checked runs', pg.status === 200 && pg.body.id === a.body.id && pg.body.name === 'Anna ' + tag && pg.body.times[run.key] === run.ticks && Number.isInteger(pg.body.published) && typeof pg.body.endless === 'object', JSON.stringify(pg.body).slice(0, 200));
+check('progress needs the code', (await call('/api/progress', null, a.body.id + '.' + '1'.repeat(32))).status === 401);
 
 // a race between two players
 const ws = (name) => new Promise((res, rej) => {
