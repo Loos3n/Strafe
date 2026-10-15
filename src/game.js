@@ -77,13 +77,16 @@
   // Medals: bronze, silver, gold and platinum times on every level. Story
   // levels use their star targets for gold and silver; the rest scale from the
   // time the test bots take (MEDAL_PAR, seconds: re-time a level when it is
-  // rebuilt). A community level's medals scale from its maker's best time,
+  // rebuilt). Platinum is about 0.64x the bot time (0.68x on the parkour city
+  // levels), so it takes a fast, clean run. A community level's medals scale from its maker's best time,
   // which is the platinum (shown as Author).
   const MEDALS = [{ k: 'plat', n: 'Platinum' }, { k: 'gold', n: 'Gold' }, { k: 'silver', n: 'Silver' }, { k: 'bronze', n: 'Bronze' }];
   const MEDAL_PAR = { surf: 62.4, bhop: 54.9, roofs: 76.3, canyon: 62.7, stairway: 53.4, crossover: 66.8, downtown: 77.5, cascade: 25.3, spire: 62.0, freerun: 62.3,
     g1: 24.8, g2: 32.4, g3: 48.4, g4: 49.6, g5: 58.7, g6: 80.4, n1: 31.9, n2: 42.1, n3: 43.7, n4: 44.6, n5: 72.2, n6: 90.8,
     h1: 61.9, h2: 61.9, h3: 53.1, h4: 58.6, h5: 75.2, h6: 83.8,
     s1: 38.1, s2: 39.5, s3: 46.7, s4: 63.6 };
+  // platinum as a share of MEDAL_PAR on the parkour-heavy city levels
+  const PLAT_SLOW = { roofs: 0.68, downtown: 0.68, freerun: 0.68 };
   const communityAuthor = {}; // community course -> its maker's time, from the server
   // [platinum, gold, silver, bronze] in ticks, or null for levels without medals
   function medalTimes(course) {
@@ -96,7 +99,10 @@
     if (job) [gold, silver] = job.stars;
     else if (MEDAL_PAR[course]) { gold = Math.round(MEDAL_PAR[course] * 0.9); silver = Math.round(MEDAL_PAR[course] * 1.3); }
     else return null;
-    return [Math.round(gold * 0.88), gold, silver, Math.round(silver * 1.5)].map(t => t * 100);
+    // platinum is well under the bot's time (a clean, fast line with speed
+    // tech); levels gated by wallruns and climbs can't be cut as far
+    const plat = MEDAL_PAR[course] ? Math.round(MEDAL_PAR[course] * (PLAT_SLOW[course] || 0.64)) : Math.round(gold * 0.72);
+    return [Math.min(plat, gold - 1), gold, silver, Math.round(silver * 1.5)].map(t => t * 100);
   }
   // the best medal a time earns: 0 platinum to 3 bronze, -1 none
   function medalOf(course, ticks) {
