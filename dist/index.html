@@ -692,6 +692,7 @@ body.touch #racehud { top: calc(56px + env(safe-area-inset-top, 0px)); left: 10p
       <button class="mbtn" id="m-editor"><span>Level editor</span><small>Build and share</small></button>
       <button class="mbtn" data-open="settings" aria-expanded="false" aria-controls="drawer"><span>Settings</span></button>
       <button class="mbtn" data-open="controls" aria-expanded="false" aria-controls="drawer"><span>Controls</span></button>
+      <button class="mbtn" id="m-install" hidden><span>Install app</span><small id="m-install-sub">Play from your home screen</small></button>
       <button class="mbtn" id="m-quit" hidden><span>Quit to title</span></button>
     </nav>
     <p class="tsfoot"><span><kbd>&uarr;</kbd><kbd>&darr;</kbd> choose</span><span><kbd>Enter</kbd> select</span><span id="menunote">Keyboard and mouse. Click anywhere for sound.</span></p>
@@ -14128,6 +14129,22 @@ body.touch .mark.big { font-size: clamp(44px, min(14vw, 13vh), 96px); }
     attract.course = null; showMenuState();
   });
   $('back').addEventListener('click', () => { A.play('click'); showScreen('title'); });
+  // phones on the website can install the game: Android asks through the
+  // browser's prompt, iPhone needs Share > Add to Home Screen
+  if (TOUCH && document.querySelector('link[rel=manifest]') && !matchMedia('(display-mode: fullscreen), (display-mode: standalone)').matches && !navigator.standalone) {
+    const ios = /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+    let ask = null;
+    const show = () => { $('m-install').hidden = !(ask || ios); };
+    if (ios) $('m-install-sub').textContent = 'Share, then Add to Home Screen';
+    addEventListener('beforeinstallprompt', (e) => { e.preventDefault(); ask = e; show(); });
+    addEventListener('appinstalled', () => { ask = null; $('m-install').hidden = true; });
+    $('m-install').addEventListener('click', () => {
+      A.play('click');
+      if (ask) { const p = ask; ask = null; p.prompt(); p.userChoice.then(r => { if (r.outcome !== 'accepted') ask = p; show(); }).catch(() => {}); }
+      else toast('Tap the Share button, then Add to Home Screen', 5000);
+    });
+    show();
+  }
   for (const b of document.querySelectorAll('#mainnav .mbtn')) b.addEventListener('mouseenter', () => A.play('hover'));
   $('resume').addEventListener('click', () => { A.init(); A.play('click'); startPlay(); });
   $('restart').addEventListener('click', () => { A.init(); restartCourse(); startPlay(); });

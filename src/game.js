@@ -5542,6 +5542,22 @@ body.touch .mark.big { font-size: clamp(44px, min(14vw, 13vh), 96px); }
     attract.course = null; showMenuState();
   });
   $('back').addEventListener('click', () => { A.play('click'); showScreen('title'); });
+  // phones on the website can install the game: Android asks through the
+  // browser's prompt, iPhone needs Share > Add to Home Screen
+  if (TOUCH && document.querySelector('link[rel=manifest]') && !matchMedia('(display-mode: fullscreen), (display-mode: standalone)').matches && !navigator.standalone) {
+    const ios = /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+    let ask = null;
+    const show = () => { $('m-install').hidden = !(ask || ios); };
+    if (ios) $('m-install-sub').textContent = 'Share, then Add to Home Screen';
+    addEventListener('beforeinstallprompt', (e) => { e.preventDefault(); ask = e; show(); });
+    addEventListener('appinstalled', () => { ask = null; $('m-install').hidden = true; });
+    $('m-install').addEventListener('click', () => {
+      A.play('click');
+      if (ask) { const p = ask; ask = null; p.prompt(); p.userChoice.then(r => { if (r.outcome !== 'accepted') ask = p; show(); }).catch(() => {}); }
+      else toast('Tap the Share button, then Add to Home Screen', 5000);
+    });
+    show();
+  }
   for (const b of document.querySelectorAll('#mainnav .mbtn')) b.addEventListener('mouseenter', () => A.play('hover'));
   $('resume').addEventListener('click', () => { A.init(); A.play('click'); startPlay(); });
   $('restart').addEventListener('click', () => { A.init(); restartCourse(); startPlay(); });

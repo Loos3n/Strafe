@@ -11,6 +11,15 @@ const call = async (path, body, tok) => {
 };
 const tag = Math.random().toString(36).slice(2, 7);
 
+// the page can be installed as a phone app
+const home = await (await fetch(BASE + '/')).text();
+if (home.includes('rel="manifest"')) {
+  const man = await fetch(BASE + '/manifest.webmanifest').then(r => r.json()).catch(() => null);
+  check('app manifest', man && man.start_url === '/' && man.icons.length >= 2);
+  check('offline worker', (await fetch(BASE + '/sw.js')).ok);
+  check('app icon', man && (await fetch(BASE + man.icons[0].src)).headers.get('content-type') === 'image/png');
+}
+
 const a = await call('/api/register', { name: 'Ana ' + tag });
 check('register', a.status === 200 && a.body.token, JSON.stringify(a.body));
 const dup = await call('/api/register', { name: 'ANA ' + tag });
