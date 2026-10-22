@@ -12,7 +12,7 @@ OUT = os.path.join(os.path.dirname(__file__), '..', 'assets', 'tex')
 SLOTS = {
     'floor': ('Concrete034', 1.4, 0.88),
     'wall': ('Concrete014', 1.0, 0.84),
-    'ramp': ('MetalPlates003', 0.9, 0.9),
+    'ramp': ('Metal009', 0.7, 0.9),  # brushed, no seams: reads as one sheet down a long ramp
     'paint': ('Metal009', 1.2, 0.92),
     'plate': ('DiamondPlate008A', 1.8, 0.86),
 }

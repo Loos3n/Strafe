@@ -816,17 +816,19 @@ float bh(vec2 p) { p = mod(p, 289.0); return fract(sin(dot(p, vec2(12.9898, 78.2
     const ST = window.STRAFE_TEX || {}, loader = new THREE.TextureLoader();
     const load = (k, rep, srgb) => {
       const t = loader.load(ST[k]);
-      t.wrapS = t.wrapT = THREE.RepeatWrapping; t.repeat.set(rep, rep);
+      t.wrapS = t.wrapT = THREE.RepeatWrapping; t.repeat.set(rep[0], rep[1]);
       t.anisotropy = renderer.capabilities.getMaxAnisotropy();
       if (srgb) t.encoding = THREE.sRGBEncoding;
       return t;
     };
     const SURF = {
-      floor: { mats: ['concrete'], rep: 1, normal: 1, rough: 1 },
-      wall: { mats: ['cwall'], rep: 1, normal: 1, rough: 1 },
-      ramp: { mats: ['ramp', 'nramp'], rep: 0.3, normal: 0.8, rough: 0.7 },
-      paint: { mats: ['paint'], rep: 2, normal: 0.6, rough: 0.8 },
-      plate: { mats: ['panel', 'npanel'], rep: 2, normal: 1, rough: 0.9 },
+      floor: { mats: ['concrete'], rep: [1, 1], normal: 1, rough: 1 },
+      wall: { mats: ['cwall', 'rock'], rep: [1, 1], normal: 1, rough: 1 },
+      // ramps: brushed metal drawn out along the ramp, so a whole ramp reads
+      // as one sheet instead of tiles
+      ramp: { mats: ['ramp', 'nramp'], rep: [0.12, 0.5], normal: 0.5, rough: 0.6 },
+      paint: { mats: ['paint'], rep: [2, 2], normal: 0.6, rough: 0.8 },
+      plate: { mats: ['panel', 'npanel'], rep: [2, 2], normal: 1, rough: 0.9 },
     };
     for (const [k, o] of Object.entries(SURF)) {
       if (!ST[k + '_c']) continue;
@@ -841,7 +843,7 @@ float bh(vec2 p) { p = mod(p, 289.0); return fract(sin(dot(p, vec2(12.9898, 78.2
     // attribute from buildGeometry), so the course pieces get a lit chamfer
     // and a thin shadow line inside it; a slow world-space wash breaks up
     // the tiling over long ramps and big pads
-    for (const name of ['concrete', 'cwall', 'ramp', 'nramp', 'panel', 'npanel', 'paint']) {
+    for (const name of ['concrete', 'cwall', 'rock', 'ramp', 'nramp', 'panel', 'npanel', 'paint']) {
       const m = MATS[name], prev = m.onBeforeCompile;
       m.customProgramCacheKey = () => 'surf-' + name;
       m.onBeforeCompile = (sh, r) => {
