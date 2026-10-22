@@ -1256,7 +1256,14 @@
         new THREE.GLTFLoader().parse(bin.buffer, '', res, (e) => { console.warn('model', k, e); res(null); });
       } catch (e) { console.warn('model', k, e); res(null); }
     });
-    return { city: parse('city'), runner: parse('runner') };
+    const runner = parse('runner');
+    // the parkour runner for the ghost and the preview; the X Bot stands in
+    // when it is missing, fails to load or lacks its run and idle clips
+    // (and always with ?runner=classic). The first-person body keeps the X Bot.
+    const classic = /[?&]runner=classic/.test(location.search);
+    const figure = (classic ? Promise.resolve(null) : parse('runner2'))
+      .then(g => g && ['run', 'idle'].every(n => g.animations.some(a => a.name === n)) ? g : runner);
+    return { city: parse('city'), runner, figure };
   })();
   // Instanced copies, grouped in square cells. A cell is drawn only when it
   // is in view and within its detail range; past that, buildings swap to the
@@ -1418,14 +1425,27 @@
   });
 
   // An animated runner: a copy of the model with its own materials, mixer and
-  // run / idle actions. Used for the ghost and the Cosmetics preview.
+  // one action per move. Used for the ghost and the Cosmetics preview. The
+  // parkour runner (runner2) has clips for every move; the X Bot has only run
+  // and idle, so it holds a frozen stride in the air and squashes to crouch.
   const RUNNER_H = 72;
+  // a replay sample's move: what the runner was doing, kept with the crouch bit
+  const MOVES = ['', 'slide', 'wallL', 'wallR', 'climb', 'vault', 'zip', 'mantle'];
+  const moveOf = (p) => p.slide ? 1 : p.wallrun ? (p.wallrun.side > 0 ? 3 : 2) : p.climb ? 4 : p.mantle ? (p.mantle.vault ? 5 : 7) : p.zip ? 6 : 0;
+  // move -> the clip it plays, tried in order
+  const RUNNER_STATES = {
+    idle: ['idle'], run: ['run'], sprint: ['sprint', 'run'], crouch: ['crouch', 'idle'], crouchRun: ['crouchRun', 'run'],
+    jump: ['jump', 'fall'], fall: ['fall'], slide: ['slide', 'crouch'], wallL: ['wallrunL', 'wallrun', 'run'], wallR: ['wallrunR', 'wallrun', 'run'],
+    climb: ['climb', 'fall'], mantle: ['mantle', 'climb', 'fall'], vault: ['vault', 'climb', 'fall'], zip: ['hang', 'fall'],
+  };
+  // one-shots play once and hold their last frame, skipping any wind-up (seconds)
+  const ONE_SHOT = { jump: 0.2, vault: 0.12 };
   function makeRunner(gltf, matFor) {
     const root = THREE.SkeletonUtils.clone(gltf.scene);
     const mats = {};
     root.traverse(o => {
       if (!o.isMesh) return;
-      const key = /joint/i.test(o.material.name) ? 'joints' : 'surface';
+      const key = /joint|accent/i.test(o.material.name) ? 'joints' : 'surface';
       o.material = mats[key] || (mats[key] = matFor(key));
       o.frustumCulled = false; o.castShadow = true;
     });
@@ -1440,18 +1460,43 @@
     inner.add(root); root.scale.multiplyScalar(s); root.position.y = -lo * s + 2; root.rotation.y = Math.PI;
     holder.add(inner);
     const mixer = new THREE.AnimationMixer(root);
-    const clip = (n) => gltf.animations.find(a => a.name === n);
-    const run = mixer.clipAction(clip('run')), idle = mixer.clipAction(clip('idle'));
-    run.play(); idle.play();
-    let w = 0;
+    const acts = {};
+    for (const a of gltf.animations) {
+      const act = mixer.clipAction(a);
+      if (a.name in ONE_SHOT) { act.setLoop(THREE.LoopOnce); act.clampWhenFinished = true; }
+      act.setEffectiveWeight(0); act.play();
+      acts[a.name] = { act, w: 0 };
+    }
+    const clipFor = (st) => (RUNNER_STATES[st] || [st]).find(n => acts[n]);
+    // the parkour runner has its own crouch and slide; the X Bot squashes instead
+    const squash = !acts.slide;
+    let cur = null;
     return {
-      root: holder, inner, mats,
-      // speed in units/s; in the air the stride holds still
-      update(dt, speed, air) {
-        const target = speed > 30 ? 1 : 0;
-        w += (target - w) * Math.min(1, dt * 8);
-        run.setEffectiveWeight(w); idle.setEffectiveWeight(1 - w);
-        run.setEffectiveTimeScale(air ? 0.05 : Math.max(0.6, Math.min(1.8, speed / 260)));
+      root: holder, inner, mats, squash,
+      // speed in units/s; air: off the ground; move: a MOVES name; vy: rising speed
+      update(dt, speed, air, move, vy, duck) {
+        let st = move && clipFor(move) && !(squash && move === 'slide') ? move
+          : air ? (vy > 40 ? 'jump' : 'fall')
+          : duck && !squash ? (speed > 30 ? 'crouchRun' : 'crouch')
+          : speed > 30 ? (speed > 520 ? 'sprint' : 'run') : 'idle';
+        let clip = clipFor(st);
+        // the X Bot in the air: hold the stride still, as before
+        let hold = false;
+        if (!clip || (air && clip === 'run')) { clip = speed > 30 || air ? 'run' : 'idle'; hold = air; }
+        if (clip !== cur) {
+          if (acts[clip] && clip in ONE_SHOT) { acts[clip].act.reset().play(); acts[clip].act.time = ONE_SHOT[clip]; }
+          cur = clip;
+        }
+        const k = Math.min(1, dt * 10);
+        for (const [n, a] of Object.entries(acts)) {
+          a.w += ((n === cur ? 1 : 0) - a.w) * k;
+          a.act.setEffectiveWeight(a.w);
+        }
+        const run = acts[cur];
+        if (run && (cur === 'run' || cur === 'sprint' || cur === 'crouchRun')) run.act.setEffectiveTimeScale(hold ? 0.05 : Math.max(0.6, Math.min(1.8, speed / (cur === 'sprint' ? 420 : 260))));
+        // no wallrun clip: lean into the wall instead
+        const lean = squash ? 0 : st === 'wallL' ? 0.38 : st === 'wallR' ? -0.38 : 0;
+        inner.rotation.z += (lean - inner.rotation.z) * Math.min(1, dt * 8);
         mixer.update(dt);
       },
     };
@@ -2280,13 +2325,13 @@ body.touch .mark.big { font-size: clamp(44px, min(14vw, 13vh), 96px); }
     // the animated runner takes over from the block figure once it loads
     const smat = mat.clone(); smat.skinning = true;
     let runner = null;
-    models.runner.then(g => { if (!g) return; runner = makeRunner(g, () => smat); root.add(runner.root); body.visible = false; });
+    models.figure.then(g => { if (!g) return; runner = makeRunner(g, () => smat); root.add(runner.root); body.visible = false; });
     const runs = {};
     let rec = null, phase = 0, match = 0;
     const gapEl = document.getElementById('ghostgap');
     const get = (course) => remote && remote.course === course ? remote.g : course in runs ? runs[course] : (runs[course] = load(GHOST_KEY + course));
     let remote = null; // someone else's run from the online board, raced instead of yours
-    const sample = () => rec.push(Math.round(player.pos[0]), Math.round(player.pos[1]), Math.round(player.pos[2]), Math.round(yaw * 100), player.ducked ? 1 : 0);
+    const sample = () => rec.push(Math.round(player.pos[0]), Math.round(player.pos[1]), Math.round(player.pos[2]), Math.round(yaw * 100), (player.ducked ? 1 : 0) + moveOf(player) * 2);
     const api = {
       start() { rec = []; sample(); },
       stop() { rec = null; },
@@ -2356,7 +2401,10 @@ body.touch .mark.big { font-size: clamp(44px, min(14vw, 13vh), 96px); }
       root.position.set(x, y, z);
       root.rotation.y = at(i, 3) / 100 + dy * k;
       const hs = Math.hypot(at(j, 0) - at(i, 0), at(j, 2) - at(i, 2)) / (g.e * TICK);
+      const vy = (at(j, 1) - at(i, 1)) / (g.e * TICK);
       const air = Math.abs(at(j, 1) - at(i, 1)) > 2;
+      // the crouch bit, and the move (runs saved before moves were kept have none)
+      const duck = at(i, 4) & 1, move = MOVES[at(i, 4) >> 1] || '';
       // waiting at the start it stands still rather than running on the spot
       const moving = t > 0;
       if (moving) phase += dt * Math.min(hs, 400) * 0.034;
@@ -2364,9 +2412,9 @@ body.touch .mark.big { font-size: clamp(44px, min(14vw, 13vh), 96px); }
       const lift = air && moving;
       legs[0].rotation.x = sw * 0.7 + (lift ? 0.5 : 0); legs[1].rotation.x = -sw * 0.7 - (lift ? 0.2 : 0);
       arms[0].rotation.x = -sw * 0.8 + (lift ? -1.2 : 0); arms[1].rotation.x = sw * 0.8 + (lift ? -1.2 : 0);
-      body.scale.y = at(i, 4) ? 0.72 : 1;
-      if (runner) { runner.update(dt, moving ? hs : 0, air && moving); runner.inner.scale.y = at(i, 4) ? 0.72 : 1; }
-      return { x, y, z, n, moving, hs, yaw: root.rotation.y, duck: !!at(i, 4), air };
+      body.scale.y = duck ? 0.72 : 1;
+      if (runner) { runner.update(dt, moving ? hs : 0, air && moving, moving ? move : '', vy, duck); runner.inner.scale.y = duck && runner.squash ? 0.72 : 1; }
+      return { x, y, z, n, moving, hs, yaw: root.rotation.y, duck: !!duck, air, move };
     }
     return api;
   })();
@@ -2569,7 +2617,7 @@ body.touch .mark.big { font-size: clamp(44px, min(14vw, 13vh), 96px); }
         return g;
       });
       parts = { bodyG, legs, arms };
-      models.runner.then(g => {
+      models.figure.then(g => {
         if (!g) return;
         const R = makeRunner(g, (key) => (mats[key] = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: key === 'joints' ? 0.45 : 0.6, metalness: key === 'joints' ? 0.2 : 0, skinning: true })));
         fig.add(R.root); bodyG.visible = false; parts.runner = R;
@@ -2614,7 +2662,9 @@ body.touch .mark.big { font-size: clamp(44px, min(14vw, 13vh), 96px); }
       parts.legs[0].rotation.x = sw * 0.75; parts.legs[1].rotation.x = -sw * 0.75;
       parts.arms[0].rotation.x = -sw * 0.8; parts.arms[1].rotation.x = sw * 0.8;
       parts.bodyG.position.y = Math.abs(Math.cos(st.t * 11)) * 3;
-      if (parts.runner) parts.runner.update(dt, 300, false);
+      // every few seconds the runner shows off a move: a slide, then a vault
+      const showT = st.t % 8;
+      if (parts.runner) parts.runner.update(dt, 300, false, showT > 3 && showT < 4.2 ? 'slide' : showT > 7 && showT < 7.9 ? 'vault' : '', 0, false);
       if (cycles(st.skin)) setAccent(accentAt(st.skin, now / 1000), st.skin.glow);
       trail.mat.uniforms.t.value = now / 1000;
       if (st.trail.id !== 'none') trail.update(fig.position.x, 0, fig.position.z, now / 1000, true);
