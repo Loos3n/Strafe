@@ -823,7 +823,7 @@ float bh(vec2 p) { p = mod(p, 289.0); return fract(sin(dot(p, vec2(12.9898, 78.2
     };
     const SURF = {
       floor: { mats: ['concrete'], rep: [1, 1], normal: 1, rough: 1 },
-      wall: { mats: ['cwall', 'rock'], rep: [1, 1], normal: 1, rough: 1 },
+      wall: { mats: ['cwall'], rep: [1, 1], normal: 1, rough: 1 },
       // ramps: brushed metal drawn out along the ramp, so a whole ramp reads
       // as one sheet instead of tiles
       ramp: { mats: ['ramp', 'nramp'], rep: [0.12, 0.5], normal: 0.5, rough: 0.6 },
@@ -843,7 +843,7 @@ float bh(vec2 p) { p = mod(p, 289.0); return fract(sin(dot(p, vec2(12.9898, 78.2
     // attribute from buildGeometry), so the course pieces get a lit chamfer
     // and a thin shadow line inside it; a slow world-space wash breaks up
     // the tiling over long ramps and big pads
-    for (const name of ['concrete', 'cwall', 'rock', 'ramp', 'nramp', 'panel', 'npanel', 'paint']) {
+    for (const name of ['concrete', 'cwall', 'ramp', 'nramp', 'panel', 'npanel', 'paint']) {
       const m = MATS[name], prev = m.onBeforeCompile;
       m.customProgramCacheKey = () => 'surf-' + name;
       m.onBeforeCompile = (sh, r) => {

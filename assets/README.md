@@ -21,7 +21,7 @@ The loaders in `vendor/` are three.js r128's `GLTFLoader.js` and
   X Bot stands in. The first-person body uses it too, its bones mapped to
   the X Bot's names (mixamoNames in game.js).
 - `tex/`: surface textures for the course pieces, from **ambientCG** (CC0 1.0,
-  ambientcg.com): Concrete 034 (floors and pads), Concrete 014 (walls and canyon cliffs),
+  ambientcg.com): Concrete 034 (floors and pads), Concrete 014 (walls),
   Metal 009 (ramps, drawn out along the ramp as one brushed sheet, and the red route pieces) and Diamond Plate
   008 A (blocks and lanes). `tools/pack-textures.py` turns the 1K-JPG
   downloads into a grey colour map (the level colours tint it), a normal map
