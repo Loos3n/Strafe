@@ -11477,6 +11477,12 @@ body.touch .mark.big { font-size: clamp(44px, min(14vw, 13vh), 96px); }
       const root = THREE.SkeletonUtils.clone(g.scene);
       const mats = { surface: M(0xf2f2ee, 0.6), joints: M(0xdb2f2a, 0.45) };
       mats.surface.skinning = mats.joints.skinning = true;
+      // the chest and collar right under the eye are cut away, so looking
+      // down or sliding never shows the inside of the body or a flat slab
+      for (const m of Object.values(mats)) m.onBeforeCompile = (sh) => {
+        sh.uniforms.uNear = FP_NEAR;
+        sh.fragmentShader = sh.fragmentShader.replace('void main() {', 'uniform float uNear;\nvoid main() {\n\tif (length(vViewPosition) < uNear) discard;');
+      };
       const bone = {};
       root.traverse(o => {
         if (o.isMesh) { o.material = /joint/i.test(o.material.name) ? mats.joints : mats.surface; o.frustumCulled = false; }
@@ -11602,6 +11608,7 @@ body.touch .mark.big { font-size: clamp(44px, min(14vw, 13vh), 96px); }
       if (fp.fingers.length) fp.holder.updateMatrixWorld(true);
     }
     const FCURL = 1.5, HAND = 0.85, REACH = [3, 0, 5];
+    const FP_NEAR = { value: 12 };
     const _e = new THREE.Vector3(), _m1 = new THREE.Matrix4(), _m2 = new THREE.Matrix4();
 
     const st = { phase: 0, act: null, actT: 0, actDur: 0, roll: 0 };
@@ -11637,7 +11644,8 @@ body.touch .mark.big { font-size: clamp(44px, min(14vw, 13vh), 96px); }
       const s = l.side, run = Math.min(1, hs / 260);
       const swing = Math.sin(st.phase + (s > 0 ? Math.PI : 0));
       switch (mode) {
-        case 'slide': return s < 0 ? { h: 1.45, k: -0.15, s: 0 } : { h: 1.1, k: -0.9, s: 0 };
+        // lead leg out straight, the other folded back under you, so no knee rises into the view
+        case 'slide': return s < 0 ? { h: 0.95, k: -0.05, s: 0 } : { h: 0.4, k: -1.9, s: 0 };
         case 'roll': return { h: 1.9, k: -2.2, s: 0 };
         case 'air': case 'surf': case 'zip': return { h: 0.55 + s * 0.15, k: -0.9, s: 0 };
         case 'climb': case 'wallrun': return { h: 0.5 + swing * 0.5, k: -0.9 - swing * 0.4, s: 0 };
@@ -11683,7 +11691,7 @@ body.touch .mark.big { font-size: clamp(44px, min(14vw, 13vh), 96px); }
       armsRoot.position.set(0, bob * 0.6 + dip * 0.25, 0);
       const eye = p.viewOffset;
       const slideBack = mode === 'slide' ? 10 : 0;
-      hips.position.set(0, -Math.min(eye, 64) + 34 + (p.ducked ? 6 : 0), 6 + slideBack);
+      hips.position.set(0, -Math.min(eye, 64) + 34 + (p.ducked ? 6 : 0) - (mode === 'slide' ? 8 : 0), 6 + slideBack);
       hips.rotation.x = mode === 'slide' ? -0.35 : 0;
       if (fp) poseModel();
     }
