@@ -18,4 +18,5 @@ The loaders in `vendor/` are three.js r128's `GLTFLoader.js` and
   Animation Library** 1 and 2 (CC0 1.0). Used for the ghost and the Cosmetics
   preview; `tools/pack-runner.mjs` rebuilds it from the pack's Standard glTF
   files. If it is missing or fails to load (or with `?runner=classic`), the
-  X Bot stands in. The first-person body still uses the X Bot.
+  X Bot stands in. The first-person body uses it too, its bones mapped to
+  the X Bot's names (mixamoNames in game.js).

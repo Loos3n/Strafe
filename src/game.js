@@ -2873,7 +2873,19 @@ body.touch .mark.big { font-size: clamp(44px, min(14vw, 13vh), 96px); }
     // of its limbs, so every move keeps its pose. The head is shrunk away so
     // the camera can sit inside it; look down and you see your own body.
     let fp = null;
-    models.runner.then(g => {
+    // the UAL mannequin's bones under the X Bot's (Mixamo) names
+    const UAL_BONES = { Hips: 'pelvis', Spine1: 'spine_02', Spine2: 'spine_03', UpLeg: 'thigh', Leg: 'calf', Foot: 'foot', Shoulder: 'clavicle', Arm: 'upperarm', ForeArm: 'lowerarm', Hand: 'hand' };
+    function mixamoNames(bone) {
+      if (bone.Hips || !bone.pelvis) return;
+      for (const [m, u] of Object.entries(UAL_BONES)) {
+        if (bone[u]) bone[m] = bone[u];
+        for (const [side, s] of [['Left', 'l'], ['Right', 'r']]) if (bone[u + '_' + s]) bone[side + m] = bone[u + '_' + s];
+      }
+      for (const [side, s] of [['Left', 'l'], ['Right', 'r']]) for (const f of ['Index', 'Middle', 'Ring', 'Pinky', 'Thumb']) for (const j of [1, 2, 3]) {
+        const b = bone[f.toLowerCase() + '_0' + j + '_' + s]; if (b) bone[side + 'Hand' + f + j] = b;
+      }
+    }
+    models.figure.then(g => {
       if (!g) return;
       const root = THREE.SkeletonUtils.clone(g.scene);
       const mats = { surface: M(0xf2f2ee, 0.6), joints: M(0xdb2f2a, 0.45) };
@@ -2883,6 +2895,15 @@ body.touch .mark.big { font-size: clamp(44px, min(14vw, 13vh), 96px); }
         if (o.isMesh) { o.material = /joint/i.test(o.material.name) ? mats.joints : mats.surface; o.frustumCulled = false; }
         if (o.isBone) bone[o.name.replace(/^mixamorig:?/, '')] = o;
       });
+      mixamoNames(bone);
+      // each bone's rest rotation in the model's frame (T-pose, arms out
+      // along X, facing +Z): the X Bot's bones all sit at identity there,
+      // the mannequin's don't, so model-frame axes are carried into each bone
+      root.updateMatrixWorld(true);
+      const rootQ = root.getWorldQuaternion(new THREE.Quaternion()).invert();
+      const restQ = new Map(Object.values(bone).map(b => [b, b.getWorldQuaternion(new THREE.Quaternion()).premultiply(rootQ).invert()]));
+      const local = (b, v) => v.clone().applyQuaternion(restQ.get(b)).normalize();
+      const modelPos = (b) => root.worldToLocal(b.getWorldPosition(new THREE.Vector3()));
       const holder = new THREE.Group();
       holder.add(root); root.rotation.y = Math.PI;
       holder.updateMatrixWorld(true);
@@ -2897,11 +2918,13 @@ body.touch .mark.big { font-size: clamp(44px, min(14vw, 13vh), 96px); }
       const bind = new Map(Object.values(bone).map(b => [b, b.quaternion.clone()]));
       const L = (n) => bone['Left' + n], R = (n) => bone['Right' + n];
       // [model bone, its child, rig piece from, rig piece to]
-      const chains = [];
+      const chains = [], palm = new Map();
       for (const [a, side] of [[arms[0], L], [arms[1], R]]) {
         // the forearm and hand also take a palm direction, so the wrist
         // turns the right way instead of whatever the shortest swing gives
         chains.push([side('Arm'), side('ForeArm'), a.shoulder, a.elbow], [side('ForeArm'), side('Hand'), a.elbow, a.wrist, a], [side('Hand'), side('HandMiddle1'), a.wrist, a.knuckles, a]);
+        // palm down (-Y in the model) in each arm bone's own frame
+        for (const n of ['ForeArm', 'Hand']) if (side(n)) palm.set(side(n), local(side(n), new THREE.Vector3(0, -1, 0)));
       }
       for (const [l, side] of [[legs[0], L], [legs[1], R]]) {
         chains.push([side('UpLeg'), side('Leg'), l.hip, l.knee], [side('Leg'), side('Foot'), l.knee, l.foot]);
@@ -2919,13 +2942,13 @@ body.touch .mark.big { font-size: clamp(44px, min(14vw, 13vh), 96px); }
       const fingers = [];
       for (const [a, side, sgn] of [[arms[0], 'Left', -1], [arms[1], 'Right', 1]]) {
         const ax = new THREE.Vector3(0, 0, sgn);
-        for (const f of ['Index', 'Middle', 'Ring', 'Pinky']) for (const j of [1, 2, 3]) { const b = bone[side + 'Hand' + f + j]; if (b) fingers.push([b, a, ax, j === 1 ? 0.8 : 1]); }
+        for (const f of ['Index', 'Middle', 'Ring', 'Pinky']) for (const j of [1, 2, 3]) { const b = bone[side + 'Hand' + f + j]; if (b) fingers.push([b, a, local(b, ax), j === 1 ? 0.8 : 1]); }
         // the thumb folds in across the curled fingers
-        const t1 = bone[side + 'HandThumb1'], t3 = bone[side + 'HandThumb3'];
-        if (t1 && t3) {
-          const d = t3.position.clone().add(bone[side + 'HandThumb2'].position).normalize();
+        const t1 = bone[side + 'HandThumb1'], t2 = bone[side + 'HandThumb2'], t3 = bone[side + 'HandThumb3'];
+        if (t1 && t2 && t3) {
+          const d = modelPos(t3).sub(modelPos(t1)).normalize();
           const tax = d.clone().cross(new THREE.Vector3(0, -1, 0)).normalize();
-          fingers.push([t1, a, new THREE.Vector3(1, 0, 0), 0.8], [bone[side + 'HandThumb2'], a, tax, 0.6], [t3, a, tax, 0.7]);
+          fingers.push([t1, a, local(t1, new THREE.Vector3(1, 0, 0)), 0.8], [t2, a, local(t2, tax), 0.6], [t3, a, local(t3, tax), 0.7]);
         }
       }
       bone.LeftHand.scale.setScalar(HAND); bone.RightHand.scale.setScalar(HAND);
@@ -2933,7 +2956,7 @@ body.touch .mark.big { font-size: clamp(44px, min(14vw, 13vh), 96px); }
       // hands sit further from the eye (smaller, higher, off to the sides)
       // without bending the arms up into view
       const reach = [[L('Shoulder') || L('Arm'), -1], [R('Shoulder') || R('Arm'), 1]].map(([b, s]) => [b, b.position.clone(), s]);
-      fp = { holder, mats, bind, chains, hipH, lift, fingers, reach, spine: [bone.Spine1, bone.Spine2].filter(Boolean) };
+      fp = { holder, mats, bind, chains, palm, hipH, lift, fingers, reach, spine: [bone.Spine1, bone.Spine2].filter(Boolean) };
       cosmetics.apply();
     });
     const _a = new THREE.Vector3(), _b = new THREE.Vector3(), _c = new THREE.Vector3(), _d = new THREE.Vector3();
@@ -2970,7 +2993,8 @@ body.touch .mark.big { font-size: clamp(44px, min(14vw, 13vh), 96px); }
         from.getWorldPosition(_a); to.getWorldPosition(_b); _b.sub(_a).normalize();
         if (arm) {
           // bone frame from rest: along the bone (+-X), palm down (-Y)
-          _c.copy(child.position).normalize(); _d.set(0, -1, 0);
+          _c.copy(child.position).normalize(); _d.copy(fp.palm.get(b) || _d.set(0, -1, 0));
+          _d.addScaledVector(_c, -_d.dot(_c)).normalize();
           _m1.makeBasis(_c, _d, _e.crossVectors(_c, _d));
           // target: along the rig limb, palm turned in from the rig's palm side
           arm.wrist.getWorldQuaternion(_w); _d.set(0, 0, -1).applyQuaternion(_w);
