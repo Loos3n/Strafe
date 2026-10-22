@@ -618,34 +618,6 @@
       for (let i = 1; i < 4; i++) { g.fillRect(i * 128 - 1, 0, 2, s); g.fillRect(0, i * 128 - 1, s, 2); }
       g.fillStyle = 'rgba(20,30,40,0.16)'; g.fillRect(0, 0, 3, s); g.fillRect(0, 0, s, 3);
     }),
-    // office facade: two floors and two bays per tile, dark glazing in white frames
-    facade: canvasTex(512, (g, s) => {
-      g.fillStyle = '#f2f1ec'; g.fillRect(0, 0, s, s);
-      speckle(g, s, 2500, 0.06);
-      for (let fy = 0; fy < 2; fy++) for (let fx = 0; fx < 2; fx++) {
-        const x = fx * 256 + 26, y = fy * 256 + 40, w = 204, h = 172;
-        const gr = g.createLinearGradient(0, y, 0, y + h);
-        const lit = rand() < 0.2;
-        gr.addColorStop(0, lit ? '#9fb3c2' : '#7f97aa'); gr.addColorStop(0.55, lit ? '#5f7586' : '#3d5163'); gr.addColorStop(1, '#2c3a47');
-        g.fillStyle = gr; g.fillRect(x, y, w, h);
-        g.fillStyle = 'rgba(255,255,255,0.18)';
-        g.beginPath(); g.moveTo(x + w * 0.15, y); g.lineTo(x + w * 0.45, y); g.lineTo(x + w * 0.1, y + h); g.lineTo(x - w * 0.2 < x ? x : x, y + h); g.closePath(); g.fill();
-        g.fillStyle = '#d9dad5'; g.fillRect(x + w / 2 - 3, y, 6, h); g.fillRect(x, y + h * 0.62, w, 5);
-        g.fillStyle = 'rgba(0,0,0,0.18)'; g.fillRect(x, y + h, w, 6);
-      }
-      g.fillStyle = 'rgba(20,30,40,0.12)'; g.fillRect(0, 0, s, 3); g.fillRect(0, 256, s, 3);
-    }),
-    // curtain wall: tall panes with thin mullions and a little variation
-    glass: canvasTex(512, (g, s) => {
-      for (let i = 0; i < 4; i++) for (let j = 0; j < 4; j++) {
-        const v = 200 + rand() * 40;
-        const gr = g.createLinearGradient(0, j * 128, 0, j * 128 + 128);
-        gr.addColorStop(0, 'rgb(' + (v + 15 | 0) + ',' + (v + 20 | 0) + ',' + (v + 25 | 0) + ')'); gr.addColorStop(1, 'rgb(' + (v - 40 | 0) + ',' + (v - 30 | 0) + ',' + (v - 20 | 0) + ')');
-        g.fillStyle = gr; g.fillRect(i * 128, j * 128, 128, 128);
-      }
-      g.fillStyle = '#5e6c78';
-      for (let i = 0; i < 4; i++) { g.fillRect(i * 128, 0, 5, s); g.fillRect(0, i * 128, s, 4); }
-    }),
     // surf ramps: clean panels with soft lengthwise streaks and seams
     ramp: canvasTex(512, (g, s) => {
       g.fillStyle = '#ffffff'; g.fillRect(0, 0, s, s);
@@ -713,39 +685,100 @@
   const std = (o) => new THREE.MeshStandardMaterial(Object.assign({ vertexColors: true, envMap, envMapIntensity: 0.4, roughness: 0.85, metalness: 0 }, o));
   const MATS = {
     concrete: std({ map: TEX.concrete }),
-    facade: std({ map: TEX.facade, roughness: 0.6, envMapIntensity: 0.8 }),
-    glass: std({ map: TEX.glass, roughness: 0.18, metalness: 0.35, envMapIntensity: 1.1 }),
+    cwall: std({ map: TEX.concrete }),
+    facade: std({ roughness: 0.8, envMapIntensity: 0.8 }),
+    glass: std({ roughness: 0.5, envMapIntensity: 0.8 }),
     ramp: std({ map: TEX.ramp, roughness: 0.4, metalness: 0.05, envMapIntensity: 0.45 }),
     panel: std({ map: TEX.panel, roughness: 0.55, envMapIntensity: 0.3 }),
     paint: std({ map: TEX.paint, roughness: 0.5, envMapIntensity: 0.3, emissive: 0xb3120a, emissiveIntensity: 0.15 }),
     asphalt: std({ map: TEX.asphalt, roughness: 0.95 }),
     rock: std({ map: TEX.rock, roughness: 0.95 }),
   };
-  // night: lit windows (emissive maps matching the facade and curtain wall
-  // layouts) and neon pieces that glow in their own colour
+  // buildings: drawn by a shader instead of a texture. Each wall gets its own
+  // colour, windows sit in dark frames with sills, and the glass shows the sky.
+  // Close up there are rooms behind the windows (interior mapping: the view
+  // ray is traced into a box behind each pane), further out the panes turn
+  // into plain reflective glass so they don't shimmer. At night some rooms
+  // are lit (bldLit: 0 day, 0.4 dusk, 1 night).
+  const bldLit = { value: 0 };
+  function facadeShader(m, glass) {
+    m.customProgramCacheKey = () => glass ? 'bld-glass' : 'bld-facade';
+    m.onBeforeCompile = (sh) => {
+      sh.uniforms.bldLit = bldLit;
+      sh.uniforms.bldZen = sky.material.uniforms.zenith; sh.uniforms.bldHor = sky.material.uniforms.horizon;
+      sh.vertexShader = 'varying vec3 vWP;\nvarying vec3 vNW;\n' + sh.vertexShader.replace('#include <begin_vertex>', '#include <begin_vertex>\n vWP = (modelMatrix * vec4(transformed, 1.0)).xyz; vNW = normalize(mat3(modelMatrix) * objectNormal);');
+      sh.fragmentShader = `varying vec3 vWP;
+varying vec3 vNW;
+uniform float bldLit;
+uniform vec3 bldZen, bldHor;
+float bh(vec2 p) { p = mod(p, 289.0); return fract(sin(dot(p, vec2(12.9898, 78.233))) * 43758.5453); }
+` + sh.fragmentShader
+        .replace('#include <map_fragment>', `#include <map_fragment>
+  float winM = 0.0; vec3 winE = vec3(0.0);
+  vec3 bn = normalize(vNW);
+  if (abs(bn.y) < 0.5) {
+    vec3 bt = normalize(vec3(-bn.z, 0.0, bn.x));
+    // one id per wall: its plane, which way it faces and where along it
+    // (not the vertex colour, the fake AO darkens that toward the foot)
+    float wid = bh(vec2(floor(dot(vWP, bn) / 16.0 + 0.37), floor(dot(vWP, bt) / 4000.0) + floor(bn.x * 2.0 + 3.0) * 7.0 + floor(bn.z * 2.0 + 3.0)));
+    vec2 cs = ${glass ? 'vec2(96.0, 128.0)' : 'wid < 0.5 ? vec2(128.0, 128.0) : vec2(96.0, 128.0)'};
+    vec2 f = vec2(dot(vWP, bt), vWP.y), cell = floor(f / cs), lc = fract(f / cs);
+    vec2 w0 = ${glass ? 'vec2(0.03, 0.2)' : 'wid < 0.5 ? vec2(0.14, 0.24) : vec2(0.1, 0.3)'};
+    vec2 w1 = ${glass ? 'vec2(0.97, 0.98)' : 'wid < 0.5 ? vec2(0.86, 0.88) : vec2(0.9, 0.86)'};
+    float aa = fwidth(lc.x) * 1.5 + 0.002;
+    vec2 inW = smoothstep(w0, w0 + aa, lc) * (1.0 - smoothstep(w1 - aa, w1, lc));
+    winM = inW.x * inW.y;
+    vec2 fo = smoothstep(w0 - 0.035, w0 - 0.035 + aa, lc) * (1.0 - smoothstep(w1 + 0.035 - aa, w1 + 0.035, lc));
+    float frameM = fo.x * fo.y * (1.0 - winM);
+    ${glass ? `
+    diffuseColor.rgb *= 0.55;` : `
+    // pale stone, sandstone, grey concrete, terracotta or slate
+    float pk = bh(vec2(wid, 3.0));
+    vec3 pal = pk < 0.3 ? vec3(0.93, 0.91, 0.86) : pk < 0.5 ? vec3(0.86, 0.76, 0.62) : pk < 0.7 ? vec3(0.7, 0.71, 0.72) : pk < 0.85 ? vec3(0.78, 0.6, 0.5) : vec3(0.55, 0.58, 0.62);
+    float sill = smoothstep(w0.y - 0.05, w0.y - 0.03, lc.y) * (1.0 - smoothstep(w0.y - 0.005, w0.y, lc.y));
+    float slab = 1.0 - smoothstep(0.0, 0.03, min(lc.y, 1.0 - lc.y));
+    diffuseColor.rgb *= pow(pal, vec3(2.2)) * 1.1 * (1.0 + sill * 0.25 - slab * 0.18);`}
+    diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.16, 0.17, 0.19), frameM);
+    if (winM > 0.0) {
+      vec2 wl = (lc - w0) / (w1 - w0), wsz = cs * (w1 - w0);
+      vec3 V = normalize(vWP - cameraPosition);
+      // the room: a box as wide and tall as the pane and a bay deep
+      vec3 d = vec3(dot(V, bt) / wsz.x, V.y / wsz.y, -dot(V, bn) / (cs.x * 1.1));
+      vec3 p = vec3(wl, 0.0), tq = (step(0.0, d) - p) / d;
+      float tm = min(min(tq.x, tq.y), tq.z);
+      vec3 hp = p + d * tm;
+      float rid = bh(cell + wid * 17.0);
+      vec3 wallC = mix(vec3(0.62, 0.56, 0.48), vec3(0.45, 0.5, 0.56), rid), c;
+      if (tm == tq.z) {
+        c = wallC * 0.8; // back wall, sometimes with a picture on it
+        if (rid > 0.5 && abs(hp.x - 0.3 - rid * 0.3) < 0.12 && hp.y > 0.35 && hp.y < 0.62) c = mix(vec3(0.25, 0.35, 0.45), vec3(0.6, 0.4, 0.3), rid);
+      } else if (tm == tq.y) {
+        if (d.y < 0.0) c = mix(vec3(0.36, 0.3, 0.25), vec3(0.3, 0.32, 0.35), step(0.5, rid)) * (0.7 + 0.3 * hp.z);
+        else c = vec3(0.5) + (1.0 - smoothstep(0.05, 0.12, length(hp.xz - 0.5))) * 0.35; // ceiling and its lamp
+      } else c = wallC * 0.65;
+      c *= mix(1.0, 0.35, clamp(hp.z, 0.0, 1.0));
+      // blinds part way down in some windows
+      c = mix(c, vec3(0.8, 0.78, 0.72), step(0.55, bh(cell * 3.1 + wid)) * step(1.0 - wl.y, 0.25 + 0.6 * bh(cell + 2.0)));
+      float lit = step(0.62, bh(cell * 1.7 + wid * 5.0));
+      // far away the rooms average out instead of shimmering
+      c = mix(c, mix(vec3(0.16, 0.18, 0.2), vec3(0.6, 0.48, 0.32) + 0.15 * vec3(rid, rid, 0.6), lit * bldLit), smoothstep(1.0 / 45.0, 1.0 / 20.0, fwidth(f.x) / cs.x));
+      c *= ${glass ? 'vec3(0.55, 0.7, 0.8)' : 'vec3(0.75, 0.82, 0.86)'};
+      // the sky in the glass, each pane a touch off flat so it breaks up
+      vec3 rn = normalize(bn + 0.035 * vec3(bh(cell + 9.0) - 0.5, bh(cell + 4.0) - 0.5, bh(cell + 1.0) - 0.5));
+      vec3 rv = reflect(V, rn);
+      float fr = 0.12 + 0.88 * pow(1.0 - max(0.0, dot(-V, rn)), 4.0);
+      vec3 skyR = rv.y > 0.0 ? mix(pow(bldHor, vec3(2.2)), pow(bldZen, vec3(2.2)), sqrt(rv.y)) : pow(bldHor, vec3(2.2)) * 0.45;
+      winE = c * (1.0 - fr) * mix(0.35, 0.06 + lit * 0.8, bldLit) * mix(vec3(1.0), vec3(1.2, 1.0, 0.75), bldLit * lit) + skyR * fr * ${glass ? '1.0' : '0.85'};
+      diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.015, 0.02, 0.025), winM);
+    }
+  }`)
+        .replace('#include <roughnessmap_fragment>', '#include <roughnessmap_fragment>\n  roughnessFactor = mix(roughnessFactor, 1.0, winM);')
+        .replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\n  totalEmissiveRadiance += winE * winM;');
+    };
+  }
+  facadeShader(MATS.facade, false);
+  facadeShader(MATS.glass, true);
   {
-    let sd = 4242;
-    const rn = () => ((sd = (sd * 16807) % 2147483647) / 2147483647);
-    const warm = () => ['#ffd9a0', '#ffe8c4', '#fff4e0', '#bfe4ff', '#ffc98a'][(rn() * 5) | 0];
-    const winF = canvasTex(512, (g, s) => {
-      g.fillStyle = '#000'; g.fillRect(0, 0, s, s);
-      for (let fy = 0; fy < 2; fy++) for (let fx = 0; fx < 2; fx++) {
-        if (rn() < 0.72) continue;
-        const x = fx * 256 + 26, y = fy * 256 + 40, w = 204, h = 172;
-        g.globalAlpha = 0.55 + rn() * 0.45; g.fillStyle = warm(); g.fillRect(x, y, w, h);
-        g.globalAlpha = 1; g.fillStyle = '#000'; g.fillRect(x + w / 2 - 3, y, 6, h); g.fillRect(x, y + h * 0.62, w, 5);
-      }
-    });
-    const winG = canvasTex(512, (g, s) => {
-      g.fillStyle = '#000'; g.fillRect(0, 0, s, s);
-      for (let i = 0; i < 4; i++) for (let j = 0; j < 4; j++) {
-        if (rn() < 0.75) continue;
-        g.globalAlpha = 0.35 + rn() * 0.5; g.fillStyle = warm(); g.fillRect(i * 128 + 5, j * 128 + 4, 123, 124);
-      }
-      g.globalAlpha = 1;
-    });
-    MATS.facade.emissiveMap = winF; MATS.facade.emissive.set(0x000000);
-    MATS.glass.emissiveMap = winG; MATS.glass.emissive.set(0x000000);
     // neon: the emissive light takes the vertex colour, so each piece glows its own hue
     const neonMat = (o) => {
       const m = std(Object.assign({ emissive: 0xffffff, emissiveIntensity: 0.3 }, o));
@@ -775,6 +808,60 @@
     document.body.dataset.colors = settings.colors;
   }
   applyColors();
+  // scanned surfaces (assets/tex, CC0 sets from ambientCG packed by
+  // tools/pack-textures.py): grey colour that the level's colours tint, a
+  // normal map and a roughness map. Each slot tiles every 256 units / rep.
+  // Without them (a build missing assets/tex) the canvas textures stay.
+  {
+    const ST = window.STRAFE_TEX || {}, loader = new THREE.TextureLoader();
+    const load = (k, rep, srgb) => {
+      const t = loader.load(ST[k]);
+      t.wrapS = t.wrapT = THREE.RepeatWrapping; t.repeat.set(rep[0], rep[1]);
+      t.anisotropy = renderer.capabilities.getMaxAnisotropy();
+      if (srgb) t.encoding = THREE.sRGBEncoding;
+      return t;
+    };
+    const SURF = {
+      floor: { mats: ['concrete'], rep: [1, 1], normal: 1, rough: 1 },
+      wall: { mats: ['cwall'], rep: [1, 1], normal: 1, rough: 1 },
+      // ramps: brushed metal drawn out along the ramp, so a whole ramp reads
+      // as one sheet instead of tiles
+      ramp: { mats: ['ramp', 'nramp'], rep: [0.12, 0.5], normal: 0.5, rough: 0.6 },
+      paint: { mats: ['paint'], rep: [2, 2], normal: 0.6, rough: 0.8 },
+      plate: { mats: ['panel', 'npanel'], rep: [2, 2], normal: 1, rough: 0.9 },
+    };
+    for (const [k, o] of Object.entries(SURF)) {
+      if (!ST[k + '_c']) continue;
+      const map = load(k + '_c', o.rep, true), nrm = load(k + '_n', o.rep, false), rgh = load(k + '_r', o.rep, false);
+      for (const name of o.mats) {
+        const m = MATS[name];
+        m.map = map; m.normalMap = nrm; m.normalScale = new THREE.Vector2(o.normal, o.normal); m.roughnessMap = rgh; m.roughness = o.rough;
+        m.needsUpdate = true;
+      }
+    }
+    // every face knows how far each point is from its edges (the edge
+    // attribute from buildGeometry), so the course pieces get a lit chamfer
+    // and a thin shadow line inside it; a slow world-space wash breaks up
+    // the tiling over long ramps and big pads
+    for (const name of ['concrete', 'cwall', 'ramp', 'nramp', 'panel', 'npanel', 'paint']) {
+      const m = MATS[name], prev = m.onBeforeCompile;
+      m.customProgramCacheKey = () => 'surf-' + name;
+      m.onBeforeCompile = (sh, r) => {
+        if (prev) prev(sh, r);
+        sh.vertexShader = 'attribute vec4 edge;\nvarying vec4 vEdge;\nvarying vec3 vSW;\n' + sh.vertexShader.replace('#include <begin_vertex>', '#include <begin_vertex>\n vEdge = edge; vSW = (modelMatrix * vec4(transformed, 1.0)).xyz;');
+        sh.fragmentShader = 'varying vec4 vEdge;\nvarying vec3 vSW;\nfloat sh3(vec3 p) { p = mod(p, 289.0); return fract(sin(dot(p, vec3(12.9898, 78.233, 37.719))) * 43758.5453); }\nfloat sn3(vec3 p) { vec3 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);\n return mix(mix(mix(sh3(i), sh3(i + vec3(1, 0, 0)), f.x), mix(sh3(i + vec3(0, 1, 0)), sh3(i + vec3(1, 1, 0)), f.x), f.y), mix(mix(sh3(i + vec3(0, 0, 1)), sh3(i + vec3(1, 0, 1)), f.x), mix(sh3(i + vec3(0, 1, 1)), sh3(i + vec3(1, 1, 1)), f.x), f.y), f.z); }\n' + sh.fragmentShader.replace('#include <map_fragment>', `#include <map_fragment>
+  diffuseColor.rgb *= 0.86 + 0.18 * sn3(vSW / 700.0) + 0.08 * sn3(vSW / 170.0);
+  if (vEdge.z > 1.0) {
+    float ed = min(min(vEdge.x, vEdge.z - vEdge.x), min(vEdge.y, vEdge.w - vEdge.y));
+    float aa = fwidth(ed) * 1.2;
+    float lip = 1.0 - smoothstep(2.5, 2.5 + aa, ed);
+    float groove = 1.0 - smoothstep(0.0, aa + 0.8, abs(ed - 4.5));
+    diffuseColor.rgb *= 1.0 + lip * 0.45 - groove * 0.3;
+  }`);
+      };
+      m.needsUpdate = true;
+    }
+  }
   const GLASS_COLOR = map.COLORS.glass;
   // which material a face gets
   function bucketFor(b, n) {
@@ -786,7 +873,7 @@
     if (k === 'block' || k === 'lane') return 'panel';
     if (k === 'street') return 'asphalt';
     if (k === 'building' && !up) return b.props.color === GLASS_COLOR ? 'glass' : 'facade';
-    return 'concrete';
+    return up ? 'concrete' : 'cwall';
   }
 
   // ------------------------------------------------------------ night and dusk
@@ -797,9 +884,9 @@
   const DAY = { fog: 0xcfe3ef, near: 4000, far: 26000, zen: 0x3d8fd6, hor: 0xcfe3ef, gnd: 0xb9c9d3, cloud: 0xfffdf7, hs: 0xe6f2ff, hg: 0x8a8f99, hi: 0.72, sc: 0xfff6e8, si: 0.95, exp: 0.98 };
   const NIGHT = { fog: 0x0c1124, near: 2500, far: 21000, zen: 0x01030a, hor: 0x1b1f3d, gnd: 0x080a12, cloud: 0x161b30, hs: 0x5b6cab, hg: 0x2a1c34, hi: 0.2, sc: 0x9fb2ff, si: 0.12, exp: 1.0 };
   const DUSK = { fog: 0xd99a7c, near: 3500, far: 26000, zen: 0x27336e, hor: 0xf3a271, gnd: 0x4a3a46, cloud: 0xf7b18e, hs: 0xffcfae, hg: 0x5a4050, hi: 0.55, sc: 0xffa461, si: 1.15, exp: 1.0 };
-  const THEMES = { day: { L: DAY, env: 1, win: 0x000000, glass: 0x000000, sun: [0.45, 0.8, 0.35] },
-    night: { L: NIGHT, env: 0.12, win: 0xb3b3b3, glass: 0x999999, sun: [0.45, 0.8, 0.35] },
-    dusk: { L: DUSK, env: 0.55, win: 0x4d4d4d, glass: 0x3a3a3a, sun: [-0.62, 0.17, -0.77] } };
+  const THEMES = { day: { L: DAY, env: 1, lit: 0, sun: [0.45, 0.8, 0.35] },
+    night: { L: NIGHT, env: 0.12, lit: 1, sun: [0.45, 0.8, 0.35] },
+    dusk: { L: DUSK, env: 0.55, lit: 0.4, sun: [-0.62, 0.17, -0.77] } };
   let theme = 'day';
   const envDay = new Map(Object.values(MATS).map(m => [m, m.envMapIntensity]));
   function setTheme(name) {
@@ -813,7 +900,7 @@
     sun.color.set(L.sc); sun.intensity = L.si;
     renderer.toneMappingExposure = L.exp;
     for (const [m, v] of envDay) m.envMapIntensity = v * T.env;
-    MATS.facade.emissive.set(T.win); MATS.glass.emissive.set(T.glass);
+    bldLit.value = T.lit;
     if (animated.lava) { animated.lava.uniforms.fogColor.value.set(L.fog); animated.lava.uniforms.fogNear.value = L.near; animated.lava.uniforms.fogFar.value = L.far; }
     backdrop.setTheme(name, L.fog);
     post.setTheme(name);
@@ -999,7 +1086,7 @@
     const ins = faceInsets();
     const out = {};
     const color = new THREE.Color();
-    const get = (name) => out[name] || (out[name] = { pos: [], nor: [], uv: [], col: [], lines: [] });
+    const get = (name) => out[name] || (out[name] = { pos: [], nor: [], uv: [], col: [], lines: [], edge: [] });
     for (const b of world.brushes.concat(deco.brushes)) {
       if (!filter(b)) continue;
       color.setHex(b.props.color || 0xffffff).convertSRGBToLinear();
@@ -1016,19 +1103,21 @@
         const name = bucketOf ? bucketOf(b, n) : 'all';
         const o = get(name);
         const ax = Math.abs(n[0]), ay = Math.abs(n[1]), az = Math.abs(n[2]);
-        let proj;
-        if (name === 'panel') {
-          // fit the panel texture to the face once
-          let lo = [1e9, 1e9], hi = [-1e9, -1e9];
-          const raw = ay >= ax && ay >= az ? (p) => [p[0], p[2]] : ax >= az ? (p) => [p[2], p[1]] : (p) => [p[0], p[1]];
-          for (const p of v) { const t = raw(p); lo = [Math.min(lo[0], t[0]), Math.min(lo[1], t[1])]; hi = [Math.max(hi[0], t[0]), Math.max(hi[1], t[1])]; }
-          const sx = hi[0] - lo[0] || 1, sy = hi[1] - lo[1] || 1;
-          proj = (p) => { const t = raw(p); return [(t[0] - lo[0]) / sx, (t[1] - lo[1]) / sy]; };
-        } else {
-          proj = ay >= ax && ay >= az ? (p) => [p[0] / 256, p[2] / 256]
-            : ax >= az ? (p) => [p[2] / 256, p[1] / 256] : (p) => [p[0] / 256, p[1] / 256];
-        }
-        const shade = n[1] > 0.5 ? 1.0 : n[1] < -0.5 ? 0.62 : 0.94;
+        // the face's own frame: across it and up it, in world units. Slanted
+        // faces (ramps) map in it so the texture isn't stretched down the
+        // slope, and it gives each point its distance to the face's edges
+        const ref = ay > 0.99 ? [0, 0, 1] : [0, 1, 0];
+        let tx = ref[1] * n[2] - ref[2] * n[1], ty = ref[2] * n[0] - ref[0] * n[2], tz = ref[0] * n[1] - ref[1] * n[0];
+        const tl = Math.hypot(tx, ty, tz) || 1; tx /= tl; ty /= tl; tz /= tl;
+        const bx = n[1] * tz - n[2] * ty, by = n[2] * tx - n[0] * tz, bz = n[0] * ty - n[1] * tx;
+        const loc = (p) => [p[0] * tx + p[1] * ty + p[2] * tz, p[0] * bx + p[1] * by + p[2] * bz];
+        let elo = [1e9, 1e9], ehi = [-1e9, -1e9];
+        for (const p of v) { const t = loc(p); elo = [Math.min(elo[0], t[0]), Math.min(elo[1], t[1])]; ehi = [Math.max(ehi[0], t[0]), Math.max(ehi[1], t[1])]; }
+        const proj = Math.max(ax, ay, az) < 0.99 ? (p) => { const t = loc(p); return [t[0] / 256, t[1] / 256]; }
+          : ay >= ax && ay >= az ? (p) => [p[0] / 256, p[2] / 256]
+          : ax >= az ? (p) => [p[2] / 256, p[1] / 256] : (p) => [p[0] / 256, p[1] / 256];
+        // tops lit, sides clearly darker so edges read, undersides darkest
+        const shade = n[1] > 0.5 ? 1.0 : n[1] < -0.5 ? 0.55 : n[1] > 0.05 ? 0.95 : 0.84;
         let verts = v;
         const e1 = [v[1][0] - v[0][0], v[1][1] - v[0][1], v[1][2] - v[0][2]];
         const e2 = [v[2][0] - v[0][0], v[2][1] - v[0][1], v[2][2] - v[0][2]];
@@ -1039,6 +1128,7 @@
             o.pos.push(p[0], p[1], p[2]);
             o.nor.push(n[0], n[1], n[2]);
             const t = proj(p); o.uv.push(t[0], t[1]);
+            const el = loc(p); o.edge.push(el[0] - elo[0], el[1] - elo[1], ehi[0] - elo[0], ehi[1] - elo[1]);
             // fake ambient occlusion: walls darken toward their foot
             let ao = 1;
             if (ay < 0.5) { const r = Math.min(1, (p[1] - y0) / Math.min(700, hgt)); ao = 0.6 + 0.4 * Math.sqrt(r); }
@@ -1058,6 +1148,7 @@
       g.setAttribute('normal', new THREE.Float32BufferAttribute(o.nor, 3));
       g.setAttribute('uv', new THREE.Float32BufferAttribute(o.uv, 2));
       g.setAttribute('color', new THREE.Float32BufferAttribute(o.col, 3));
+      g.setAttribute('edge', new THREE.Float32BufferAttribute(o.edge, 4));
       const lg = new THREE.BufferGeometry();
       lg.setAttribute('position', new THREE.Float32BufferAttribute(o.lines, 3));
       res[name] = { g, lg };
