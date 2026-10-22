@@ -685,7 +685,6 @@
   const std = (o) => new THREE.MeshStandardMaterial(Object.assign({ vertexColors: true, envMap, envMapIntensity: 0.4, roughness: 0.85, metalness: 0 }, o));
   const MATS = {
     concrete: std({ map: TEX.concrete }),
-    cwall: std({ map: TEX.concrete }),
     facade: std({ roughness: 0.8, envMapIntensity: 0.8 }),
     glass: std({ roughness: 0.5, envMapIntensity: 0.8 }),
     ramp: std({ map: TEX.ramp, roughness: 0.4, metalness: 0.05, envMapIntensity: 0.45 }),
@@ -808,58 +807,6 @@ float bh(vec2 p) { p = mod(p, 289.0); return fract(sin(dot(p, vec2(12.9898, 78.2
     document.body.dataset.colors = settings.colors;
   }
   applyColors();
-  // scanned surfaces (assets/tex, CC0 sets from ambientCG packed by
-  // tools/pack-textures.py): grey colour that the level's colours tint, a
-  // normal map and a roughness map. Each slot tiles every 256 units / rep.
-  // Without them (a build missing assets/tex) the canvas textures stay.
-  {
-    const ST = window.STRAFE_TEX || {}, loader = new THREE.TextureLoader();
-    const load = (k, rep, srgb) => {
-      const t = loader.load(ST[k]);
-      t.wrapS = t.wrapT = THREE.RepeatWrapping; t.repeat.set(rep, rep);
-      t.anisotropy = renderer.capabilities.getMaxAnisotropy();
-      if (srgb) t.encoding = THREE.sRGBEncoding;
-      return t;
-    };
-    const SURF = {
-      floor: { mats: ['concrete'], rep: 1, normal: 1, rough: 1 },
-      wall: { mats: ['cwall'], rep: 1, normal: 1, rough: 1 },
-      ramp: { mats: ['ramp', 'nramp'], rep: 0.3, normal: 0.8, rough: 0.7 },
-      paint: { mats: ['paint'], rep: 2, normal: 0.6, rough: 0.8 },
-      plate: { mats: ['panel', 'npanel'], rep: 2, normal: 1, rough: 0.9 },
-    };
-    for (const [k, o] of Object.entries(SURF)) {
-      if (!ST[k + '_c']) continue;
-      const map = load(k + '_c', o.rep, true), nrm = load(k + '_n', o.rep, false), rgh = load(k + '_r', o.rep, false);
-      for (const name of o.mats) {
-        const m = MATS[name];
-        m.map = map; m.normalMap = nrm; m.normalScale = new THREE.Vector2(o.normal, o.normal); m.roughnessMap = rgh; m.roughness = o.rough;
-        m.needsUpdate = true;
-      }
-    }
-    // every face knows how far each point is from its edges (the edge
-    // attribute from buildGeometry), so the course pieces get a lit chamfer
-    // and a thin shadow line inside it; a slow world-space wash breaks up
-    // the tiling over long ramps and big pads
-    for (const name of ['concrete', 'cwall', 'ramp', 'nramp', 'panel', 'npanel', 'paint']) {
-      const m = MATS[name], prev = m.onBeforeCompile;
-      m.customProgramCacheKey = () => 'surf-' + name;
-      m.onBeforeCompile = (sh, r) => {
-        if (prev) prev(sh, r);
-        sh.vertexShader = 'attribute vec4 edge;\nvarying vec4 vEdge;\nvarying vec3 vSW;\n' + sh.vertexShader.replace('#include <begin_vertex>', '#include <begin_vertex>\n vEdge = edge; vSW = (modelMatrix * vec4(transformed, 1.0)).xyz;');
-        sh.fragmentShader = 'varying vec4 vEdge;\nvarying vec3 vSW;\nfloat sh3(vec3 p) { p = mod(p, 289.0); return fract(sin(dot(p, vec3(12.9898, 78.233, 37.719))) * 43758.5453); }\nfloat sn3(vec3 p) { vec3 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);\n return mix(mix(mix(sh3(i), sh3(i + vec3(1, 0, 0)), f.x), mix(sh3(i + vec3(0, 1, 0)), sh3(i + vec3(1, 1, 0)), f.x), f.y), mix(mix(sh3(i + vec3(0, 0, 1)), sh3(i + vec3(1, 0, 1)), f.x), mix(sh3(i + vec3(0, 1, 1)), sh3(i + vec3(1, 1, 1)), f.x), f.y), f.z); }\n' + sh.fragmentShader.replace('#include <map_fragment>', `#include <map_fragment>
-  diffuseColor.rgb *= 0.86 + 0.18 * sn3(vSW / 700.0) + 0.08 * sn3(vSW / 170.0);
-  if (vEdge.z > 1.0) {
-    float ed = min(min(vEdge.x, vEdge.z - vEdge.x), min(vEdge.y, vEdge.w - vEdge.y));
-    float aa = fwidth(ed) * 1.2;
-    float lip = 1.0 - smoothstep(2.5, 2.5 + aa, ed);
-    float groove = 1.0 - smoothstep(0.0, aa + 0.8, abs(ed - 4.5));
-    diffuseColor.rgb *= 1.0 + lip * 0.45 - groove * 0.3;
-  }`);
-      };
-      m.needsUpdate = true;
-    }
-  }
   const GLASS_COLOR = map.COLORS.glass;
   // which material a face gets
   function bucketFor(b, n) {
@@ -871,7 +818,7 @@ float bh(vec2 p) { p = mod(p, 289.0); return fract(sin(dot(p, vec2(12.9898, 78.2
     if (k === 'block' || k === 'lane') return 'panel';
     if (k === 'street') return 'asphalt';
     if (k === 'building' && !up) return b.props.color === GLASS_COLOR ? 'glass' : 'facade';
-    return up ? 'concrete' : 'cwall';
+    return 'concrete';
   }
 
   // ------------------------------------------------------------ night and dusk
@@ -1084,7 +1031,7 @@ float bh(vec2 p) { p = mod(p, 289.0); return fract(sin(dot(p, vec2(12.9898, 78.2
     const ins = faceInsets();
     const out = {};
     const color = new THREE.Color();
-    const get = (name) => out[name] || (out[name] = { pos: [], nor: [], uv: [], col: [], lines: [], edge: [] });
+    const get = (name) => out[name] || (out[name] = { pos: [], nor: [], uv: [], col: [], lines: [] });
     for (const b of world.brushes.concat(deco.brushes)) {
       if (!filter(b)) continue;
       color.setHex(b.props.color || 0xffffff).convertSRGBToLinear();
@@ -1101,21 +1048,19 @@ float bh(vec2 p) { p = mod(p, 289.0); return fract(sin(dot(p, vec2(12.9898, 78.2
         const name = bucketOf ? bucketOf(b, n) : 'all';
         const o = get(name);
         const ax = Math.abs(n[0]), ay = Math.abs(n[1]), az = Math.abs(n[2]);
-        // the face's own frame: across it and up it, in world units. Slanted
-        // faces (ramps) map in it so the texture isn't stretched down the
-        // slope, and it gives each point its distance to the face's edges
-        const ref = ay > 0.99 ? [0, 0, 1] : [0, 1, 0];
-        let tx = ref[1] * n[2] - ref[2] * n[1], ty = ref[2] * n[0] - ref[0] * n[2], tz = ref[0] * n[1] - ref[1] * n[0];
-        const tl = Math.hypot(tx, ty, tz) || 1; tx /= tl; ty /= tl; tz /= tl;
-        const bx = n[1] * tz - n[2] * ty, by = n[2] * tx - n[0] * tz, bz = n[0] * ty - n[1] * tx;
-        const loc = (p) => [p[0] * tx + p[1] * ty + p[2] * tz, p[0] * bx + p[1] * by + p[2] * bz];
-        let elo = [1e9, 1e9], ehi = [-1e9, -1e9];
-        for (const p of v) { const t = loc(p); elo = [Math.min(elo[0], t[0]), Math.min(elo[1], t[1])]; ehi = [Math.max(ehi[0], t[0]), Math.max(ehi[1], t[1])]; }
-        const proj = Math.max(ax, ay, az) < 0.99 ? (p) => { const t = loc(p); return [t[0] / 256, t[1] / 256]; }
-          : ay >= ax && ay >= az ? (p) => [p[0] / 256, p[2] / 256]
-          : ax >= az ? (p) => [p[2] / 256, p[1] / 256] : (p) => [p[0] / 256, p[1] / 256];
-        // tops lit, sides clearly darker so edges read, undersides darkest
-        const shade = n[1] > 0.5 ? 1.0 : n[1] < -0.5 ? 0.55 : n[1] > 0.05 ? 0.95 : 0.84;
+        let proj;
+        if (name === 'panel') {
+          // fit the panel texture to the face once
+          let lo = [1e9, 1e9], hi = [-1e9, -1e9];
+          const raw = ay >= ax && ay >= az ? (p) => [p[0], p[2]] : ax >= az ? (p) => [p[2], p[1]] : (p) => [p[0], p[1]];
+          for (const p of v) { const t = raw(p); lo = [Math.min(lo[0], t[0]), Math.min(lo[1], t[1])]; hi = [Math.max(hi[0], t[0]), Math.max(hi[1], t[1])]; }
+          const sx = hi[0] - lo[0] || 1, sy = hi[1] - lo[1] || 1;
+          proj = (p) => { const t = raw(p); return [(t[0] - lo[0]) / sx, (t[1] - lo[1]) / sy]; };
+        } else {
+          proj = ay >= ax && ay >= az ? (p) => [p[0] / 256, p[2] / 256]
+            : ax >= az ? (p) => [p[2] / 256, p[1] / 256] : (p) => [p[0] / 256, p[1] / 256];
+        }
+        const shade = n[1] > 0.5 ? 1.0 : n[1] < -0.5 ? 0.62 : 0.94;
         let verts = v;
         const e1 = [v[1][0] - v[0][0], v[1][1] - v[0][1], v[1][2] - v[0][2]];
         const e2 = [v[2][0] - v[0][0], v[2][1] - v[0][1], v[2][2] - v[0][2]];
@@ -1126,7 +1071,6 @@ float bh(vec2 p) { p = mod(p, 289.0); return fract(sin(dot(p, vec2(12.9898, 78.2
             o.pos.push(p[0], p[1], p[2]);
             o.nor.push(n[0], n[1], n[2]);
             const t = proj(p); o.uv.push(t[0], t[1]);
-            const el = loc(p); o.edge.push(el[0] - elo[0], el[1] - elo[1], ehi[0] - elo[0], ehi[1] - elo[1]);
             // fake ambient occlusion: walls darken toward their foot
             let ao = 1;
             if (ay < 0.5) { const r = Math.min(1, (p[1] - y0) / Math.min(700, hgt)); ao = 0.6 + 0.4 * Math.sqrt(r); }
@@ -1146,7 +1090,6 @@ float bh(vec2 p) { p = mod(p, 289.0); return fract(sin(dot(p, vec2(12.9898, 78.2
       g.setAttribute('normal', new THREE.Float32BufferAttribute(o.nor, 3));
       g.setAttribute('uv', new THREE.Float32BufferAttribute(o.uv, 2));
       g.setAttribute('color', new THREE.Float32BufferAttribute(o.col, 3));
-      g.setAttribute('edge', new THREE.Float32BufferAttribute(o.edge, 4));
       const lg = new THREE.BufferGeometry();
       lg.setAttribute('position', new THREE.Float32BufferAttribute(o.lines, 3));
       res[name] = { g, lg };

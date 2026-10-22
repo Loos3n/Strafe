@@ -23,10 +23,7 @@ html = html.replace('<!--__WEB_APP__-->\n', web ? web + '\n' : '');
 const vendor = ['GLTFLoader.js', 'SkeletonUtils.js'].map(f => fs.readFileSync(path.join(__dirname, 'vendor', f), 'utf8')).join('\n');
 const assets = {};
 for (const f of fs.readdirSync(path.join(__dirname, 'assets')).filter(f => f.endsWith('.glb'))) assets[f.replace('.glb', '')] = fs.readFileSync(path.join(__dirname, 'assets', f)).toString('base64');
-// surface textures (assets/tex, see tools/pack-textures.py) as data URLs
-const texDir = path.join(__dirname, 'assets', 'tex'), tex = {};
-if (fs.existsSync(texDir)) for (const f of fs.readdirSync(texDir).filter(f => f.endsWith('.jpg'))) tex[f.replace('.jpg', '')] = 'data:image/jpeg;base64,' + fs.readFileSync(path.join(texDir, f)).toString('base64');
-html = html.split('__VENDOR__').join(vendor).split('__ASSETS__').join('window.STRAFE_ASSETS = ' + JSON.stringify(assets) + ';\nwindow.STRAFE_TEX = ' + JSON.stringify(tex) + ';');
+html = html.split('__VENDOR__').join(vendor).split('__ASSETS__').join('window.STRAFE_ASSETS = ' + JSON.stringify(assets) + ';');
 fs.mkdirSync(path.dirname(out), { recursive: true });
 fs.writeFileSync(out, html);
 console.log('wrote', out, html.length, 'bytes');
