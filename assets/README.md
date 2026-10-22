@@ -13,3 +13,10 @@ physics and the bot tests use the code-built level geometry in `src/map.js`.
 
 The loaders in `vendor/` are three.js r128's `GLTFLoader.js` and
 `SkeletonUtils.js` (MIT).
+- `runner2.glb`: the mannequin and its moves (idle, run, sprint, crouch,
+  jump, fall, slide, climb, vault and more) from Quaternius' **Universal
+  Animation Library** 1 and 2 (CC0 1.0). Used for the ghost and the Cosmetics
+  preview; `tools/pack-runner.mjs` rebuilds it from the pack's Standard glTF
+  files. If it is missing or fails to load (or with `?runner=classic`), the
+  X Bot stands in. The first-person body uses it too, its bones mapped to
+  the X Bot's names (mixamoNames in game.js).

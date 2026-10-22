@@ -1256,7 +1256,14 @@
         new THREE.GLTFLoader().parse(bin.buffer, '', res, (e) => { console.warn('model', k, e); res(null); });
       } catch (e) { console.warn('model', k, e); res(null); }
     });
-    return { city: parse('city'), runner: parse('runner') };
+    const runner = parse('runner');
+    // the parkour runner for the ghost and the preview; the X Bot stands in
+    // when it is missing, fails to load or lacks its run and idle clips
+    // (and always with ?runner=classic). The first-person body keeps the X Bot.
+    const classic = /[?&]runner=classic/.test(location.search);
+    const figure = (classic ? Promise.resolve(null) : parse('runner2'))
+      .then(g => g && ['run', 'idle'].every(n => g.animations.some(a => a.name === n)) ? g : runner);
+    return { city: parse('city'), runner, figure };
   })();
   // Instanced copies, grouped in square cells. A cell is drawn only when it
   // is in view and within its detail range; past that, buildings swap to the
@@ -1418,14 +1425,27 @@
   });
 
   // An animated runner: a copy of the model with its own materials, mixer and
-  // run / idle actions. Used for the ghost and the Cosmetics preview.
+  // one action per move. Used for the ghost and the Cosmetics preview. The
+  // parkour runner (runner2) has clips for every move; the X Bot has only run
+  // and idle, so it holds a frozen stride in the air and squashes to crouch.
   const RUNNER_H = 72;
+  // a replay sample's move: what the runner was doing, kept with the crouch bit
+  const MOVES = ['', 'slide', 'wallL', 'wallR', 'climb', 'vault', 'zip', 'mantle'];
+  const moveOf = (p) => p.slide ? 1 : p.wallrun ? (p.wallrun.side > 0 ? 3 : 2) : p.climb ? 4 : p.mantle ? (p.mantle.vault ? 5 : 7) : p.zip ? 6 : 0;
+  // move -> the clip it plays, tried in order
+  const RUNNER_STATES = {
+    idle: ['idle'], run: ['run'], sprint: ['sprint', 'run'], crouch: ['crouch', 'idle'], crouchRun: ['crouchRun', 'run'],
+    jump: ['jump', 'fall'], fall: ['fall'], slide: ['slide', 'crouch'], wallL: ['wallrunL', 'wallrun', 'run'], wallR: ['wallrunR', 'wallrun', 'run'],
+    climb: ['climb', 'fall'], mantle: ['mantle', 'climb', 'fall'], vault: ['vault', 'climb', 'fall'], zip: ['hang', 'fall'],
+  };
+  // one-shots play once and hold their last frame, skipping any wind-up (seconds)
+  const ONE_SHOT = { jump: 0.2, vault: 0.12 };
   function makeRunner(gltf, matFor) {
     const root = THREE.SkeletonUtils.clone(gltf.scene);
     const mats = {};
     root.traverse(o => {
       if (!o.isMesh) return;
-      const key = /joint/i.test(o.material.name) ? 'joints' : 'surface';
+      const key = /joint|accent/i.test(o.material.name) ? 'joints' : 'surface';
       o.material = mats[key] || (mats[key] = matFor(key));
       o.frustumCulled = false; o.castShadow = true;
     });
@@ -1440,18 +1460,43 @@
     inner.add(root); root.scale.multiplyScalar(s); root.position.y = -lo * s + 2; root.rotation.y = Math.PI;
     holder.add(inner);
     const mixer = new THREE.AnimationMixer(root);
-    const clip = (n) => gltf.animations.find(a => a.name === n);
-    const run = mixer.clipAction(clip('run')), idle = mixer.clipAction(clip('idle'));
-    run.play(); idle.play();
-    let w = 0;
+    const acts = {};
+    for (const a of gltf.animations) {
+      const act = mixer.clipAction(a);
+      if (a.name in ONE_SHOT) { act.setLoop(THREE.LoopOnce); act.clampWhenFinished = true; }
+      act.setEffectiveWeight(0); act.play();
+      acts[a.name] = { act, w: 0 };
+    }
+    const clipFor = (st) => (RUNNER_STATES[st] || [st]).find(n => acts[n]);
+    // the parkour runner has its own crouch and slide; the X Bot squashes instead
+    const squash = !acts.slide;
+    let cur = null;
     return {
-      root: holder, inner, mats,
-      // speed in units/s; in the air the stride holds still
-      update(dt, speed, air) {
-        const target = speed > 30 ? 1 : 0;
-        w += (target - w) * Math.min(1, dt * 8);
-        run.setEffectiveWeight(w); idle.setEffectiveWeight(1 - w);
-        run.setEffectiveTimeScale(air ? 0.05 : Math.max(0.6, Math.min(1.8, speed / 260)));
+      root: holder, inner, mats, squash,
+      // speed in units/s; air: off the ground; move: a MOVES name; vy: rising speed
+      update(dt, speed, air, move, vy, duck) {
+        let st = move && clipFor(move) && !(squash && move === 'slide') ? move
+          : air ? (vy > 40 ? 'jump' : 'fall')
+          : duck && !squash ? (speed > 30 ? 'crouchRun' : 'crouch')
+          : speed > 30 ? (speed > 520 ? 'sprint' : 'run') : 'idle';
+        let clip = clipFor(st);
+        // the X Bot in the air: hold the stride still, as before
+        let hold = false;
+        if (!clip || (air && clip === 'run')) { clip = speed > 30 || air ? 'run' : 'idle'; hold = air; }
+        if (clip !== cur) {
+          if (acts[clip] && clip in ONE_SHOT) { acts[clip].act.reset().play(); acts[clip].act.time = ONE_SHOT[clip]; }
+          cur = clip;
+        }
+        const k = Math.min(1, dt * 10);
+        for (const [n, a] of Object.entries(acts)) {
+          a.w += ((n === cur ? 1 : 0) - a.w) * k;
+          a.act.setEffectiveWeight(a.w);
+        }
+        const run = acts[cur];
+        if (run && (cur === 'run' || cur === 'sprint' || cur === 'crouchRun')) run.act.setEffectiveTimeScale(hold ? 0.05 : Math.max(0.6, Math.min(1.8, speed / (cur === 'sprint' ? 420 : 260))));
+        // no wallrun clip: lean into the wall instead
+        const lean = squash ? 0 : st === 'wallL' ? 0.38 : st === 'wallR' ? -0.38 : 0;
+        inner.rotation.z += (lean - inner.rotation.z) * Math.min(1, dt * 8);
         mixer.update(dt);
       },
     };
@@ -2280,13 +2325,13 @@ body.touch .mark.big { font-size: clamp(44px, min(14vw, 13vh), 96px); }
     // the animated runner takes over from the block figure once it loads
     const smat = mat.clone(); smat.skinning = true;
     let runner = null;
-    models.runner.then(g => { if (!g) return; runner = makeRunner(g, () => smat); root.add(runner.root); body.visible = false; });
+    models.figure.then(g => { if (!g) return; runner = makeRunner(g, () => smat); root.add(runner.root); body.visible = false; });
     const runs = {};
     let rec = null, phase = 0, match = 0;
     const gapEl = document.getElementById('ghostgap');
     const get = (course) => remote && remote.course === course ? remote.g : course in runs ? runs[course] : (runs[course] = load(GHOST_KEY + course));
     let remote = null; // someone else's run from the online board, raced instead of yours
-    const sample = () => rec.push(Math.round(player.pos[0]), Math.round(player.pos[1]), Math.round(player.pos[2]), Math.round(yaw * 100), player.ducked ? 1 : 0);
+    const sample = () => rec.push(Math.round(player.pos[0]), Math.round(player.pos[1]), Math.round(player.pos[2]), Math.round(yaw * 100), (player.ducked ? 1 : 0) + moveOf(player) * 2);
     const api = {
       start() { rec = []; sample(); },
       stop() { rec = null; },
@@ -2356,7 +2401,10 @@ body.touch .mark.big { font-size: clamp(44px, min(14vw, 13vh), 96px); }
       root.position.set(x, y, z);
       root.rotation.y = at(i, 3) / 100 + dy * k;
       const hs = Math.hypot(at(j, 0) - at(i, 0), at(j, 2) - at(i, 2)) / (g.e * TICK);
+      const vy = (at(j, 1) - at(i, 1)) / (g.e * TICK);
       const air = Math.abs(at(j, 1) - at(i, 1)) > 2;
+      // the crouch bit, and the move (runs saved before moves were kept have none)
+      const duck = at(i, 4) & 1, move = MOVES[at(i, 4) >> 1] || '';
       // waiting at the start it stands still rather than running on the spot
       const moving = t > 0;
       if (moving) phase += dt * Math.min(hs, 400) * 0.034;
@@ -2364,9 +2412,9 @@ body.touch .mark.big { font-size: clamp(44px, min(14vw, 13vh), 96px); }
       const lift = air && moving;
       legs[0].rotation.x = sw * 0.7 + (lift ? 0.5 : 0); legs[1].rotation.x = -sw * 0.7 - (lift ? 0.2 : 0);
       arms[0].rotation.x = -sw * 0.8 + (lift ? -1.2 : 0); arms[1].rotation.x = sw * 0.8 + (lift ? -1.2 : 0);
-      body.scale.y = at(i, 4) ? 0.72 : 1;
-      if (runner) { runner.update(dt, moving ? hs : 0, air && moving); runner.inner.scale.y = at(i, 4) ? 0.72 : 1; }
-      return { x, y, z, n, moving, hs, yaw: root.rotation.y, duck: !!at(i, 4), air };
+      body.scale.y = duck ? 0.72 : 1;
+      if (runner) { runner.update(dt, moving ? hs : 0, air && moving, moving ? move : '', vy, duck); runner.inner.scale.y = duck && runner.squash ? 0.72 : 1; }
+      return { x, y, z, n, moving, hs, yaw: root.rotation.y, duck: !!duck, air, move };
     }
     return api;
   })();
@@ -2569,7 +2617,7 @@ body.touch .mark.big { font-size: clamp(44px, min(14vw, 13vh), 96px); }
         return g;
       });
       parts = { bodyG, legs, arms };
-      models.runner.then(g => {
+      models.figure.then(g => {
         if (!g) return;
         const R = makeRunner(g, (key) => (mats[key] = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: key === 'joints' ? 0.45 : 0.6, metalness: key === 'joints' ? 0.2 : 0, skinning: true })));
         fig.add(R.root); bodyG.visible = false; parts.runner = R;
@@ -2614,7 +2662,9 @@ body.touch .mark.big { font-size: clamp(44px, min(14vw, 13vh), 96px); }
       parts.legs[0].rotation.x = sw * 0.75; parts.legs[1].rotation.x = -sw * 0.75;
       parts.arms[0].rotation.x = -sw * 0.8; parts.arms[1].rotation.x = sw * 0.8;
       parts.bodyG.position.y = Math.abs(Math.cos(st.t * 11)) * 3;
-      if (parts.runner) parts.runner.update(dt, 300, false);
+      // every few seconds the runner shows off a move: a slide, then a vault
+      const showT = st.t % 8;
+      if (parts.runner) parts.runner.update(dt, 300, false, showT > 3 && showT < 4.2 ? 'slide' : showT > 7 && showT < 7.9 ? 'vault' : '', 0, false);
       if (cycles(st.skin)) setAccent(accentAt(st.skin, now / 1000), st.skin.glow);
       trail.mat.uniforms.t.value = now / 1000;
       if (st.trail.id !== 'none') trail.update(fig.position.x, 0, fig.position.z, now / 1000, true);
@@ -2823,16 +2873,43 @@ body.touch .mark.big { font-size: clamp(44px, min(14vw, 13vh), 96px); }
     // of its limbs, so every move keeps its pose. The head is shrunk away so
     // the camera can sit inside it; look down and you see your own body.
     let fp = null;
-    models.runner.then(g => {
+    // the UAL mannequin's bones under the X Bot's (Mixamo) names
+    const UAL_BONES = { Hips: 'pelvis', Spine1: 'spine_02', Spine2: 'spine_03', UpLeg: 'thigh', Leg: 'calf', Foot: 'foot', Shoulder: 'clavicle', Arm: 'upperarm', ForeArm: 'lowerarm', Hand: 'hand' };
+    function mixamoNames(bone) {
+      if (bone.Hips || !bone.pelvis) return;
+      for (const [m, u] of Object.entries(UAL_BONES)) {
+        if (bone[u]) bone[m] = bone[u];
+        for (const [side, s] of [['Left', 'l'], ['Right', 'r']]) if (bone[u + '_' + s]) bone[side + m] = bone[u + '_' + s];
+      }
+      for (const [side, s] of [['Left', 'l'], ['Right', 'r']]) for (const f of ['Index', 'Middle', 'Ring', 'Pinky', 'Thumb']) for (const j of [1, 2, 3]) {
+        const b = bone[f.toLowerCase() + '_0' + j + '_' + s]; if (b) bone[side + 'Hand' + f + j] = b;
+      }
+    }
+    models.figure.then(g => {
       if (!g) return;
       const root = THREE.SkeletonUtils.clone(g.scene);
       const mats = { surface: M(0xf2f2ee, 0.6), joints: M(0xdb2f2a, 0.45) };
       mats.surface.skinning = mats.joints.skinning = true;
+      // the chest and collar right under the eye are cut away, so looking
+      // down or sliding never shows the inside of the body or a flat slab
+      for (const m of Object.values(mats)) m.onBeforeCompile = (sh) => {
+        sh.uniforms.uNear = FP_NEAR;
+        sh.fragmentShader = sh.fragmentShader.replace('void main() {', 'uniform float uNear;\nvoid main() {\n\tif (length(vViewPosition) < uNear) discard;');
+      };
       const bone = {};
       root.traverse(o => {
         if (o.isMesh) { o.material = /joint/i.test(o.material.name) ? mats.joints : mats.surface; o.frustumCulled = false; }
         if (o.isBone) bone[o.name.replace(/^mixamorig:?/, '')] = o;
       });
+      mixamoNames(bone);
+      // each bone's rest rotation in the model's frame (T-pose, arms out
+      // along X, facing +Z): the X Bot's bones all sit at identity there,
+      // the mannequin's don't, so model-frame axes are carried into each bone
+      root.updateMatrixWorld(true);
+      const rootQ = root.getWorldQuaternion(new THREE.Quaternion()).invert();
+      const restQ = new Map(Object.values(bone).map(b => [b, b.getWorldQuaternion(new THREE.Quaternion()).premultiply(rootQ).invert()]));
+      const local = (b, v) => v.clone().applyQuaternion(restQ.get(b)).normalize();
+      const modelPos = (b) => root.worldToLocal(b.getWorldPosition(new THREE.Vector3()));
       const holder = new THREE.Group();
       holder.add(root); root.rotation.y = Math.PI;
       holder.updateMatrixWorld(true);
@@ -2847,11 +2924,13 @@ body.touch .mark.big { font-size: clamp(44px, min(14vw, 13vh), 96px); }
       const bind = new Map(Object.values(bone).map(b => [b, b.quaternion.clone()]));
       const L = (n) => bone['Left' + n], R = (n) => bone['Right' + n];
       // [model bone, its child, rig piece from, rig piece to]
-      const chains = [];
+      const chains = [], palm = new Map();
       for (const [a, side] of [[arms[0], L], [arms[1], R]]) {
         // the forearm and hand also take a palm direction, so the wrist
         // turns the right way instead of whatever the shortest swing gives
         chains.push([side('Arm'), side('ForeArm'), a.shoulder, a.elbow], [side('ForeArm'), side('Hand'), a.elbow, a.wrist, a], [side('Hand'), side('HandMiddle1'), a.wrist, a.knuckles, a]);
+        // palm down (-Y in the model) in each arm bone's own frame
+        for (const n of ['ForeArm', 'Hand']) if (side(n)) palm.set(side(n), local(side(n), new THREE.Vector3(0, -1, 0)));
       }
       for (const [l, side] of [[legs[0], L], [legs[1], R]]) {
         chains.push([side('UpLeg'), side('Leg'), l.hip, l.knee], [side('Leg'), side('Foot'), l.knee, l.foot]);
@@ -2869,13 +2948,13 @@ body.touch .mark.big { font-size: clamp(44px, min(14vw, 13vh), 96px); }
       const fingers = [];
       for (const [a, side, sgn] of [[arms[0], 'Left', -1], [arms[1], 'Right', 1]]) {
         const ax = new THREE.Vector3(0, 0, sgn);
-        for (const f of ['Index', 'Middle', 'Ring', 'Pinky']) for (const j of [1, 2, 3]) { const b = bone[side + 'Hand' + f + j]; if (b) fingers.push([b, a, ax, j === 1 ? 0.8 : 1]); }
+        for (const f of ['Index', 'Middle', 'Ring', 'Pinky']) for (const j of [1, 2, 3]) { const b = bone[side + 'Hand' + f + j]; if (b) fingers.push([b, a, local(b, ax), j === 1 ? 0.8 : 1]); }
         // the thumb folds in across the curled fingers
-        const t1 = bone[side + 'HandThumb1'], t3 = bone[side + 'HandThumb3'];
-        if (t1 && t3) {
-          const d = t3.position.clone().add(bone[side + 'HandThumb2'].position).normalize();
+        const t1 = bone[side + 'HandThumb1'], t2 = bone[side + 'HandThumb2'], t3 = bone[side + 'HandThumb3'];
+        if (t1 && t2 && t3) {
+          const d = modelPos(t3).sub(modelPos(t1)).normalize();
           const tax = d.clone().cross(new THREE.Vector3(0, -1, 0)).normalize();
-          fingers.push([t1, a, new THREE.Vector3(1, 0, 0), 0.8], [bone[side + 'HandThumb2'], a, tax, 0.6], [t3, a, tax, 0.7]);
+          fingers.push([t1, a, local(t1, new THREE.Vector3(1, 0, 0)), 0.8], [t2, a, local(t2, tax), 0.6], [t3, a, local(t3, tax), 0.7]);
         }
       }
       bone.LeftHand.scale.setScalar(HAND); bone.RightHand.scale.setScalar(HAND);
@@ -2883,7 +2962,7 @@ body.touch .mark.big { font-size: clamp(44px, min(14vw, 13vh), 96px); }
       // hands sit further from the eye (smaller, higher, off to the sides)
       // without bending the arms up into view
       const reach = [[L('Shoulder') || L('Arm'), -1], [R('Shoulder') || R('Arm'), 1]].map(([b, s]) => [b, b.position.clone(), s]);
-      fp = { holder, mats, bind, chains, hipH, lift, fingers, reach, spine: [bone.Spine1, bone.Spine2].filter(Boolean) };
+      fp = { holder, mats, bind, chains, palm, hipH, lift, fingers, reach, spine: [bone.Spine1, bone.Spine2].filter(Boolean) };
       cosmetics.apply();
     });
     const _a = new THREE.Vector3(), _b = new THREE.Vector3(), _c = new THREE.Vector3(), _d = new THREE.Vector3();
@@ -2920,7 +2999,8 @@ body.touch .mark.big { font-size: clamp(44px, min(14vw, 13vh), 96px); }
         from.getWorldPosition(_a); to.getWorldPosition(_b); _b.sub(_a).normalize();
         if (arm) {
           // bone frame from rest: along the bone (+-X), palm down (-Y)
-          _c.copy(child.position).normalize(); _d.set(0, -1, 0);
+          _c.copy(child.position).normalize(); _d.copy(fp.palm.get(b) || _d.set(0, -1, 0));
+          _d.addScaledVector(_c, -_d.dot(_c)).normalize();
           _m1.makeBasis(_c, _d, _e.crossVectors(_c, _d));
           // target: along the rig limb, palm turned in from the rig's palm side
           arm.wrist.getWorldQuaternion(_w); _d.set(0, 0, -1).applyQuaternion(_w);
@@ -2941,6 +3021,7 @@ body.touch .mark.big { font-size: clamp(44px, min(14vw, 13vh), 96px); }
       if (fp.fingers.length) fp.holder.updateMatrixWorld(true);
     }
     const FCURL = 1.5, HAND = 0.85, REACH = [3, 0, 5];
+    const FP_NEAR = { value: 12 };
     const _e = new THREE.Vector3(), _m1 = new THREE.Matrix4(), _m2 = new THREE.Matrix4();
 
     const st = { phase: 0, act: null, actT: 0, actDur: 0, roll: 0 };
@@ -2976,7 +3057,8 @@ body.touch .mark.big { font-size: clamp(44px, min(14vw, 13vh), 96px); }
       const s = l.side, run = Math.min(1, hs / 260);
       const swing = Math.sin(st.phase + (s > 0 ? Math.PI : 0));
       switch (mode) {
-        case 'slide': return s < 0 ? { h: 1.45, k: -0.15, s: 0 } : { h: 1.1, k: -0.9, s: 0 };
+        // lead leg out straight, the other folded back under you, so no knee rises into the view
+        case 'slide': return s < 0 ? { h: 0.95, k: -0.05, s: 0 } : { h: 0.4, k: -1.9, s: 0 };
         case 'roll': return { h: 1.9, k: -2.2, s: 0 };
         case 'air': case 'surf': case 'zip': return { h: 0.55 + s * 0.15, k: -0.9, s: 0 };
         case 'climb': case 'wallrun': return { h: 0.5 + swing * 0.5, k: -0.9 - swing * 0.4, s: 0 };
@@ -3022,7 +3104,7 @@ body.touch .mark.big { font-size: clamp(44px, min(14vw, 13vh), 96px); }
       armsRoot.position.set(0, bob * 0.6 + dip * 0.25, 0);
       const eye = p.viewOffset;
       const slideBack = mode === 'slide' ? 10 : 0;
-      hips.position.set(0, -Math.min(eye, 64) + 34 + (p.ducked ? 6 : 0), 6 + slideBack);
+      hips.position.set(0, -Math.min(eye, 64) + 34 + (p.ducked ? 6 : 0) - (mode === 'slide' ? 8 : 0), 6 + slideBack);
       hips.rotation.x = mode === 'slide' ? -0.35 : 0;
       if (fp) poseModel();
     }
