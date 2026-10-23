@@ -127,6 +127,12 @@
     }
     save(BEST_KEY, best); save(SPLITS_KEY, bestSplits); save(flag, 1);
   }
+  // a checkpoint added mid-level renumbers the ones after it: old splits no longer line up
+  for (const [flag, list] of [['strafe.cps.v1', ['s1']]]) {
+    if (load(flag)) continue;
+    for (const c of list) delete bestSplits[c];
+    save(SPLITS_KEY, bestSplits); save(flag, 1);
+  }
 
   // ------------------------------------------------------------ world
   const map = window.StrafeMap.buildMap(P);
@@ -977,7 +983,12 @@ float bh(vec2 p) { p = mod(p, 289.0); return fract(sin(dot(p, vec2(12.9898, 78.2
       // something solid under it already? then it is standing on that
       const pts = [[cx, cz], [b.min[0] + 4, b.min[2] + 4], [b.max[0] - 4, b.max[2] - 4]];
       if (pts.some(([x, z]) => below(x, b.min[1] - 1, z) !== null)) continue;
-      deco.addBox([b.min[0], GROUND, b.min[2]], [b.max[0], b.min[1], b.max[2]], { color: b.props.color, kind: b.props.kind === 'building' || b.props.kind === 'street' ? 'building' : b.props.kind });
+      // a thin block line floats, like the Bhop blocks over their lava street
+      // (a column under every block reads as a wall), and so does a thin pad
+      // over water or lava; a tall one (Spire's pillars) stands in it
+      const pool = poolBelow(cx, b.min[1], cz);
+      if (b.max[1] - b.min[1] < 400 && (pool !== null || b.props.kind === 'block')) continue;
+      deco.addBox([b.min[0], pool ?? GROUND, b.min[2]], [b.max[0], b.min[1], b.max[2]], { color: b.props.color, kind: b.props.kind === 'building' || b.props.kind === 'street' ? 'building' : b.props.kind });
     }
     tagUnder();
     // the ground, and a low city spread over it
