@@ -3136,10 +3136,12 @@ body.touch .mark.big { font-size: clamp(44px, min(14vw, 13vh), 96px); }
       // p turns the palm around the forearm: -1.2 makes fists with the palms
       // facing each other and the thumbs on top, 1 keeps an open hand flat to whatever it is reaching for
       const g = armPose(a, mode, t, hs);
-      g.p = OPEN[mode] ? 1 : -1.2;
+      g.p = PALM[mode] ?? (OPEN[mode] ? 1 : -1.2);
       return g;
     }
     const OPEN = { climb: 1, wallhand: 1, vault: 1, surf: 1 };
+    // open hands turned palm down
+    const PALM = { air: -2.8 };
     function armPose(a, mode, t, hs) {
       const s = a.side, run = Math.min(1, hs / 260);
       const swing = Math.sin(st.phase + (s > 0 ? 0 : Math.PI));
@@ -3151,13 +3153,9 @@ body.touch .mark.big { font-size: clamp(44px, min(14vw, 13vh), 96px); }
         case 'wallhand': return { x: 1.3, z: s * 1.0, y: 0, e: 0.2, w: 0, k: 0 };
         case 'slide': return s < 0 ? { x: -0.25, z: -0.35, y: 0, e: 0.3, w: 0.2, k: 0.2 } : { x: 1.0, z: 0.25, y: 0, e: 1.0, w: 0, k: 0.6 };
         case 'surf': return { x: 0.75, z: s * 1.15, y: 0, e: 0.35, w: 0, k: 0.3 };
-        case 'air': {
-          // arms drop and bend, loose fists low at the edges of the view, so
-          // bhops don't hold them out in front. Rising off a jump they lift a
-          // little; a long fall spreads them out for balance
-          const up = Math.max(-1, Math.min(1, player.vel[1] / 300)), fall = Math.min(1, Math.max(0, player.airTime - 0.7) * 1.5);
-          return { x: 0.7 + up * 0.12 + fall * 0.15 + Math.sin(t * 3 + s) * 0.04, z: s * (0.22 + fall * 0.45), y: 0, e: 1.5 - fall * 0.55, w: -0.45, k: 0.8 - fall * 0.4 };
-        }
+        // in the air the arms hang low and loose, open hands palm down at
+        // the bottom corners of the view, swaying a little
+        case 'air': return { x: 0.85 + Math.sin(t * 3 + s) * 0.03, z: s * 0.4, y: 0, e: 0.75, w: 0.2, k: 0.2 };
         default: return { x: 0.9 + swing * 0.45 * run, z: s * 0.15, y: 0, e: 1.1 - swing * 0.3 * run, w: -0.6, k: 1 };
       }
     }
