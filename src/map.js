@@ -34,6 +34,10 @@
       },
     });
     const route = (min, max) => box(min, max, COLORS.route, { kind: 'route' });
+    // Water or lava under a level with no towers round it spreads this far past
+    // the route, out beyond the fog, so it reads as a sea instead of a slab
+    // hanging over the city with its edges in view.
+    const SEA = 30000;
     // a convex brush around a handful of points: every plane through three of
     // them with all the rest behind it is a face (used for curved ramps)
     const hullPts = (pts, props) => {
@@ -228,7 +232,7 @@
       pts.push([ex, ez]);
       const x0 = Math.min(...pts.map(p => p[0])) - 4000, x1 = Math.max(...pts.map(p => p[0])) + 4000;
       const z0 = Math.min(...pts.map(p => p[1])) - 3000, z1 = Math.max(...pts.map(p => p[1])) + 2000;
-      box([x0, -260, z0], [x1, -200, z1], COLORS.water, { nonsolid: true, water: true });
+      box([x0 - SEA, -260, z0 - SEA], [x1 + SEA, -200, z1 + SEA], COLORS.water, { nonsolid: true, water: true });
       world.addTrigger([x0, -3000, z0], [x1, fy - 400, z1], { type: 'kill', course: 'cascade' });
       courses.cascade = { preview: { pos: [cx - 900, 13200, 1400], yaw: -0.25 }, name: 'Cascade', type: 'Surf', difficulty: 5, color: 0x2bd1a8,
         desc: 'Nine narrow ramps with long jumps that switch sides, and the line bends between them, so you turn in the air too. Two ramps climb into the widest gaps. Only two checkpoints, each a drop from a high ledge.',
@@ -277,7 +281,7 @@
       x += -Math.sin(head) * 190; z += -Math.cos(head) * 190;
       box([x - 320, y - 1300, z - 320], [x + 320, y, z + 320], COLORS.bhopPad, { kind: 'pad' });
       world.addTrigger([x - 320, y, z - 320], [x + 320, y + 200, z + 320], { type: 'end', course: 'spire' });
-      box([ox - 6000, lo - 1700, -14000], [ox + 6000, lo - 1660, 2000], COLORS.lava, { nonsolid: true, lava: true });
+      box([ox - 6000 - SEA, lo - 1700, -14000 - SEA], [ox + 6000 + SEA, lo - 1660, 2000 + SEA], COLORS.lava, { nonsolid: true, lava: true });
       world.addTrigger([ox - 6000, -4000, -14000], [ox + 6000, lo - 700, 2000], { type: 'kill', course: 'spire' });
       courses.spire = { name: 'Spire', type: 'Bhop', difficulty: 5, color: 0xa55cf0,
         desc: 'A long line of small blocks. Corners with no island to stop on, zigzags and long falling gaps.',
@@ -563,7 +567,7 @@
       hint(-8600, -9500, 160, -8700, { title: 'Surf', body: 'Jump onto the ramp. Hold A or D toward it to ride the slope and keep W off. Aim a little down the ramp to go faster.', keys: ['A', 'D'], done: 'surf' });
       box([tx - 900, -700, -14000], [tx + 900, -640, -13000], COLORS.surfPad, { kind: 'pad' });
       world.addTrigger([tx - 900, -640, -14000], [tx + 900, -440, -13000], { type: 'end', course: 'tutorial' });
-      box([tx - 3000, -1260, -15000], [tx + 3000, -1200, 1000], COLORS.water, { nonsolid: true, water: true });
+      box([tx - 3000 - SEA, -1260, -15000 - SEA], [tx + 3000 + SEA, -1200, 1000 + SEA], COLORS.water, { nonsolid: true, water: true });
       world.addTrigger([tx - 3000, -3000, -9500], [tx + 3000, -250, 1000], { type: 'kill', course: 'tutorial' });
       world.addTrigger([tx - 3000, -3000, -15000], [tx + 3000, -1000, -9500], { type: 'kill', course: 'tutorial' });
       world.addTrigger([tx - 300, 0, -400], [tx + 300, 200, 0], { type: 'start', course: 'tutorial' });
@@ -633,7 +637,7 @@
       const zs = plan.map(q => q.z1);
       const zMin = Math.min(...zs) - 3000;
       const lava = def.pool === 'lava';
-      box([ox - 5000, pool - 60, zMin], [ox + 5000, pool, 2500], lava ? COLORS.lava : COLORS.water, lava ? { nonsolid: true, lava: true } : { nonsolid: true, water: true });
+      box([ox - 5000 - SEA, pool - 60, zMin - SEA], [ox + 5000 + SEA, pool, 2500 + SEA], lava ? COLORS.lava : COLORS.water, lava ? { nonsolid: true, lava: true } : { nonsolid: true, water: true });
       world.addTrigger([ox - 5000, pool - 3000, zMin], [ox + 5000, lo - 600, 2500], { type: 'kill', course: name });
       courses[name] = { name: def.name, type: def.type, difficulty: def.difficulty, color: pal[0], desc: def.desc,
         spawn, stages: cp + 1, plan, set: 'gauntlet', preview: { pos: [ox, top, 300], yaw: 0 } };
@@ -1001,7 +1005,9 @@
       const bx0 = Math.min(...pts.map(p => p[0])), bx1 = Math.max(...pts.map(p => p[0]));
       const bz0 = Math.min(...pts.map(p => p[1])), bz1 = Math.max(...pts.map(p => p[1]));
       world.addTrigger([bx0 - 4000, kill - 4000, bz0 - 4000], [bx1 + 4000, kill, bz1 + 4000], { type: 'kill', course: name });
-      if (def.pool) box([bx0 - 3000, def.base - 60, bz0 - 3000], [bx1 + 3000, def.base, bz1 + 3000], def.pool === 'lava' ? COLORS.lava : COLORS.water,
+      // (with towers round it the pool is their flooded street; without, a sea)
+      const spread = def.skyline ? 3000 : SEA;
+      if (def.pool) box([bx0 - spread, def.base - 60, bz0 - spread], [bx1 + spread, def.base, bz1 + spread], def.pool === 'lava' ? COLORS.lava : COLORS.water,
         def.pool === 'lava' ? { nonsolid: true, lava: true } : { nonsolid: true, water: true });
       // city blocks around the route, kept clear of every leg's corridor
       if (def.skyline) {
@@ -1509,7 +1515,7 @@
         { t: 'zip', len: 2400, drop: 700 },
         { t: 'pad', len: 1800, w: 900, cp: true, vault: [500, 1000] },
         { t: 'bhop', gap: 70, n: 8, size: 128, step: 280 },
-        { t: 'pad', gap: 120, len: 900, w: 900, slot: [400] },
+        { t: 'pad', gap: 120, len: 900, w: 900, slot: [400], cp: true },
         { t: 'pad', rise: 180, climb: true, len: 700, w: 900 },
         { t: 'zip', len: 3000, drop: 900 },
         { t: 'pad', len: 1800, w: 900, cp: true }, { t: 'turn', dir: 1 },
